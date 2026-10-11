@@ -1,0 +1,122 @@
+import Foundation
+
+/// Sugiyama layering with virtual nodes, deterministic median ordering and weighted PAV placement.
+public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
+    public var layerSeparation: Double = 50
+    public var nodeSeparation: Double = 50
+    public var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
+    public var maxNodesPerRank: Int?
+    public init() {}
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        try Task.checkCancellation()
+        let a = Adjacency(graph), count = a.nodes.count
+        guard count > 0 else { return }
+        var layers = a.layers(maxWidth: maxNodesPerRank ?? .max)
+        var ranks = Array(repeating: 0, count: count)
+        for (r, layer) in layers.enumerated() { for i in layer { ranks[i] = r } }
+        var widths = a.nodes.map(\.width), incoming = Array(repeating: [Int](), count: count), outgoing = incoming
+        var chains: [LayoutEdge: [Int]] = [:]
+        for edge in graph.edges {
+            guard let s = a.index[edge.source], let t = a.index[edge.target], s != t else { continue }
+            let delta = ranks[t] - ranks[s], span = abs(delta)
+            var chain: [Int] = []
+            if span > 1 && span - 1 <= 64 {
+                for step in 1..<span {
+                    let v = widths.count, rank = ranks[s] + step * (delta > 0 ? 1 : -1)
+                    widths.append(8); ranks.append(rank); incoming.append([]); outgoing.append([])
+                    layers[rank].append(v); chain.append(v)
+                }
+            }
+            chains[edge] = chain
+            let path = [s] + chain + [t]
+            for (u, v) in zip(path, path.dropFirst()) where abs(ranks[u] - ranks[v]) == 1 {
+                let low = ranks[u] < ranks[v] ? u : v, high = ranks[u] < ranks[v] ? v : u
+                outgoing[low].append(high); incoming[high].append(low)
+            }
+        }
+        var order = Array(repeating: 0, count: widths.count)
+        func updateOrder() { for layer in layers { for (p, i) in layer.enumerated() { order[i] = p } } }
+        updateOrder()
+        for sweep in 0..<4 {
+            try Task.checkCancellation()
+            let forward = sweep % 2 == 0
+            let indices = forward ? Array(layers.indices) : Array(layers.indices.reversed())
+            var changed = false
+            for rank in indices {
+                let old = layers[rank]
+                var medians: [Int: Double] = [:]
+                for i in old {
+                    let values = (forward ? incoming[i] : outgoing[i]).map { order[$0] }.sorted()
+                    if values.isEmpty { medians[i] = Double(order[i]) }
+                    else { medians[i] = Double(values[(values.count - 1) / 2] + values[values.count / 2]) / 2 }
+                }
+                layers[rank].sort {
+                    let l = medians[$0]!, r = medians[$1]!
+                    return l == r ? order[$0] < order[$1] : l < r
+                }
+                changed = changed || old != layers[rank]
+                for (p, i) in layers[rank].enumerated() { order[i] = p }
+            }
+            if !changed && sweep > 0 { break }
+        }
+        let heights = layers.map { layer in layer.map { $0 < count ? a.nodes[$0].height : 0 }.max() ?? 0 }
+        let ys = offsets(heights, gap: layerSeparation)
+        var xs = Array(repeating: 0.0, count: widths.count)
+        for layer in layers {
+            let total = layer.reduce(0.0) { $0 + widths[$1] } + Double(max(0, layer.count - 1)) * nodeSeparation
+            var x = -total / 2
+            for i in layer { xs[i] = x + widths[i] / 2; x += widths[i] + nodeSeparation }
+        }
+        for pass in 0..<3 {
+            try Task.checkCancellation()
+            for rank in (pass % 2 == 0 ? Array(layers.indices) : Array(layers.indices.reversed())) {
+                let layer = layers[rank]
+                var desired: [Double] = [], shift: [Double] = [], weights: [Double] = [], distance = 0.0
+                for (position, i) in layer.enumerated() {
+                    if position > 0 { distance += (widths[layer[position - 1]] + widths[i]) / 2 + nodeSeparation }
+                    shift.append(distance)
+                    let neighbors = incoming[i] + outgoing[i]
+                    desired.append((neighbors.isEmpty ? xs[i] : neighbors.reduce(0.0) { $0 + xs[$1] } / Double(neighbors.count)) - distance)
+                    weights.append(i < count ? 1 : 4)
+                }
+                let fitted = isotonic(desired, weights: weights)
+                for (p, i) in layer.enumerated() { xs[i] = fitted[p] + shift[p] }
+            }
+        }
+        for i in a.nodes.indices { a.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
+        for e in graph.edges {
+            let bends = (chains[e] ?? []).map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
+            e.path = [e.source.center] + bends + [e.target.center]
+        }
+    }
+}
+private func isotonic(_ values: [Double], weights: [Double]) -> [Double] {
+    var blocks: [(start: Int, end: Int, sum: Double, weight: Double)] = []
+    for i in values.indices {
+        blocks.append((i, i, values[i] * weights[i], weights[i]))
+        while blocks.count > 1 {
+            let last = blocks[blocks.count - 1], prev = blocks[blocks.count - 2]
+            if prev.sum / prev.weight <= last.sum / last.weight { break }
+            blocks.removeLast(); blocks.removeLast()
+            blocks.append((prev.start, last.end, prev.sum + last.sum, prev.weight + last.weight))
+        }
+    }
+    var result = values
+    for block in blocks { for i in block.start...block.end { result[i] = block.sum / block.weight } }
+    return result
+}
+
+public final class SeriesParallelLayoutAlgorithm: LayoutAlgorithm {
+    public init() {}
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        // Transpose dimensions before layout, then transpose the entire drawing back.
+        for n in graph.nodes { let w = n.width; n.width = n.height; n.height = w }
+        do { try HierarchicalLayoutAlgorithm().applyLayout(graph) }
+        catch {
+            for n in graph.nodes { let w = n.width; n.width = n.height; n.height = w }
+            throw error
+        }
+        for n in graph.nodes { n.bounds = Rect(x: n.y, y: n.x, width: n.height, height: n.width) }
+        for e in graph.edges { e.path = e.path.map { Point(x: $0.y, y: $0.x) } }
+    }
+}

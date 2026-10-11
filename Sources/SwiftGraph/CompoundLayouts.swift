@@ -1,0 +1,171 @@
+import Foundation
+
+public final class ComponentLayout: LayoutAlgorithm {
+    public var coreLayout: any LayoutAlgorithm
+    public var componentSpacing: Double = 50
+    public var preferredAspectRatio: Double = 1
+    public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        try Task.checkCancellation()
+        let a = Adjacency(graph), components = a.components()
+        if components.count == 1 { try coreLayout.applyLayout(graph); return }
+        var graphs: [LayoutGraph] = [], bounds: [Rect] = []
+        for component in components {
+            try Task.checkCancellation()
+            let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
+            try coreLayout.applyLayout(g)
+            let b = g.bounds
+            translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g); bounds.append(b)
+        }
+        let width = max(200, sqrt(bounds.reduce(0.0) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
+        var x = 0.0, y = 0.0, rowHeight = 0.0
+        for i in graphs.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height }) {
+            if x > 0 && x + bounds[i].width > width { x = 0; y += rowHeight + componentSpacing; rowHeight = 0 }
+            translate(graphs[i], by: Point(x: x, y: y))
+            x += bounds[i].width + componentSpacing; rowHeight = max(rowHeight, bounds[i].height)
+        }
+    }
+}
+
+public final class MultiPageLayoutAlgorithm: LayoutAlgorithm {
+    public var pageWidth: Double = 800
+    public var pageHeight: Double = 1100
+    public var pageSpacing: Double = 100
+    public var coreLayout: any LayoutAlgorithm
+    public init(_ coreLayout: (any LayoutAlgorithm)? = nil) { self.coreLayout = coreLayout ?? HierarchicalLayoutAlgorithm() }
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        try Task.checkCancellation()
+        let a = Adjacency(graph)
+        for (i, component) in a.components().enumerated() {
+            try Task.checkCancellation()
+            let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
+            try coreLayout.applyLayout(g)
+            let b = g.bounds
+            translate(g, by: Point(x: Double(i % 3) * (pageWidth + pageSpacing) + (pageWidth - b.width) / 2 - b.x,
+                                   y: Double(i / 3) * (pageHeight + pageSpacing) + (pageHeight - b.height) / 2 - b.y))
+        }
+    }
+}
+
+public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
+    public var selectedNodeIds: Set<String> = []
+    public var coreLayout: any LayoutAlgorithm
+    public var preserveCentroid = true
+    public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        try Task.checkCancellation()
+        let g = subgraph(graph, nodes: graph.nodes.filter { selectedNodeIds.contains($0.id) })
+        guard !g.nodes.isEmpty else { return }
+        func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Double(g.nodes.count) }
+        let initial = centroid()
+        try coreLayout.applyLayout(g)
+        if preserveCentroid { translate(g, by: initial - centroid()) }
+        let routing = subgraph(graph, nodes: graph.nodes)
+        routing.edges = graph.edges.filter { selectedNodeIds.contains($0.source.id) != selectedNodeIds.contains($0.target.id) }
+        ChannelEdgeRouter().routeEdges(routing)
+    }
+}
+
+public enum GraphError: Error, Equatable { case cyclicGroupHierarchy }
+
+public final class RecursiveGroupLayout: LayoutAlgorithm {
+    public var coreLayout: any LayoutAlgorithm
+    public var groupPadding: Double = 20
+    public var groupLayoutSelector: ((LayoutNode) -> any LayoutAlgorithm)?
+    public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        try Task.checkCancellation()
+        // Postorder makes each child group's size available before laying out its parent.
+        var stack = [(graph.root, false)], active = Set<LayoutNode>(), visited = Set<LayoutNode>(), postorder: [LayoutNode] = []
+        while let (group, post) = stack.popLast() {
+            if post { active.remove(group); visited.insert(group); postorder.append(group); continue }
+            if active.contains(group) { throw GraphError.cyclicGroupHierarchy }
+            if visited.contains(group) { continue }
+            active.insert(group); stack.append((group, true))
+            for child in group.children.reversed() where child.isGroup { stack.append((child, false)) }
+        }
+        for group in postorder where !group.children.isEmpty {
+            try Task.checkCancellation()
+            let g = subgraph(graph, nodes: group.children)
+            try (groupLayoutSelector?(group) ?? coreLayout).applyLayout(g)
+            if group !== graph.root {
+                let b = g.bounds
+                group.bounds = Rect(width: b.width + groupPadding * 2, height: b.height + groupPadding * 2)
+                translate(g, by: Point(x: groupPadding - b.x, y: groupPadding - b.y))
+            }
+        }
+        var groups = [graph.root], seen = Set<LayoutNode>()
+        while let group = groups.popLast() {
+            guard seen.insert(group).inserted else { continue }
+            for child in group.children {
+                child.x += group.x; child.y += group.y
+                if child.isGroup { groups.append(child) }
+            }
+        }
+        let routing = subgraph(graph, nodes: graph.nodes); routing.edges = []
+        for e in graph.edges {
+            if let parent = e.source.parent, parent === e.target.parent {
+                if parent !== graph.root {
+                    let delta = Point(x: parent.x, y: parent.y)
+                    e.path = e.path.map { $0 + delta }; e.labelBounds = e.labelBounds.translated(by: delta)
+                }
+            } else { routing.edges.append(e) }
+        }
+        ChannelEdgeRouter().routeEdges(routing)
+    }
+}
+
+public final class SwimlaneLayoutAlgorithm: LayoutAlgorithm {
+    public var laneAssignment: [String: Int] = [:]
+    public var laneWidth: Double = 200
+    public var laneSpacing: Double = 20
+    public var laneInternalPadding: Double = 20
+    public var nodeVerticalSpacing: Double = 30
+    public var subLayout: (any LayoutAlgorithm)?
+    public private(set) var computedLanes: [(laneId: Int, x: Double, width: Double)] = []
+    public init() {}
+    public func applyLayout(_ graph: LayoutGraph) throws {
+        try Task.checkCancellation(); computedLanes = []
+        let a = Adjacency(graph), layers = a.layers()
+        var rank = Array(repeating: 0, count: a.nodes.count)
+        for (r, layer) in layers.enumerated() { for i in layer { rank[i] = r } }
+        let targetLanes = max(1, Int(ceil(sqrt(Double(a.nodes.count)))))
+        let ranksPerLane = max(1, Int(ceil(Double(layers.count) / Double(targetLanes))))
+        var lanes: [Int: [LayoutNode]] = [:]
+        for (i, n) in a.nodes.enumerated() {
+            let lane = laneAssignment.isEmpty ? rank[i] / ranksPerLane : laneAssignment[n.id, default: 0]
+            lanes[lane, default: []].append(n)
+        }
+        let heights = layers.map { $0.map { a.nodes[$0].height }.max() ?? 0 }
+        let ys = offsets(heights, gap: nodeVerticalSpacing)
+        var x = 0.0
+        for id in lanes.keys.sorted() {
+            try Task.checkCancellation()
+            let nodes = lanes[id]!
+            let effectiveWidth: Double
+            if let subLayout {
+                let g = subgraph(graph, nodes: nodes)
+                try subLayout.applyLayout(g)
+                let b = g.bounds; effectiveWidth = max(laneWidth, b.width + 2 * laneInternalPadding)
+                translate(g, by: Point(x: x + effectiveWidth / 2 - b.center.x, y: laneInternalPadding - b.y))
+            } else {
+                effectiveWidth = max(laneWidth, (nodes.map(\.width).max() ?? 0) + 2 * laneInternalPadding)
+                var bottom = 0.0
+                for n in nodes.sorted(by: { rank[a.index[$0]!] == rank[a.index[$1]!] ? a.index[$0]! < a.index[$1]! : rank[a.index[$0]!] < rank[a.index[$1]!] }) {
+                    n.y = max(bottom, ys[rank[a.index[n]!]] + laneInternalPadding)
+                    n.x = x + (effectiveWidth - n.width) / 2; bottom = n.bounds.bottom + nodeVerticalSpacing
+                }
+            }
+            computedLanes.append((id, x, effectiveWidth)); x += effectiveWidth + laneSpacing
+        }
+        for e in graph.edges where e.source !== e.target {
+            if abs(e.source.center.y - e.target.center.y) < nodeVerticalSpacing / 2 {
+                e.sourcePort = e.source.center.x < e.target.center.x ? .right : .left
+                e.targetPort = e.sourcePort == .right ? .left : .right
+            } else {
+                e.sourcePort = e.source.center.y < e.target.center.y ? .bottom : .top
+                e.targetPort = e.sourcePort == .bottom ? .top : .bottom
+            }
+        }
+    }
+}
