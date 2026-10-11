@@ -52,3 +52,31 @@ kernel void organicStep(
     float distance = sqrt(force.x * force.x + force.y * force.y);
     output[id] = distance > 0.1f ? point + force * (min(distance, params.temperature) / distance) : point;
 }
+
+struct BundleParameters {
+    uint count;
+    uint segments;
+    float step;
+    uint padding;
+};
+kernel void bundlingStep(
+    device const float2* points [[buffer(0)]],
+    device float2* output [[buffer(1)]],
+    device const uint* offsets [[buffer(2)]],
+    device const uint2* compatible [[buffer(3)]],
+    device const float* springs [[buffer(4)]],
+    constant BundleParameters& params [[buffer(5)]],
+    uint id [[thread_position_in_grid]]) {
+    if (id >= params.count) return;
+    uint stride = params.segments + 1;
+    uint edge = id / stride, p = id % stride;
+    if (p == 0 || p == params.segments) { output[id] = points[id]; return; }
+    float2 force = (points[id - 1] + points[id + 1] - points[id] * 2.0f) * springs[edge];
+    for (uint k = offsets[edge]; k < offsets[edge + 1]; ++k) {
+        uint2 neighbor = compatible[k];
+        uint other = neighbor.x * stride + (neighbor.y ? params.segments - p : p);
+        float2 delta = points[other] - points[id];
+        force += delta / sqrt(delta.x * delta.x + delta.y * delta.y + 0.0001f);
+    }
+    output[id] = points[id] + force * params.step;
+}

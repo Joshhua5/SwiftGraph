@@ -66,7 +66,10 @@ public final class LayoutGraph {
     public var bounds: Rect { enclosingBounds(nodes) }
 }
 
-public protocol LayoutAlgorithm {
+public protocol AsyncLayoutAlgorithm {
+    func applyLayoutAsync(_ graph: LayoutGraph) async throws
+}
+public protocol LayoutAlgorithm: AsyncLayoutAlgorithm {
     func applyLayout(_ graph: LayoutGraph) throws
 }
 public extension LayoutAlgorithm {

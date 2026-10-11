@@ -97,12 +97,15 @@ public final class AcceleratedOrganicLayoutAlgorithm: LayoutAlgorithm {
 extension Duration {
     var seconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
 }
-struct ForceParameters { var repulsionSquared: Float; var attraction: Float }
-struct ForceState {
+struct ForceParameters: Sendable { var repulsionSquared: Float; var attraction: Float }
+struct ForceState: Sendable {
     var positions: [SIMD2<Float>]
     var fixed: [UInt32]
     var offsets: [UInt32]
     var neighbors: [UInt32]
+    init(positions: [SIMD2<Float>], fixed: [UInt32], offsets: [UInt32], neighbors: [UInt32]) {
+        self.positions = positions; self.fixed = fixed; self.offsets = offsets; self.neighbors = neighbors
+    }
     init(_ graph: LayoutGraph, scope: OrganicScope, scatter: Bool) throws {
         guard graph.nodes.count < Int(UInt32.max), Set(graph.nodes).count == graph.nodes.count else {
             throw OrganicLayoutError.invalidConfiguration("Node references must be unique and fit in 32-bit indices.")

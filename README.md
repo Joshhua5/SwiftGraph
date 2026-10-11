@@ -50,7 +50,34 @@ let algorithm = HierarchicalLayoutAlgorithm()
 try algorithm.applyLayout(graph)
 ```
 
-Every `LayoutAlgorithm` also offers `try await algorithm.applyLayoutAsync(graph)`. Algorithms perform CPU work synchronously and check Swift task cancellation. Run expensive layouts on the caller's chosen background executor. Mutable graphs, algorithms and builders are intentionally **not Sendable**; confine each graph and its pipeline to one task or actor. The builder executes steps sequentially, checks cancellation between steps, and supports both `transform` and `transformAsync`. A cancelled pipeline is not transactional; completed steps remain applied.
+Every `LayoutAlgorithm` also offers `try await algorithm.applyLayoutAsync(graph)`. Existing CPU algorithms use a synchronous default; the builder awaits the protocol's async requirement, and async-only algorithms conform to `AsyncLayoutAlgorithm`. Run expensive synchronous CPU layouts on the caller's chosen background executor. The optional Metal operations below move computation to a reusable executor and suspend while the GPU runs. Mutable graphs, algorithms and builders are intentionally **not Sendable**; confine each graph and its pipeline to one task or actor. The builder executes steps sequentially, checks cancellation between steps, and supports both `transform` and `transformAsync`. A cancelled pipeline is not transactional; completed steps remain applied.
+
+## Metal backend
+
+Organic layout and edge bundling support explicit `.cpu`, `.metal`, and opt-in `.automatic` execution. Existing builder methods without a backend argument retain their CPU behavior.
+
+```swift
+let executor = LayoutExecutor() // Reuse across layouts; .shared is also available.
+
+try await LayoutBuilder.create(graph)
+    .useOrganic(backend: .metal, executor: executor) {
+        $0.iterations = 100
+        $0.initialTemperature = 80
+    }
+    .routeWithBundling(backend: .metal, executor: executor) {
+        $0.iterations = 30
+        $0.segments = 10
+    }
+    .routeSelfLoops()
+    .clipEdgeEndpoints()
+    .applyAsync()
+```
+
+Metal execution uses completion handlers, cached pipelines and pooled buffers. Graph objects remain on their owning task/actor; only Sendable geometry snapshots cross to the executor. Cancellation and edits made during a suspended operation discard its result. Fixed and unselected organic nodes preserve their exact coordinates, and bundling preserves endpoint coordinates and self-loop paths.
+
+`.metal` reports missing hardware or unsuitable Float precision. `.automatic` uses configurable size/iteration heuristics and can fall back to CPU; unexpected GPU errors still propagate. To inspect the selected backend and timing, use `OrganicLayoutOperation` or `EdgeBundlingOperation` directly and read `lastMetrics`. `LayoutExecutor.statistics()` reports resource reuse. Metal results use Float and can differ from CPU Double results.
+
+See [Metal usage, guarantees and limits](docs/METAL.md). The older `AcceleratedOrganicLayoutAlgorithm` remains a synchronous benchmark API; use the integrated operations above in applications.
 
 ## Graph model
 

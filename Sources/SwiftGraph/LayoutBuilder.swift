@@ -6,7 +6,10 @@ public final class LayoutBuilder {
     public init(graph: LayoutGraph) { self.graph = graph }
     public static func create(_ graph: LayoutGraph) -> LayoutBuilder { LayoutBuilder(graph: graph) }
     @discardableResult public func useAlgorithm(_ algorithm: any LayoutAlgorithm) -> Self {
-        pipeline.append { graph in try algorithm.applyLayout(graph) }; return self
+        pipeline.append { graph in try await algorithm.applyLayoutAsync(graph) }; return self
+    }
+    @discardableResult public func useAsyncAlgorithm(_ algorithm: any AsyncLayoutAlgorithm) -> Self {
+        pipeline.append { graph in try await algorithm.applyLayoutAsync(graph) }; return self
     }
     @discardableResult public func useAlgorithm<A: LayoutAlgorithm>(_ algorithm: A, configure: (A) -> Void) -> Self {
         configure(algorithm); return useAlgorithm(algorithm)
