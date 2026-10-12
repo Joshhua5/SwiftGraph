@@ -139,7 +139,7 @@ import Testing
         g.nodes[0].bounds = Rect(x: 0, y: 100, width: 80, height: 32)
         g.nodes[1].bounds = Rect(x: 0, y: 20, width: 100, height: 60)
         let loop = LayoutEdge(source: g.nodes[0], target: g.nodes[0]); g.addEdge(loop)
-        let router = SelfLoopRouter(); router.routeEdges(g)
+        let router = SelfLoopRouter(); router.legacy = true; router.routeEdges(g)
         let legacy = loop.path
         #expect(!ObstaclePolyline.clear(legacy, [g.nodes[1].bounds]))
         router.avoidObstacles = true; router.routeEdges(g)

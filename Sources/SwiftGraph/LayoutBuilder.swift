@@ -122,6 +122,9 @@ public extension LayoutBuilder {
     @discardableResult func routeParallelEdges(_ configure: (ParallelEdgeRouter) -> Void = { _ in }) -> Self {
         let value = ParallelEdgeRouter(); configure(value); return routeEdges(value)
     }
+    @discardableResult func separateEdges(_ configure: (EdgeSeparator) -> Void = { _ in }) -> Self {
+        let value = EdgeSeparator(); configure(value); return routeEdges(value)
+    }
     @discardableResult func routeSelfLoops(_ configure: (SelfLoopRouter) -> Void = { _ in }) -> Self {
         let value = SelfLoopRouter(); configure(value); return routeEdges(value)
     }

@@ -5,6 +5,8 @@ import Foundation
 public final class PolylineEdgeRouter: EdgeRouter {
     public var padding: Double = 10
     public var avoidAllObstacles = true
+    /// Obstacle-aware mode spreads edges sharing a collinear stretch this far apart; 0 leaves them overlapping.
+    public var edgeSpacing: Double = 6
     /// Empty in legacy mode. Impossible routes keep the legacy detour so the edge stays visible.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
@@ -33,6 +35,9 @@ public final class PolylineEdgeRouter: EdgeRouter {
                     if let path { edge.path = path } else { unroutableEdges.append(edge) }
                 }
             }
+        }
+        if avoidAllObstacles && edgeSpacing > 0 {
+            let separator = EdgeSeparator(); separator.spacing = edgeSpacing; separator.routeEdges(graph)
         }
     }
     private func detour(_ start: Point, _ end: Point, _ bounds: Rect) -> [Point] {

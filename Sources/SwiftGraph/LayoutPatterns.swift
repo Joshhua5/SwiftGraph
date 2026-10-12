@@ -31,7 +31,7 @@ public extension LayoutBuilder {
     }
     @discardableResult func applyStandardHierarchical(nodeSeparation: Double = 80, rankSeparation: Double = 120) -> Self {
         let layout = HierarchicalLayoutAlgorithm(); layout.nodeSeparation = nodeSeparation; layout.layerSeparation = rankSeparation
-        return useAlgorithm(RecursiveGroupLayout(layout)).routeSelfLoops()
+        return useAlgorithm(RecursiveGroupLayout(layout)).separateEdges().routeSelfLoops()
     }
     @discardableResult func applyStandardOrganic(iterations: Int = 600, repulsionForce: Double = 100, attractionForce: Double = 0.05) -> Self {
         let layout = OrganicLayoutAlgorithm(); layout.iterations = Double(iterations); layout.repulsionForce = repulsionForce; layout.attractionForce = attractionForce
@@ -60,7 +60,7 @@ public extension LayoutBuilder {
     @discardableResult func applyEnterpriseArchitecture(nodeSeparation: Double = 80, layerSeparation: Double = 120, componentSpacing: Double = 50) -> Self {
         let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = nodeSeparation; core.layerSeparation = layerSeparation
         let components = ComponentLayout(core); components.componentSpacing = componentSpacing; components.preferredAspectRatio = 1.5
-        return analyzePageRank().useAlgorithm(RecursiveGroupLayout(components)).routeBsp().routeSelfLoops()
+        return analyzePageRank().useAlgorithm(RecursiveGroupLayout(components)).routeBsp().separateEdges().routeSelfLoops()
     }
     @discardableResult func applyNetworkTopology(hubCount: Int = 3, organicIterations: Int = 600) -> Self {
         analyzePageRank().transform { graph in
@@ -79,13 +79,13 @@ public extension LayoutBuilder {
         }.useOrganic { $0.scope = .subset; $0.iterations = Double(organicIterations) }.routeWithBundling().routeSelfLoops { $0.avoidObstacles = true }
     }
     @discardableResult func applyCallGraph(nodeSeparation: Double = 60, layerSeparation: Double = 150) -> Self {
-        useHierarchical { $0.nodeSeparation = nodeSeparation; $0.layerSeparation = layerSeparation }.removeOverlaps().routeCurveFitting().routeSelfLoops()
+        useHierarchical { $0.nodeSeparation = nodeSeparation; $0.layerSeparation = layerSeparation }.removeOverlaps().separateEdges().routeCurveFitting().routeSelfLoops()
     }
     @discardableResult func applyGrainSwimlane(laneAssignment: [String: Int], laneWidth: Double = 200, laneSpacing: Double = 20, laneInternalPadding: Double = 20, nodeVerticalSpacing: Double = 40) -> Self {
         useSwimlane {
             $0.laneAssignment = laneAssignment; $0.laneWidth = laneWidth; $0.laneSpacing = laneSpacing
             $0.laneInternalPadding = laneInternalPadding; $0.nodeVerticalSpacing = nodeVerticalSpacing
-        }.routeChannel().routeCurveFitting().routeSelfLoops()
+        }.routeChannel().separateEdges().routeCurveFitting().routeSelfLoops()
     }
     @discardableResult func applySocialNetwork(organicIterations: Int = 600, repulsionForce: Double = 100) -> Self {
         analyzeClusters().useOrganic { $0.iterations = Double(organicIterations); $0.repulsionForce = repulsionForce }.routeWithBundling().routeSelfLoops { $0.avoidObstacles = true }
@@ -94,7 +94,7 @@ public extension LayoutBuilder {
         useOrgChart { $0.siblingDistance = siblingDistance; $0.layerDistance = layerDistance }.routePolyline { $0.avoidAllObstacles = true }.routeSelfLoops()
     }
     @discardableResult func applyDataFlow(nodeSeparation: Double = 100, layerSeparation: Double = 150) -> Self {
-        useHierarchical { $0.nodeSeparation = nodeSeparation; $0.layerSeparation = layerSeparation }.routeChannel().routeSelfLoops()
+        useHierarchical { $0.nodeSeparation = nodeSeparation; $0.layerSeparation = layerSeparation }.routeChannel().separateEdges().routeSelfLoops()
     }
     @discardableResult func applyMindMap(layerDistance: Double = 100) -> Self { useRadialTree { $0.layerDistance = layerDistance }.routePolyline { $0.avoidAllObstacles = true }.routeSelfLoops() }
     @discardableResult func wrapWithComponentHandling(_ core: any LayoutAlgorithm, componentSpacing: Double = 20, preferredAspectRatio: Double = 1) -> Self {
@@ -137,9 +137,9 @@ public extension LayoutBuilder {
         }.routePolyline().routeSelfLoops()
     }
     @discardableResult func applySmallGraphPreset() -> Self {
-        useHierarchical { $0.nodeSeparation = 80; $0.layerSeparation = 120 }.removeOverlaps().routeCurveFitting { $0.iterations = 3 }.routeSelfLoops()
+        useHierarchical { $0.nodeSeparation = 80; $0.layerSeparation = 120 }.removeOverlaps().separateEdges().routeCurveFitting { $0.iterations = 3 }.routeSelfLoops()
     }
-    @discardableResult func applyMediumGraphPreset() -> Self { useHierarchical { $0.nodeSeparation = 60; $0.layerSeparation = 100 }.routeSelfLoops() }
+    @discardableResult func applyMediumGraphPreset() -> Self { useHierarchical { $0.nodeSeparation = 60; $0.layerSeparation = 100 }.separateEdges().routeSelfLoops() }
     @discardableResult func applyLargeGraphPreset() -> Self { useOrganic().routePolyline { $0.avoidAllObstacles = true }.routeSelfLoops { $0.avoidObstacles = true } }
     @discardableResult func applyDenseGraphPreset() -> Self { useOrganic().routePolyline { $0.avoidAllObstacles = true }.routeWithBundling { $0.k = 0.05 }.routeSelfLoops { $0.avoidObstacles = true } }
 }

@@ -57,15 +57,90 @@ public enum EdgeEndpointClipper {
     }
 }
 
+/// Routes self-loops as compact orthogonal corner loops: out of one side near a corner, `loopSize` round the
+/// corner and back into the adjacent side. Each loop takes the corner that is clear of other nodes, crosses the
+/// fewest routes and is furthest from where incident edges attach; further loops on a node take other corners,
+/// then nest outward. `legacy` restores the reference's flared loop above the top side.
 public final class SelfLoopRouter: EdgeRouter {
+    /// Legacy loop width.
     public var loopWidth: Double = 60
+    /// Legacy loop height.
     public var loopHeight: Double = 60
-    /// Try alternate sides and smaller loops when a compact layout blocks the legacy top loop.
+    /// How far a corner loop reaches beyond the node.
+    public var loopSize: Double = 16
+    /// Legacy only: try alternate sides and smaller loops when a compact layout blocks the top loop.
     public var avoidObstacles = false
+    public var legacy = false
+    /// Legacy: loops with no clear placement (left empty). Default: loops drawn despite a node in the way.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
         unroutableEdges = []
+        if legacy { routeLegacy(graph); return }
+        let loops = graph.edges.filter { $0.source === $0.target }
+        var pending = Set(loops), used: [LayoutNode: [Int]] = [:]
+        for edge in loops {
+            let node = edge.source, r = node.bounds, corners = used[node, default: []]
+            let ring = Double(corners.count / 4), taken = Set(corners.suffix(corners.count % 4))
+            let inset = min(max(min(r.width, r.height) / 4, 4), 16) + ring * 6
+            let size = loopSize + ring * 6
+            let obstacles = ObstaclePolyline.obstacles(edge, graph)
+            // Loops still to be routed carry stale paths; leave them out of the crossing count.
+            let routes = graph.edges.filter { $0 !== edge && !pending.contains($0) && $0.path.count >= 2 }.map(\.path)
+            let attached = Self.attachments(node, graph)
+            var best: (path: [Point], corner: Int, score: [Double])?, fallback: (path: [Point], corner: Int, score: [Double])?
+            for scale in [1.0, 0.5] where best == nil {
+                for corner in 0..<4 where !taken.contains(corner) {
+                    let path = Self.loop(r, corner: corner, size: size * scale, inset: inset)
+                    let score = [Double(Self.crossings(path, routes)), Double(attached[corner]), Double(corner)]
+                    if ObstaclePolyline.clear(path, obstacles) {
+                        if best == nil || score.lexicographicallyPrecedes(best!.score) { best = (path, corner, score) }
+                    } else if scale == 1, fallback == nil || score.lexicographicallyPrecedes(fallback!.score) {
+                        fallback = (path, corner, score)
+                    }
+                }
+            }
+            if best == nil { unroutableEdges.append(edge) }
+            if let chosen = best ?? fallback { edge.path = chosen.path; used[node, default: []].append(chosen.corner) }
+            pending.remove(edge)
+        }
+    }
+    /// Corner 0 is top-right, then clockwise.
+    private static func loop(_ r: Rect, corner: Int, size: Double, inset: Double) -> [Point] {
+        let sx: Double = corner < 2 ? 1 : -1, sy: Double = corner == 0 || corner == 3 ? -1 : 1
+        let cx = sx > 0 ? r.right : r.left, cy = sy < 0 ? r.top : r.bottom
+        let a = min(inset, r.width / 2, r.height / 2)
+        return [Point(x: cx - sx * a, y: cy), Point(x: cx - sx * a, y: cy + sy * size), Point(x: cx + sx * size, y: cy + sy * size),
+                Point(x: cx + sx * size, y: cy - sy * a), Point(x: cx, y: cy - sy * a)]
+    }
+    /// How many incident edges leave the node towards each corner's quadrant.
+    private static func attachments(_ node: LayoutNode, _ graph: LayoutGraph) -> [Int] {
+        var counts = [0, 0, 0, 0]
+        let c = node.center
+        for e in graph.edges where e.source !== e.target && (e.source === node || e.target === node) && e.path.count >= 2 {
+            let path = e.source === node ? e.path : e.path.reversed()
+            // A route starting at the centre shows its direction at the next point.
+            let p = (path[0] - c).length > 1e-9 ? path[0] : path[1]
+            counts[p.x >= c.x ? (p.y < c.y ? 0 : 1) : (p.y < c.y ? 3 : 2)] += 1
+        }
+        return counts
+    }
+    private static func crossings(_ path: [Point], _ routes: [[Point]]) -> Int {
+        func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
+        var count = 0
+        for (a, b) in zip(path, path.dropFirst()) {
+            for route in routes {
+                for (c, d) in zip(route, route.dropFirst()) {
+                    let u = b - a, v = d - c, denominator = cross(u, v)
+                    guard abs(denominator) > 1e-12 else { continue }
+                    let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
+                    if t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9 { count += 1 }
+                }
+            }
+        }
+        return count
+    }
+    private func routeLegacy(_ graph: LayoutGraph) {
         for edge in graph.edges where edge.source === edge.target {
             let r = edge.source.bounds, half = loopWidth / 2, y = r.y - loopHeight
             edge.path = [Point(x: r.center.x - half * 0.4, y: r.y), Point(x: r.center.x - half, y: y), Point(x: r.center.x + half, y: y), Point(x: r.center.x + half * 0.4, y: r.y)]
