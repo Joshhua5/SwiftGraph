@@ -13,6 +13,7 @@ let package = Package(
             targets: ["SwiftGraph"]
         ),
         .executable(name: "graph-layout-benchmark", targets: ["GraphLayoutBenchmark"]),
+        .executable(name: "graph-layout-visual", targets: ["GraphLayoutVisual"]),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -25,9 +26,19 @@ let package = Package(
             ],
         ),
         .executableTarget(name: "GraphLayoutBenchmark", dependencies: ["SwiftGraph"]),
+        .target(
+            name: "GraphEvaluationSupport",
+            dependencies: ["SwiftGraph"],
+            path: "Tests",
+            exclude: ["SwiftGraphTests"],
+            sources: ["Support"],
+            resources: [.copy("Fixtures")],
+            swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")]
+        ),
+        .executableTarget(name: "GraphLayoutVisual", dependencies: ["GraphEvaluationSupport"]),
         .testTarget(
             name: "SwiftGraphTests",
-            dependencies: ["SwiftGraph"],
+            dependencies: ["SwiftGraph", "GraphEvaluationSupport"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

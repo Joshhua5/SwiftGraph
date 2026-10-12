@@ -51,6 +51,8 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
     public var selectedNodeIds: Set<String> = []
     public var coreLayout: any LayoutAlgorithm
     public var preserveCentroid = true
+    /// Clearance takes precedence over centroid preservation. Disable for legacy placement.
+    public var avoidUnselectedNodes = true
     public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -60,9 +62,42 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
         let initial = centroid()
         try coreLayout.applyLayout(g)
         if preserveCentroid { translate(g, by: initial - centroid()) }
+        if avoidUnselectedNodes {
+            let obstacles = graph.nodes.filter { node in
+                !selectedNodeIds.contains(node.id) && !g.nodes.contains {
+                    isAncestor(node, of: $0) || isAncestor($0, of: node)
+                }
+            }.map(\.bounds)
+            var envelope = g.bounds
+            for edge in g.edges {
+                for p in edge.path { envelope = envelope.union(Rect(x: p.x, y: p.y)) }
+                if edge.labelBounds.width > 0 { envelope = envelope.union(edge.labelBounds) }
+            }
+            let padded = obstacles.map { $0.inflated(by: 10) }
+            if padded.contains(where: { $0.intersects(envelope) }) {
+                let xs = Set([0.0] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
+                let ys = Set([0.0] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
+                var best: Point?
+                for x in xs {
+                    try Task.checkCancellation()
+                    for y in ys {
+                        let candidate = Point(x: x, y: y)
+                        if let best, candidate.lengthSquared >= best.lengthSquared { continue }
+                        if !padded.contains(where: { $0.intersects(envelope.translated(by: candidate)) }) { best = candidate }
+                    }
+                }
+                if let best { translate(g, by: best) }
+            }
+        }
         let routing = subgraph(graph, nodes: graph.nodes)
         routing.edges = graph.edges.filter { selectedNodeIds.contains($0.source.id) != selectedNodeIds.contains($0.target.id) }
         ChannelEdgeRouter().routeEdges(routing)
+        if avoidUnselectedNodes {
+            ObstaclePolyline.repair(graph, edges: graph.edges.filter {
+                selectedNodeIds.contains($0.source.id) || selectedNodeIds.contains($0.target.id)
+            })
+        }
+        try Task.checkCancellation()
     }
 }
 

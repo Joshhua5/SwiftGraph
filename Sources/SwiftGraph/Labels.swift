@@ -13,17 +13,19 @@ public final class LabelPlacementAlgorithm {
     public func applyLabelPlacement(_ graph: LayoutGraph) {
         let tree = QuadTree<LayoutNode>(bounds: graph.bounds.inflated(by: 500))
         for node in graph.nodes where !node.isGroup { tree.insert(bounds: node.bounds, item: node) }
+        var labeled: [LayoutEdge] = []
         for edge in graph.edges {
             guard let text = labelProvider(edge), !text.isEmpty else { continue }
+            labeled.append(edge)
             let width = Double(text.count * 8 + 10), height = 20.0
-            let mid = max(0, (edge.path.count - 1) / 2)
-            let center = edge.path.count >= 2 ? (edge.path[mid] + edge.path[mid + 1]) / 2 : .zero
+            let center = LabelCollisionRepair.midpoint(edge.path)
             edge.labelBounds = Rect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
             for _ in 0..<10 {
                 if tree.query(edge.labelBounds).isEmpty { break }
                 edge.labelBounds.y -= 5
             }
         }
+        LabelCollisionRepair.apply(labeled, obstacles: graph.nodes.filter { !$0.isGroup }.map(\.bounds))
     }
 }
 
@@ -36,8 +38,8 @@ public final class LabelLayoutAlgorithm {
         let obstacles = graph.nodes.filter { !$0.isGroup }.map(\.bounds)
         for e in edges {
             if e.labelBounds.width == 0 { e.labelBounds = Rect(width: Double("Edge[\(e.source.id) -> \(e.target.id)]".count * 8), height: 20) }
-            if let first = e.path.first, let last = e.path.last, e.path.count >= 2 {
-                let center = (first + last) / 2
+            if e.path.count >= 2 {
+                let center = LabelCollisionRepair.midpoint(e.path)
                 e.labelBounds.x = center.x - e.labelBounds.width / 2; e.labelBounds.y = center.y - e.labelBounds.height / 2
             }
         }
@@ -48,12 +50,13 @@ public final class LabelLayoutAlgorithm {
                 for j in edges.indices where i != j && e.labelBounds.intersects(edges[j].labelBounds) { result += 100 }
                 if e.path.count >= 2 {
                     let c = e.labelBounds.center
-                    result += (e.path.map { abs($0.x - c.x) + abs($0.y - c.y) }.min() ?? 0) * 0.1
+                    result += LabelCollisionRepair.distance(c, to: e.path) * 0.1
                 }
             }
             return result
         }
         var random = SeededRandom(state: 123), temperature = 100.0, current = energy()
+        var best = current, bestBounds = edges.map(\.labelBounds)
         for _ in 0..<max(0, iterations) {
             if Task.isCancelled { return }
             let edge = edges[Int(random.next() * Double(edges.count))], old = edge.labelBounds
@@ -61,7 +64,63 @@ public final class LabelLayoutAlgorithm {
             let candidate = energy()
             if candidate < current || random.next() <= exp((current - candidate) / max(temperature, 1e-12)) { current = candidate }
             else { edge.labelBounds = old }
+            if current < best { best = current; bestBounds = edges.map(\.labelBounds) }
             temperature *= 0.95
+        }
+        for (edge, bounds) in zip(edges, bestBounds) { edge.labelBounds = bounds }
+        LabelCollisionRepair.apply(edges, obstacles: obstacles)
+    }
+}
+
+private enum LabelCollisionRepair {
+    static func midpoint(_ path: [Point]) -> Point {
+        let segments = Array(zip(path, path.dropFirst()))
+        var remaining = segments.reduce(0.0) { $0 + ($1.1 - $1.0).length } / 2
+        for (a, b) in segments {
+            let length = (b - a).length
+            if length > 0 && remaining <= length { return a + (b - a) * (remaining / length) }
+            remaining -= length
+        }
+        return path.first ?? .zero
+    }
+    static func distance(_ point: Point, to path: [Point]) -> Double {
+        zip(path, path.dropFirst()).map { a, b in
+            let delta = b - a
+            let t = delta.lengthSquared > 0 ? max(0, min(1, ((point.x - a.x) * delta.x + (point.y - a.y) * delta.y) / delta.lengthSquared)) : 0
+            return (point - (a + delta * t)).length
+        }.min() ?? path.first.map { (point - $0).length } ?? 0
+    }
+    static func apply(_ edges: [LayoutEdge], obstacles: [Rect]) {
+        for _ in 0..<8 {
+            var changed = false
+            for (index, edge) in edges.enumerated() where edge.labelBounds.width > 0 && edge.labelBounds.height > 0 {
+                if Task.isCancelled { return }
+                let original = edge.labelBounds
+                func score(_ rect: Rect) -> [Double] {
+                    [Double(obstacles.filter { $0.intersects(rect) }.count),
+                     Double(edges.indices.filter { $0 != index && edges[$0].labelBounds.intersects(rect) }.count),
+                     distance(rect.center, to: edge.path), (rect.center - original.center).lengthSquared]
+                }
+                var best = original, bestScore = score(original)
+                // Prefer the existing placement when it is already readable.
+                if bestScore[0] == 0 && bestScore[1] == 0 { continue }
+                for (a, b) in zip(edge.path, edge.path.dropFirst()) {
+                    let delta = b - a
+                    guard delta.length > 1e-9 else { continue }
+                    let normal = Point(x: -delta.y, y: delta.x) / delta.length
+                    let clearance = abs(normal.x) * original.width / 2 + abs(normal.y) * original.height / 2 + 4
+                    for t in [0.5, 0.25, 0.75] {
+                        for offset in [0.0, 1, -1, 2, -2, 3, -3] {
+                            let center = a + delta * t + normal * (offset * clearance)
+                            let rect = Rect(x: center.x - original.width / 2, y: center.y - original.height / 2, width: original.width, height: original.height)
+                            let candidate = score(rect)
+                            if candidate.lexicographicallyPrecedes(bestScore) { best = rect; bestScore = candidate }
+                        }
+                    }
+                }
+                if best != original { edge.labelBounds = best; changed = true }
+            }
+            if !changed { break }
         }
     }
 }

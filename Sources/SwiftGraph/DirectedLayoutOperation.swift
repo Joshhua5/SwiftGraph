@@ -140,6 +140,7 @@ public struct DirectedLayoutOperation {
                 edges: edges.map { .init(source: $0.source.id, target: $0.target.id, sourcePort: $0.sourcePort, targetPort: $0.targetPort, index: edgeIndex[$0]!) },
                 configuration: keyConfig)
             var best = cache?.drawing(for: key)
+            var legacyBest: DirectedComponentDrawing?
             let cached = best != nil
             if cached { diagnostics.cachedComponents += 1 }
             // The ordering score excludes ports and obstacles. On ordinary components,
@@ -170,26 +171,60 @@ public struct DirectedLayoutOperation {
                 }
                 placementTime += milliseconds(placementStart.duration(to: .now))
                 let routingStart = ContinuousClock.now
+                // Preserve the previous strategy as an incumbent for each ordering.
+                // A more compact channel arrangement must earn its place using final
+                // geometry, rather than discarding a lower-crossing drawing.
+                let guides = edges.map(\.path)
                 let router = DirectedRouter(nodes: members, edges: edges, feedback: feedback,
                                             edgeIndices: edgeIndex, configuration: configuration, pitch: pitch)
-                try router.route()
+                try router.route(coordinated: false)
+                let incumbent = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path),
+                    score: try DirectedGeometry.measure(nodes: members, edges: edges))
+                if configuration.mode == .fresh {
+                    if legacyBest == nil || incumbent.score.precedes(legacyBest!.score) { legacyBest = incumbent }
+                    for (edge, guide) in zip(edges, guides) { edge.path = guide }
+                    try DirectedRouter(nodes: members, edges: edges, feedback: feedback,
+                        edgeIndices: edgeIndex, configuration: configuration, pitch: pitch).route()
+                }
                 routingTime += milliseconds(routingStart.duration(to: .now))
                 let score = try DirectedGeometry.measure(nodes: members, edges: edges)
                 let drawing = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path), score: score)
                 if best == nil || drawing.score.precedes(best!.score) { best = drawing }
+                // Feedback paths seed port order in the next trial. Do not let the
+                // compact trial alter the incumbent strategy's deterministic inputs.
+                for (node, rect) in zip(members, incumbent.bounds) { node.bounds = rect }
+                for (edge, path) in zip(edges, incumbent.paths) { edge.path = path }
                 if score.crossings == 0 && score.shared == 0 && score.missing == 0 { break }
+            }
+            if !cached, configuration.mode == .fresh {
+                // Refinement can change crossings: compare the two strategies only
+                // after both receive the same final-geometry optimization.
+                var refinedBest: DirectedComponentDrawing?
+                let refinementStart = ContinuousClock.now
+                for candidate in [legacyBest, best].compactMap({ $0 }) {
+                    for (node, rect) in zip(members, candidate.bounds) { node.bounds = rect }
+                    for (edge, path) in zip(edges, candidate.paths) { edge.path = path }
+                    var refinement = DirectedRouter(nodes: members, edges: edges, feedback: feedback,
+                        edgeIndices: edgeIndex, configuration: configuration, pitch: pitch)
+                    try refinement.refine()
+                    try DirectedDrawingCompaction.apply(nodes: members, edges: edges,
+                        clearance: refinement.clearance, spacing: max(6, refinement.trackClearance + 2))
+                    refinement = DirectedRouter(nodes: members, edges: edges, feedback: feedback,
+                        edgeIndices: edgeIndex, configuration: configuration, pitch: pitch)
+                    try refinement.refine()
+                    try refinement.improveWorstRoutes()
+                    let result = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path),
+                        score: try DirectedGeometry.measure(nodes: members, edges: edges))
+                    if refinedBest == nil || result.score.precedes(refinedBest!.score) { refinedBest = result }
+                }
+                best = refinedBest
+                routingTime += milliseconds(refinementStart.duration(to: .now))
             }
             if let best {
                 try Task.checkCancellation()
                 for (node, rect) in zip(members, best.bounds) { node.bounds = rect }
                 for (edge, path) in zip(edges, best.paths) { edge.path = path }
                 if !cached {
-                    if configuration.mode == .fresh {
-                        let refinementStart = ContinuousClock.now
-                        try DirectedRouter(nodes: members, edges: edges, feedback: feedback,
-                            edgeIndices: edgeIndex, configuration: configuration, pitch: pitch).refine()
-                        routingTime += milliseconds(refinementStart.duration(to: .now))
-                    }
                     let refined = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path),
                         score: try DirectedGeometry.measure(nodes: members, edges: edges))
                     cache?.insert(refined, for: key)

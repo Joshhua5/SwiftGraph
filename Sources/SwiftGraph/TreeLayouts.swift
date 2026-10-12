@@ -70,19 +70,15 @@ public final class RadialLayoutAlgorithm: LayoutAlgorithm {
         let outer = (depth.max() ?? 0) + 1
         for i in depth.indices where depth[i] < 0 { depth[i] = outer }
         a.nodes[root].center = .zero
-        let span = a.nodes.map { hypot($0.width, $0.height) }.max()! + 20
-        var previous = 0.0
+        var angles = Array(repeating: 0.0, count: a.nodes.count)
         for d in 1...max(1, outer) {
             let ring = a.nodes.indices.filter { depth[$0] == d }
-            guard !ring.isEmpty else { continue }
-            let r = max(Double(d) * layerSeparation, max(Double(ring.count) * span / (2 * .pi), previous + layerSeparation))
-            for (j, i) in ring.enumerated() {
-                let angle = Double(j) * 2 * .pi / Double(ring.count)
-                a.nodes[i].center = Point(x: r * cos(angle), y: r * sin(angle))
-            }
-            previous = r
+            for (j, i) in ring.enumerated() { angles[i] = Double(j) * 2 * .pi / Double(ring.count) }
         }
+        try placeRadialRings(a.nodes, depth: depth, angles: angles, minimumStep: layerSeparation)
         straightEdges(graph)
+        ObstaclePolyline.repair(graph)
+        try Task.checkCancellation()
     }
 }
 
@@ -95,13 +91,13 @@ public final class RadialStarLayoutAlgorithm: LayoutAlgorithm {
         guard let root = a.nodes.indices.max(by: { a.neighbors[$0].count == a.neighbors[$1].count ? $0 > $1 : a.neighbors[$0].count < a.neighbors[$1].count }) else { return }
         a.nodes[root].center = .zero
         let others = a.nodes.indices.filter { $0 != root }
-        let span = a.nodes.map { hypot($0.width, $0.height) }.max() ?? 0
-        let r = max(radius, Double(others.count) * (span + 20) / (2 * .pi))
-        for (j, i) in others.enumerated() {
-            let angle = Double(j) * 2 * .pi / Double(others.count)
-            a.nodes[i].center = Point(x: r * cos(angle), y: r * sin(angle))
-        }
+        var depth = Array(repeating: 1, count: a.nodes.count), angles = Array(repeating: 0.0, count: a.nodes.count)
+        depth[root] = 0
+        for (j, i) in others.enumerated() { angles[i] = Double(j) * 2 * .pi / Double(others.count) }
+        try placeRadialRings(a.nodes, depth: depth, angles: angles, minimumStep: radius)
         straightEdges(graph)
+        ObstaclePolyline.repair(graph)
+        try Task.checkCancellation()
     }
 }
 
@@ -113,19 +109,23 @@ public final class RadialTreeLayoutAlgorithm: LayoutAlgorithm {
         let a = Adjacency(graph), f = Forest(a)
         var cursor = 0.0
         for root in f.roots {
-            var component: [LayoutNode] = [], stack = [(root, 0.0, 2 * Double.pi)]
+            var indices: [Int] = [], angles = Array(repeating: 0.0, count: a.nodes.count)
+            var stack = [(root, 0.0, 2 * Double.pi)]
             while let (i, start, end) = stack.popLast() {
-                let angle = (start + end) / 2, r = Double(f.depth[i]) * layerDistance
-                a.nodes[i].center = Point(x: r * cos(angle), y: r * sin(angle)); component.append(a.nodes[i])
+                angles[i] = (start + end) / 2; indices.append(i)
                 let children = f.children[i], sweep = (end - start) / Double(max(1, children.count))
                 for (j, child) in children.enumerated().reversed() { stack.append((child, start + Double(j) * sweep, start + Double(j + 1) * sweep)) }
             }
+            let component = indices.map { a.nodes[$0] }
+            try placeRadialRings(component, depth: indices.map { f.depth[$0] }, angles: indices.map { angles[$0] }, minimumStep: layerDistance)
             let bounds = enclosingBounds(component)
             for node in component { node.x += cursor - bounds.x }
-            cursor += bounds.width + layerDistance
+            cursor += bounds.width + (layerDistance.isFinite ? max(20, layerDistance) : 100)
             try Task.checkCancellation()
         }
         straightEdges(graph)
+        ObstaclePolyline.repair(graph)
+        try Task.checkCancellation()
     }
 }
 
@@ -231,5 +231,34 @@ public final class TreeMapLayoutAlgorithm: LayoutAlgorithm {
                 else { child.bounds = Rect(x: inner.x, y: position, width: inner.width, height: inner.height * ratio); position += inner.height * ratio }
             }
         }
+    }
+}
+
+/// Circumscribed node circles provide clearance both within and between rings.
+private func placeRadialRings(_ nodes: [LayoutNode], depth: [Int], angles inputAngles: [Double], minimumStep: Double) throws {
+    guard let maximumDepth = depth.max() else { return }
+    let step = minimumStep.isFinite ? max(0, minimumStep) : 100
+    var previousRadius = 0.0, previousHalf = 0.0, angles = inputAngles
+    for d in 0...maximumDepth {
+        try Task.checkCancellation()
+        let ring = nodes.indices.filter { depth[$0] == d }
+        guard !ring.isEmpty else { continue }
+        let half = ring.map { hypot(nodes[$0].width, nodes[$0].height) / 2 }.max()!
+        var radius = d == 0 ? 0 : previousRadius + max(step, previousHalf + half + 20)
+        // Extremely deep sectors can collapse at floating-point precision.
+        if ring.count > 1 && ring.enumerated().contains(where: { offset, i in
+            ring.dropFirst(offset + 1).contains { abs(sin((angles[i] - angles[$0]) / 2)) < 1e-12 }
+        }) {
+            for (offset, i) in ring.enumerated() { angles[i] = Double(offset) * 2 * .pi / Double(ring.count) }
+        }
+        for (offset, i) in ring.enumerated() {
+            for j in ring.dropFirst(offset + 1) {
+                let chord = 2 * abs(sin((angles[i] - angles[j]) / 2))
+                let distance = (hypot(nodes[i].width, nodes[i].height) + hypot(nodes[j].width, nodes[j].height)) / 2 + 20
+                radius = max(radius, distance / chord)
+            }
+        }
+        for i in ring { nodes[i].center = Point(x: radius * cos(angles[i]), y: radius * sin(angles[i])) }
+        previousRadius = radius; previousHalf = half
     }
 }

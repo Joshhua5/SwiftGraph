@@ -104,6 +104,16 @@ See [Metal usage, guarantees and limits](docs/METAL.md). The older `AcceleratedO
 
 All 17 `LayoutPatternType` presets are available. Builder extensions also include grain swimlanes, importance-based and cluster-based layouts, routing suffixes and explicit composition helpers.
 
+Radial, radial-tree, and radial-star layouts account for measured node sizes when
+spacing rings and repair routes through unrelated nodes. Configured radial spacing
+is a minimum; large nodes can require a larger drawing.
+
+`SubgraphLayoutAlgorithm.avoidUnselectedNodes` defaults to `true`. When necessary,
+it translates the selected arrangement, owned paths, and labels as one unit to
+clear untouched nodes by ten units. Untouched nodes and unrelated paths remain
+exactly fixed. Clearance takes priority over `preserveCentroid`; disable
+`avoidUnselectedNodes` to retain the previous centroid-only placement behavior.
+
 ### Pinned nodes and analysis
 
 ```swift
@@ -118,7 +128,7 @@ try PageRankAlgorithm().applyLayout(graph)
 let score = target.metadata[GraphMetadataKeys.pageRank] as? Double
 ```
 
-`OrganicLayoutAlgorithm` preserves fixed nodes exactly and moves only selected nodes in subset scope. `BarycenterLayoutAlgorithm` also honors fixed nodes; other positioning algorithms can reposition them. Organic layout uses exact pair forces for fewer than 64 nodes and Barnes–Hut repulsion otherwise. Its positions and clustering results are deterministic for a fixed graph order.
+`OrganicLayoutAlgorithm` defaults to a deterministic quality search with size-aware separation and component packing. Use `OrganicLayoutAlgorithm(quality: .legacy)` (or `OrganicLayoutConfiguration(quality: .legacy)`) for the former force behavior and defaults. Quality mode prioritizes readability over latency; `initialization = .current` restricts candidate starts to supplied positions. See [organic quality controls and diagnostics](docs/ORGANIC.md). It preserves fixed nodes exactly and moves only selected nodes in subset scope. `BarycenterLayoutAlgorithm` also honors fixed nodes; other positioning algorithms can reposition them. Organic layout uses exact pair forces for fewer than 64 nodes and Barnes–Hut repulsion otherwise. Its positions and clustering results are deterministic for a fixed graph order.
 
 ## Routing
 
@@ -140,7 +150,16 @@ The routing algorithms follow their distinct Waring contracts:
 - **BSP:** routes follow bounded partition segments split at their intersections. Nested wrapper cuts extend to the appropriate parent partition, without extending through sibling bodies. Endpoints project from center-to-center boundary intersections onto the segment graph.
 - **Polyline:** a quadtree selects the first intersected obstacle, then two corner waypoints detour around it. This is the reference's local heuristic, not a multi-obstacle pathfinding guarantee.
 
-Only the channel router interprets port constraints and candidates. Channel, BSP and grouped searches retain the reference's direct-line fallback when no route is found; `unroutableEdges` identifies those fallbacks, whose paths remain populated. Polyline keeps that property for compatibility but always returns a heuristic path. No router silently changes clearance or tries alternative ports after its initial selection.
+Only the channel router interprets port constraints and candidates. Channel, BSP and grouped searches retain the reference's direct-line fallback when no route is found; `unroutableEdges` identifies those fallbacks, whose paths remain populated. Polyline keeps that property for compatibility and returns a heuristic path in its default legacy mode. Legacy routers do not silently change clearance or try alternative ports after their initial selection.
+
+`PolylineEdgeRouter.avoidAllObstacles = true` enables deterministic multi-obstacle
+search. It retains valid heuristic routes and repairs blocked ones using padded
+obstacle corners. Padding guides detours; nearby endpoints can limit the extra
+clearance beyond node bodies. If no route is available, the path is empty and the edge appears
+in `unroutableEdges`. The standalone default remains `false` for reference parity.
+Standard-tree, organization-chart, hybrid, and mind-map presets enable this mode.
+The mode retains the polyline router's endpoint/group exclusions and does not
+interpret ports. Clipping remains explicit.
 
 General routers preserve self-loops; route them last with `SelfLoopRouter`. `EdgeEndpointClipper.clipToNodeBounds` trims endpoints along the actual boundary-crossing segments, making it safe to run repeatedly. Most positioning algorithms emit center-to-center paths; clipping is an explicit rendering preparation step.
 
@@ -149,8 +168,23 @@ Bus, octilinear, parallel, bundling and smoothing routers provide visual styles,
 ### Labels
 
 Set `edge.labelBounds` to measured dimensions before `LabelLayoutAlgorithm.applyLabelLayout`. For simple text measurement, use `LabelPlacementAlgorithm`: it accepts a `String`, a dictionary with `Label`/`label`, a payload implementing `GraphLabelData`, or a custom `labelProvider` closure. It uses an approximate width of 8 units per character plus 10 units padding.
+Both label operations repair node and label collisions with deterministic candidates
+along route segments. Label optimization retains its best state and preserves
+measured sizes. Crowded drawings can still have unresolved collisions; the visual
+evaluator reports them explicitly.
 
 ## Tests
+
+Generate a visual gallery of layouts and routing, with PNG/SVG images, geometry
+diagnostics, and before/after comparisons:
+
+```sh
+swift run graph-layout-visual render --output .build/visual/run-01
+open .build/visual/run-01/index.html
+```
+
+See [visual evaluation and agent iteration](docs/VISUAL-EVALUATION.md) for case
+selection, baselines, comparison commands, and optional Metal cases.
 
 ```sh
 swift test

@@ -152,7 +152,7 @@ public extension LayoutBuilder {
         configure(value); return useAlgorithm(value)
     }
     @discardableResult func useStandardHierarchical(_ configure: (HierarchicalLayoutAlgorithm) -> Void = { _ in }) -> Self { useHierarchical(configure).routeSelfLoops() }
-    @discardableResult func useStandardOrganic(_ configure: (OrganicLayoutAlgorithm) -> Void = { _ in }) -> Self { useOrganic(configure).routePolyline().routeSelfLoops() }
+    @discardableResult func useStandardOrganic(_ configure: (OrganicLayoutAlgorithm) -> Void = { _ in }) -> Self { useOrganic(configure).routePolyline { $0.avoidAllObstacles = true }.routeSelfLoops { $0.avoidObstacles = true } }
     @discardableResult func useEdgeBundlingPattern() -> Self { routePolyline().routeWithBundling() }
     @discardableResult func clipEdgeEndpoints() -> Self { transform(EdgeEndpointClipper.clipToNodeBounds) }
     @discardableResult func placeLabels(_ configure: (LabelPlacementAlgorithm) -> Void = { _ in }) -> Self {

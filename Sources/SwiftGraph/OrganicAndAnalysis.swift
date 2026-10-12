@@ -82,19 +82,54 @@ public final class ForceQuadTree {
 public enum OrganicScope: Sendable { case all, subset }
 public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
     public typealias OrganicScope = SwiftGraph.OrganicScope
+    public let quality: OrganicLayoutQuality
+    public var initialization: OrganicInitialization = .automatic
+    public var nodeSeparation: Double = 20
     public var scope: OrganicScope = .all
-    public var iterations: Double = 100
+    public var iterations: Double
     public var initialTemperature: Double = 100
-    public var repulsionForce: Double = 2000
+    public var repulsionForce: Double
     public var attractionForce: Double = 0.05
-    public init() {}
+    public private(set) var lastDiagnostics: OrganicLayoutDiagnostics?
+    var preparedPositions = false
+    public init(quality: OrganicLayoutQuality = .quality) {
+        self.quality = quality
+        iterations = quality == .quality ? 600 : 100
+        repulsionForce = quality == .quality ? 100 : 2000
+    }
     public func applyLayout(_ graph: LayoutGraph) throws {
+        lastDiagnostics = nil
         try Task.checkCancellation()
+        if quality == .quality {
+            var configuration = OrganicLayoutConfiguration()
+            guard iterations.isFinite, iterations >= 0, iterations < Double(Int.max / 16) else {
+                throw LayoutExecutionError.invalidInput("Iterations must be finite and nonnegative.")
+            }
+            configuration.iterations = Int(ceil(iterations)); configuration.scope = scope
+            configuration.initialization = initialization; configuration.nodeSeparation = nodeSeparation
+            configuration.initialTemperature = initialTemperature
+            configuration.repulsionForce = repulsionForce; configuration.attractionForce = attractionForce
+            try configuration.validate()
+            let checkpoint = try GraphCheckpoint(graph)
+            var search = try OrganicQualitySearch(checkpoint.snapshot, configuration)
+            if configuration.iterations > 0 && search.fixed.contains(false) {
+                for start in search.starts() {
+                    for strength in [0.5, 1.0, 2.0] {
+                        let (input, candidate) = search.candidate(start, strength: strength)
+                        try search.consider(input.cpuOrganic(candidate))
+                    }
+                }
+            }
+            try Task.checkCancellation()
+            for i in graph.nodes.indices where !search.fixed[i] && configuration.iterations > 0 { graph.nodes[i].center = search.best[i] }
+            lastDiagnostics = search.diagnostics
+            return
+        }
         let a = Adjacency(graph), nodes = a.nodes
         guard !nodes.isEmpty, iterations > 0, iterations.isFinite else { return }
         let fixed = nodes.map { ($0.metadata[GraphMetadataKeys.fixed] as? Bool == true) || (scope == .subset && $0.metadata[GraphMetadataKeys.layoutSubset] as? Bool != true) }
         var positions = nodes.map(\.center), random = SeededRandom()
-        if nodes.allSatisfy({ $0.x == 0 && $0.y == 0 }) {
+        if !preparedPositions && nodes.allSatisfy({ $0.x == 0 && $0.y == 0 }) {
             for i in nodes.indices where !fixed[i] { positions[i] = Point(x: random.next() * 1000 + nodes[i].width / 2, y: random.next() * 1000 + nodes[i].height / 2) }
         }
         let tree = ForceQuadTree(), repulsionSquared = repulsionForce * repulsionForce
@@ -126,6 +161,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
             }
         }
         let offset = fixed.contains(true) ? Point.zero : Point(x: positions.map(\.x).min()!, y: positions.map(\.y).min()!)
+        try Task.checkCancellation()
         for i in nodes.indices where !fixed[i] { nodes[i].center = positions[i] - offset }
     }
 }

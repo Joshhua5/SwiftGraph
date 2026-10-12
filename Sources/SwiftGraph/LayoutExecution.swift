@@ -12,15 +12,26 @@ public enum LayoutExecutionError: Error, Equatable, Sendable {
 }
 
 public struct OrganicLayoutConfiguration: Sendable {
+    public let quality: OrganicLayoutQuality
+    public var initialization: OrganicInitialization = .automatic
+    public var nodeSeparation: Double = 20
     public var scope: OrganicScope = .all
-    public var iterations = 100
+    public var iterations: Int
     public var initialTemperature: Double = 100
-    public var repulsionForce: Double = 2_000
+    /// Nominal strength; quality mode compares half, nominal and double strength.
+    public var repulsionForce: Double
     public var attractionForce: Double = 0.05
-    public init() {}
+    var preparedPositions = false
+    public init(quality: OrganicLayoutQuality = .quality) {
+        self.quality = quality
+        iterations = quality == .quality ? 600 : 100
+        repulsionForce = quality == .quality ? 100 : 2000
+    }
     func validate() throws {
-        guard iterations >= 0, [initialTemperature, repulsionForce, attractionForce].allSatisfy({ $0.isFinite && $0 >= 0 }) else {
-            throw LayoutExecutionError.invalidInput("Iterations, temperature and forces must be nonnegative and finite.")
+        guard iterations >= 0, iterations < Int.max / 16,
+              [initialTemperature, repulsionForce, attractionForce, nodeSeparation].allSatisfy({ $0.isFinite && $0 >= 0 }),
+              (repulsionForce * repulsionForce * 4).isFinite else {
+            throw LayoutExecutionError.invalidInput("Iterations, temperature, forces and separation must be finite, nonnegative and within numerical range.")
         }
     }
 }
@@ -93,7 +104,8 @@ public actor LayoutExecutor {
         var chosen = backend, reason: LayoutFallbackReason?
         if snapshot.nodes.isEmpty || configuration.iterations == 0 || fixed.allSatisfy({ $0 }) {
             return OrganicResult(centers: snapshot.nodes.map { $0.bounds.center }, fixed: fixed,
-                                 metrics: metrics(backend, .cpu, .noWork, snapshot, configuration, start))
+                                 metrics: metrics(backend, .cpu, .noWork, snapshot, configuration, start),
+                                 diagnostics: configuration.quality == .quality ? try OrganicQualitySearch(snapshot, configuration).diagnostics : nil)
         }
         if backend == .automatic {
             if snapshot.nodes.count < options.minimumNodeCount || configuration.iterations < options.minimumIterations {
@@ -101,6 +113,15 @@ public actor LayoutExecutor {
             } else if !metalEnabled || !Self.isMetalAvailable {
                 chosen = .cpu; reason = .metalUnavailable
             } else { chosen = .metal }
+        }
+        if configuration.quality == .quality {
+            do {
+                return try await qualityOrganic(snapshot, configuration: configuration, requested: backend, actual: chosen, reason: reason, start: start)
+            } catch LayoutExecutionError.precisionLimit where backend == .automatic {
+                return try await qualityOrganic(snapshot, configuration: configuration, requested: backend, actual: .cpu, reason: .precisionLimit, start: start)
+            } catch OrganicLayoutError.metalUnavailable where backend == .automatic {
+                return try await qualityOrganic(snapshot, configuration: configuration, requested: backend, actual: .cpu, reason: .metalUnavailable, start: start)
+            }
         }
         var centers: [Point]
         var gpuTime: Double?
@@ -147,6 +168,38 @@ public actor LayoutExecutor {
         return OrganicResult(centers: centers, fixed: fixed,
             metrics: metrics(backend, chosen, reason, snapshot, configuration, start, gpu: gpuTime, device: deviceName))
     }
+    private func qualityOrganic(_ snapshot: GeometrySnapshot, configuration: OrganicLayoutConfiguration,
+                                requested: LayoutBackend, actual: LayoutBackend, reason: LayoutFallbackReason?,
+                                start: ContinuousClock.Instant) async throws -> OrganicResult {
+        var search = try OrganicQualitySearch(snapshot, configuration)
+        let starts = search.starts()
+        // Reject predictable precision failures before submitting any candidate. Automatic
+        // fallback therefore does not discard successful GPU solves from timing/iteration totals.
+        if actual == .metal {
+            for positions in starts {
+                for strength in [0.5, 1.0, 2.0] {
+                    try Task.checkCancellation()
+                    let (input, candidate) = search.candidate(positions, strength: strength)
+                    _ = try input.prepareMetal(configuration: candidate, fixed: search.fixed, tolerance: options.maximumCoordinateError)
+                }
+            }
+        }
+        var gpu: Double?, device: String?
+        for positions in starts {
+            for strength in [0.5, 1.0, 2.0] {
+                try Task.checkCancellation()
+                let (input, candidate) = search.candidate(positions, strength: strength)
+                let result = try await organic(input, configuration: candidate, backend: actual)
+                if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
+                device = result.metrics.deviceName
+                try search.consider(result.centers)
+            }
+        }
+        try Task.checkCancellation()
+        return OrganicResult(centers: search.best, fixed: search.fixed,
+                             metrics: metrics(requested, actual, reason, snapshot, configuration, start, gpu: gpu, device: device),
+                             diagnostics: search.diagnostics)
+    }
     private func metrics(_ requested: LayoutBackend, _ actual: LayoutBackend, _ reason: LayoutFallbackReason?,
                          _ snapshot: GeometrySnapshot, _ configuration: OrganicLayoutConfiguration, _ start: ContinuousClock.Instant,
                          gpu: Double? = nil, device: String? = nil) -> LayoutExecutionMetrics {
@@ -163,11 +216,12 @@ public final class OrganicLayoutOperation: AsyncLayoutAlgorithm {
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
     public private(set) var lastMetrics: LayoutExecutionMetrics?
+    public private(set) var lastDiagnostics: OrganicLayoutDiagnostics?
     public init(backend: LayoutBackend, executor: LayoutExecutor = .shared, configuration: OrganicLayoutConfiguration = .init()) {
         self.backend = backend; self.executor = executor; self.configuration = configuration
     }
     public func applyLayoutAsync(_ graph: LayoutGraph) async throws {
-        lastMetrics = nil
+        lastMetrics = nil; lastDiagnostics = nil
         let start = ContinuousClock.now
         let configuration = self.configuration
         try Task.checkCancellation(); try configuration.validate()
@@ -179,7 +233,7 @@ public final class OrganicLayoutOperation: AsyncLayoutAlgorithm {
             graph.nodes[i].center = result.centers[i]
         }
         var metrics = result.metrics; metrics.totalSeconds = start.duration(to: .now).seconds
-        lastMetrics = metrics
+        lastMetrics = metrics; lastDiagnostics = result.diagnostics
     }
 }
 public extension LayoutBuilder {
@@ -195,6 +249,7 @@ struct OrganicResult: Sendable {
     var centers: [Point]
     var fixed: [Bool]
     var metrics: LayoutExecutionMetrics
+    var diagnostics: OrganicLayoutDiagnostics? = nil
 }
 struct GeometrySnapshot: Sendable {
     struct Node: Sendable, Equatable { var bounds: Rect; var fixed: Bool; var selected: Bool }
@@ -215,7 +270,9 @@ struct GeometrySnapshot: Sendable {
     }
     func cpuOrganic(_ configuration: OrganicLayoutConfiguration) throws -> [Point] {
         let graph = makeGraph()
-        let algorithm = OrganicLayoutAlgorithm()
+        let algorithm = OrganicLayoutAlgorithm(quality: configuration.quality)
+        algorithm.preparedPositions = configuration.preparedPositions
+        algorithm.initialization = configuration.initialization; algorithm.nodeSeparation = configuration.nodeSeparation
         algorithm.scope = configuration.scope; algorithm.iterations = Double(configuration.iterations)
         algorithm.initialTemperature = configuration.initialTemperature
         algorithm.repulsionForce = configuration.repulsionForce; algorithm.attractionForce = configuration.attractionForce
@@ -224,7 +281,7 @@ struct GeometrySnapshot: Sendable {
     }
     func prepareMetal(configuration: OrganicLayoutConfiguration, fixed: [Bool], tolerance: Double) throws -> (state: ForceState, origin: Point) {
         var centers = nodes.map { $0.bounds.center }
-        if nodes.allSatisfy({ $0.bounds.x == 0 && $0.bounds.y == 0 }) {
+        if !configuration.preparedPositions && nodes.allSatisfy({ $0.bounds.x == 0 && $0.bounds.y == 0 }) {
             var random = SeededRandom()
             for i in nodes.indices where !fixed[i] {
                 centers[i] = Point(x: random.next() * 1_000 + nodes[i].bounds.width / 2,

@@ -98,11 +98,12 @@ enum DirectedGeometry {
 final class DirectedRouter {
     let nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>
     let edgeIndices: [LayoutEdge: Int], configuration: DirectedLayoutConfiguration, pitch: Double
-    let bodies: [Rect], obstacles: [Rect]
+    var bodies: [Rect], obstacles: [Rect]
     var occupied: [DirectedGeometry.Segment] = []
     var ports: [LayoutEdge: (Point, Point, Point, Point)] = [:]
     let clearance: Double
     let trackClearance: Double
+    private var coordinated = false
 
     init(nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>, edgeIndices: [LayoutEdge: Int], configuration: DirectedLayoutConfiguration, pitch: Double) {
         self.nodes = nodes; self.edges = edges; self.feedback = feedback; self.edgeIndices = edgeIndices
@@ -114,15 +115,32 @@ final class DirectedRouter {
         obstacles = nodes.map { $0.bounds.inflated(by: padding) }
     }
 
-    func route() throws {
+    func route(coordinated: Bool = true) throws {
+        self.coordinated = coordinated && configuration.mode == .fresh
+        assignPorts()
+        var channels: [LayoutEdge: [Point]]
+        if self.coordinated {
+            let priorX = Dictionary(uniqueKeysWithValues: nodes.map { ($0, $0.center.x) })
+            let plan = DirectedChannelPlan(nodes: nodes, edges: edges, feedback: feedback, ports: ports,
+                edgeIndices: edgeIndices, clearance: clearance, spacing: max(6, trackClearance + 2))
+            channels = try plan.apply(minimumGap: configuration.layerSpacing)
+            for edge in edges {
+                var p = ports[edge]!
+                p.0.x += edge.source.center.x - priorX[edge.source]!
+                p.1.x += edge.target.center.x - priorX[edge.target]!
+                ports[edge] = p
+            }
+            bodies = nodes.map(\.bounds)
+            obstacles = bodies.map { $0.inflated(by: clearance) }
+        } else { channels = hierarchyPaths() }
         let guides = edges.map(\.path)
-        try routePass(reverse: false)
+        try routePass(reverse: false, channelPaths: channels)
         let missing = edges.filter { $0.path.isEmpty }.count
         guard missing > 0 else { return }
         let first = edges.map(\.path)
         for (edge, guide) in zip(edges, guides) { edge.path = guide }
         occupied.removeAll(keepingCapacity: true)
-        try routePass(reverse: true)
+        try routePass(reverse: true, channelPaths: channels)
         if edges.filter({ $0.path.isEmpty }).count > missing {
             for (edge, path) in zip(edges, first) { edge.path = path }
         }
@@ -178,9 +196,66 @@ final class DirectedRouter {
         }
     }
 
-    private func routePass(reverse: Bool) throws {
-        assignPorts()
-        let channelPaths = hierarchyPaths()
+    /// Bounded rip-up and reroute of the worst remaining paths. Unlike the initial
+    /// pass, each trial sees every other route. Endpoint approaches stay fixed and
+    /// acceptance is Pareto-monotone in crossings, bends and Manhattan length.
+    func improveWorstRoutes() throws {
+        coordinated = true
+        for _ in 0..<2 {
+            var changed = false
+            let worst = edges.filter { $0.path.count > 3 }.sorted {
+                if $0.path.count != $1.path.count { return $0.path.count > $1.path.count }
+                return edgeIndices[$0]! < edgeIndices[$1]!
+            }.prefix(16)
+            for edge in worst {
+                try Task.checkCancellation()
+                let original = edge.path
+                let others = edges.filter { $0 !== edge }.map { DirectedGeometry.segments($0.path) }
+                occupied = others.flatMap { $0 }
+                let nonEndpoints = nodes.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: clearance) }
+                func quality(_ path: [Point]) -> (crossings: Int, bends: Int, length: Double)? {
+                    let segments = DirectedGeometry.segments(path)
+                    guard path.count >= 2, segments.allSatisfy({ DirectedGeometry.clear($0.a, $0.b, bodies: bodies)
+                        && DirectedGeometry.clear($0.a, $0.b, bodies: nonEndpoints) }) else { return nil }
+                    var crossings = 0
+                    for route in others {
+                        var hits: Set<Point> = []
+                        for a in segments { for b in route {
+                            if DirectedGeometry.shared(a, b) || DirectedGeometry.nearShared(a, b, spacing: trackClearance) { return nil }
+                            if let p = DirectedGeometry.crossing(a, b) { hits.insert(p) }
+                        } }
+                        crossings += hits.count
+                    }
+                    return (crossings, max(0, path.count - 2), segments.reduce(0) { $0 + $1.length })
+                }
+                guard var score = quality(original) else { continue }
+                let start = original[0], end = original.last!
+                let u = original[1] - start, v = original[original.count - 2] - end
+                let escape = start + u / u.length * min(clearance, u.length)
+                let entry = end + v / v.length * min(clearance, v.length)
+                var best = original
+                func consider(_ middle: [Point]) {
+                    guard zip(middle, middle.dropFirst()).allSatisfy({ DirectedGeometry.clear($0, $1, bodies: obstacles) }) else { return }
+                    let candidate = DirectedGeometry.compact([start] + middle + [end])
+                    guard let next = quality(candidate), next.crossings <= score.crossings, next.bends <= score.bends,
+                          next.length <= score.length + DirectedGeometry.epsilon,
+                          next.crossings < score.crossings || next.bends < score.bends || next.length < score.length - DirectedGeometry.epsilon else { return }
+                    best = candidate; score = next
+                }
+                let xs = Array(Set(original.map(\.x) + [(escape.x + entry.x) / 2])).sorted()
+                let ys = Array(Set(original.map(\.y) + [(escape.y + entry.y) / 2] + exteriorLanes(from: escape, to: entry))).sorted()
+                for x in xs { consider([escape, Point(x: x, y: escape.y), Point(x: x, y: entry.y), entry]) }
+                for y in ys { consider([escape, Point(x: escape.x, y: y), Point(x: entry.x, y: y), entry]) }
+                if best == original, let repaired = try search(from: escape, to: entry, ordinal: edgeIndices[edge]!, visitLimit: 4096) {
+                    consider(repaired)
+                }
+                if best != original { edge.path = best; changed = true }
+            }
+            if !changed { break }
+        }
+    }
+
+    private func routePass(reverse: Bool, channelPaths: [LayoutEdge: [Point]]) throws {
         var retained: Set<LayoutEdge> = []
         if configuration.mode != .fresh {
             for edge in edges {
@@ -238,11 +313,15 @@ final class DirectedRouter {
             for y in ys { add([escape, Point(x: escape.x, y: y), Point(x: entry.x, y: y), entry]) }
             // Feedback and loops get independent exterior lanes; no diagonal loop shortcut.
             if sd.y != 0 || td.y != 0 || candidates.isEmpty {
-                let top = (obstacles.map(\.top).min() ?? 0) - clearance - Double(ordinal) * pitch
-                let bottom = (obstacles.map(\.bottom).max() ?? 0) + clearance + Double(ordinal) * pitch
-                for y in [top, bottom] { add([escape, Point(x: escape.x, y: y), Point(x: entry.x, y: y), entry]) }
+                let lanes: [Double]
+                if coordinated { lanes = exteriorLanes(from: escape, to: entry) }
+                else {
+                    lanes = [(obstacles.map(\.top).min() ?? 0) - clearance - Double(ordinal) * pitch,
+                             (obstacles.map(\.bottom).max() ?? 0) + clearance + Double(ordinal) * pitch]
+                }
+                for y in lanes { add([escape, Point(x: escape.x, y: y), Point(x: entry.x, y: y), entry]) }
             }
-            if let guided { candidates = [guided] }
+            if !coordinated, let guided { candidates = [guided] }
             var best: [Point]?, bestCost = Double.infinity
             for candidate in candidates {
                 let cost = pathCost(candidate)
@@ -255,6 +334,24 @@ final class DirectedRouter {
             }
             edge.path = best ?? []
             occupied += DirectedGeometry.segments(edge.path)
+        }
+    }
+
+    /// Only obstacles and occupied runs within this edge's horizontal span consume
+    /// outer lanes. Unrelated edges elsewhere cannot push a feedback route outward.
+    private func exteriorLanes(from start: Point, to end: Point) -> [Double] {
+        let left = min(start.x, end.x), right = max(start.x, end.x)
+        let local = obstacles.filter { $0.right >= left && $0.left <= right }
+        let top = min(start.y, end.y, local.map(\.top).min() ?? start.y) - clearance
+        let bottom = max(start.y, end.y, local.map(\.bottom).max() ?? start.y) + clearance
+        return [(top, -1.0), (bottom, 1.0)].map { initial, direction in
+            var y = initial
+            for _ in 0...occupied.count {
+                let line = DirectedGeometry.Segment(a: Point(x: left, y: y), b: Point(x: right, y: y))
+                if !occupied.contains(where: { DirectedGeometry.nearShared(line, $0, spacing: trackClearance, minimumLength: 0) }) { break }
+                y += direction * max(6, trackClearance + 2)
+            }
+            return y
         }
     }
 
@@ -448,14 +545,15 @@ final class DirectedRouter {
         return (horizontal, vertical)
     }
 
-    private func search(from start: Point, to end: Point, ordinal: Int, occupiedCoordinates: Bool = false) throws -> [Point]? {
+    private func search(from start: Point, to end: Point, ordinal: Int, occupiedCoordinates: Bool = false, visitLimit: Int? = nil) throws -> [Point]? {
         // A small edge-specific offset provides alternate tracks without sharing obstacle outlines.
-        let offset = 1 + Double(ordinal + 1) * 0.1875
+        let offset = coordinated ? 1 : 1 + Double(ordinal + 1) * 0.1875
         let extraX = occupiedCoordinates ? occupied.filter { !$0.horizontal }.flatMap { [$0.a.x - trackClearance, $0.a.x + trackClearance] } : []
         let extraY = occupiedCoordinates ? occupied.filter(\.horizontal).flatMap { [$0.a.y - trackClearance, $0.a.y + trackClearance] } : []
         let xs = Array(Set(obstacles.flatMap { [$0.left - offset, $0.right + offset] } + [start.x, end.x] + extraX)).sorted()
         let ys = Array(Set(obstacles.flatMap { [$0.top - offset, $0.bottom + offset] } + [start.y, end.y] + extraY)).sorted()
         let width = xs.count, height = ys.count
+        if visitLimit != nil && width * height > 65_536 { return nil }
         let first = ys.firstIndex(of: start.y)! * width + xs.firstIndex(of: start.x)!
         let last = ys.firstIndex(of: end.y)! * width + xs.firstIndex(of: end.x)!
         func point(_ cell: Int) -> Point { Point(x: xs[cell % width], y: ys[cell / width]) }
@@ -470,6 +568,7 @@ final class DirectedRouter {
         var visited = 0
         while let current = queue.pop() {
             visited += 1
+            if let visitLimit, visited > visitLimit { return nil }
             if visited % 128 == 0 { try Task.checkCancellation() }
             if closed[current] { continue }; closed[current] = true
             let cell = current / 3, direction = current % 3

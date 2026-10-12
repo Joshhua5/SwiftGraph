@@ -60,11 +60,41 @@ public enum EdgeEndpointClipper {
 public final class SelfLoopRouter: EdgeRouter {
     public var loopWidth: Double = 60
     public var loopHeight: Double = 60
+    /// Try alternate sides and smaller loops when a compact layout blocks the legacy top loop.
+    public var avoidObstacles = false
+    public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
+        unroutableEdges = []
         for edge in graph.edges where edge.source === edge.target {
             let r = edge.source.bounds, half = loopWidth / 2, y = r.y - loopHeight
             edge.path = [Point(x: r.center.x - half * 0.4, y: r.y), Point(x: r.center.x - half, y: y), Point(x: r.center.x + half, y: y), Point(x: r.center.x + half * 0.4, y: r.y)]
+            guard avoidObstacles else { continue }
+            let obstacles = ObstaclePolyline.obstacles(edge, graph)
+            if ObstaclePolyline.clear(edge.path, obstacles) { continue }
+            var result: [Point]?
+            for scale in [1.0, 0.5, 0.25, 0.125] {
+                for side in 0..<4 {
+                    let horizontal = side % 2 == 0
+                    let extent = horizontal ? r.width : r.height
+                    let h = min(max(1, loopWidth * scale / 2), extent / 2)
+                    let depth = max(1, loopHeight * scale)
+                    let offsets = [-h * 0.4, -h, h, h * 0.4]
+                    let path = offsets.enumerated().map { i, offset -> Point in
+                        let outside = i == 1 || i == 2 ? depth : 0
+                        switch side {
+                        case 0: return Point(x: r.center.x + offset, y: r.top - outside)
+                        case 1: return Point(x: r.right + outside, y: r.center.y + offset)
+                        case 2: return Point(x: r.center.x - offset, y: r.bottom + outside)
+                        default: return Point(x: r.left - outside, y: r.center.y - offset)
+                        }
+                    }
+                    if ObstaclePolyline.clear(path, obstacles) { result = path; break }
+                }
+                if result != nil { break }
+            }
+            edge.path = result ?? []
+            if result == nil { unroutableEdges.append(edge) }
         }
     }
 }
