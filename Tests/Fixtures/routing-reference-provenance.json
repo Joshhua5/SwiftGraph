@@ -1,0 +1,21 @@
+{
+  "framework": "net10.0",
+  "fixtures": 98,
+  "sourceSHA256": {
+    "Point.cs": "346e4022e2615c9734da9ab301e3fc727d64568a42539c82a3f145584db41e06",
+    "Size.cs": "e90146f13b06d544c8fb1ef7d24eb80ef61a2fe00a8c915412d1bd1edb9f542e",
+    "Rect.cs": "4017c5915088f8b8e7da21b2fa670d283b3f3358b9f9d9dd349063cf5b6d81f8",
+    "LayoutNode.cs": "4783ee57d1e88deddaceaf34ca5e21abf0017182e909e248b9ecd8afd75b4df1",
+    "LayoutEdge.cs": "b33626701e9a00e3e597b93fa7ea7975ac170a8a01b0bedb38a709e4da030ab1",
+    "LayoutGraph.cs": "7c1b056686a12f3f31ad14e4f64bcd0b0ccd621e653b3aec94edcef9a9d78aa2",
+    "IEdgeRouter.cs": "74845dacb7958df510d05d5708fa2b26ec469132b6bf90dd5554b6294a2c981c",
+    "QuadTree.cs": "19c5f923a4cd20aae928670a59c61bc68a8dafe106b56e5405f74200b3b2741e",
+    "EdgeRouter/ChannelEdgeRouter.cs": "ee8f43eea0cf35018476dae0f51d562ef448bb1b2414a1197b398fe469a92d89",
+    "EdgeRouter/PolylineEdgeRouter.cs": "593bb2efe4e77a739dd4a05cff2d2dcd21310351f3bb4b7db17bd04daac29136",
+    "EdgeRouter/BspEdgeRouter.cs": "19784c33eecb4af626253c606b7c45afe3ad46ab847974266671589d27e9db8e",
+    "EdgeRouter/BspGridCalculator.cs": "068f92ddc64aa20a98bd6156d6bcc8a480b3f20c18900224b0c8d367c6c1404d",
+    "EdgeRouter/BspTreeNode.cs": "d655ff07f302d91f0c672c6faf3041ddfa1003ffc2841bcdb17c1202a573fa19",
+    "EdgeRouter/ChannelGridCalculator.cs": "0cedcc1cd05efaa31728efa3eb47cca78b3da3e1cda3ea29103ef41ec0097826",
+    "EdgeRouter/OrthogonalGroupedEdgeRouter.cs": "60218d9185a25e675ea5b93532b910c9455f6aef000e53bd92e65fcec38f6640"
+  }
+}

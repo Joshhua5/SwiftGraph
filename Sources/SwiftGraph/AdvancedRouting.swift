@@ -1,44 +1,5 @@
 import Foundation
 
-public final class BspEdgeRouter: EdgeRouter {
-    public private(set) var unroutableEdges: [LayoutEdge] = []
-    public init() {}
-    public func routeEdges(_ graph: LayoutGraph) {
-        let calculator = BspGridCalculator(); calculator.buildTree(graph)
-        let search = OrthogonalSearch()
-        unroutableEdges = []
-        for e in graph.edges where e.source !== e.target {
-            let grid = calculator.mergeGrids(calculator.getGlobalGrid(), calculator.getLocalGrid(e.source), calculator.getLocalGrid(e.target))
-            search.extraX = grid.xChannels.map(Double.init); search.extraY = grid.yChannels.map(Double.init)
-            if let path = search.route(e, in: graph) { e.path = path }
-            else { e.path = []; unroutableEdges.append(e) }
-        }
-    }
-}
-
-public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
-    public var bundleSpacing: Double = 4
-    public var obstacleMargin: Double = 10
-    public var bendPenalty: Double = 100
-    public private(set) var unroutableEdges: [LayoutEdge] = []
-    public init() {}
-    public func routeEdges(_ graph: LayoutGraph) {
-        let calculator = ChannelGridCalculator(); calculator.buildChannels(graph.root)
-        let search = OrthogonalSearch(); search.margin = max(0, obstacleMargin); search.bendPenalty = bendPenalty
-        var count: [LayoutNode: Int] = [:], used: [LayoutNode: Int] = [:]
-        for e in graph.edges where e.source !== e.target { count[e.source, default: 0] += 1 }
-        unroutableEdges = []
-        for e in graph.edges where e.source !== e.target {
-            let grid = calculator.getGrid(e.source.parent ?? graph.root)
-            search.extraX = grid.xChannels.map(Double.init); search.extraY = grid.yChannels.map(Double.init)
-            let offset = (Double(used[e.source, default: 0]) - Double(count[e.source, default: 1] - 1) / 2) * bundleSpacing
-            used[e.source, default: 0] += 1
-            if let path = search.route(e, in: graph, offset: offset) { e.path = path }
-            else { e.path = []; unroutableEdges.append(e) }
-        }
-    }
-}
-
 public final class EdgeBundlingRouter: EdgeRouter {
     public var iterations = 30
     public var segments = 10
