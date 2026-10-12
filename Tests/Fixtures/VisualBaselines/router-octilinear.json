@@ -1,0 +1,312 @@
+{
+  "configuration" : {
+    "input" : "diagonal tree edges",
+    "pipeline" : "router → self-loops → clip",
+    "router" : "octilinear"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : false,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 634,
+          "y" : 366
+        },
+        {
+          "x" : 562.1320343559643,
+          "y" : 437.86796564403573
+        },
+        {
+          "x" : 562.1320343559643,
+          "y" : 542.1320343559643
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 634,
+          "y" : 366
+        },
+        {
+          "x" : 374,
+          "y" : 626
+        }
+      ],
+      "source" : "n0",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 509.63203435596427,
+          "y" : 562.1320343559643
+        },
+        {
+          "x" : 215.36796564403576,
+          "y" : 562.1320343559643
+        }
+      ],
+      "source" : "n1",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 542.1320343559643,
+          "y" : 542.1320343559643
+        },
+        {
+          "x" : 350.00000000000006,
+          "y" : 350.00000000000006
+        },
+        {
+          "x" : 90,
+          "y" : 350.00000000000006
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 326,
+          "y" : 626
+        },
+        {
+          "x" : 137.8679656440357,
+          "y" : 437.86796564403573
+        },
+        {
+          "x" : 137.8679656440357,
+          "y" : 161.86796564403576
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 350,
+          "y" : 626
+        },
+        {
+          "x" : 349.99999999999994,
+          "y" : 66
+        }
+      ],
+      "source" : "n2",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 153.86796564403576,
+          "y" : 546.1320343559643
+        },
+        {
+          "x" : 542.1320343559642,
+          "y" : 157.8679656440357
+        }
+      ],
+      "source" : "n3",
+      "target" : "n7",
+      "width" : 1.5
+    }
+  ],
+  "family" : "routing",
+  "fixedCenters" : {
+
+  },
+  "id" : "router-octilinear",
+  "measuredMetrics" : {
+    "bends" : 3,
+    "crossings" : 7,
+    "displacement" : 0,
+    "drawingHeight" : 689.5,
+    "drawingWidth" : 729.5,
+    "edgeNodeIntersections" : 0,
+    "edges" : 7,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 8,
+    "routeLength" : 3050.7232303649735,
+    "sharedSegments" : 1
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 610,
+        "y" : 334
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 509.63203435596427,
+        "y" : 542.1320343559643
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 285,
+        "y" : 626
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 60.36796564403576,
+        "y" : 546.1320343559643
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 10,
+        "y" : 330.00000000000006
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 85.3679656440357,
+        "y" : 113.86796564403576
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 284.99999999999994,
+        "y" : 34
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 484.63203435596415,
+        "y" : 117.8679656440357
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    }
+  ],
+  "notes" : [
+    "Only channel interprets ports. Styling routers do not guarantee obstacle clearance."
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "octilinear · diagonal tree edges",
+  "version" : 1
+}

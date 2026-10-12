@@ -1,0 +1,697 @@
+{
+  "configuration" : {
+    "input" : "dag",
+    "layout" : "barycenter",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → polyline → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : false,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -48.97845726198749,
+          "y" : -48
+        },
+        {
+          "x" : 36.22307157748436,
+          "y" : -4.055555555555555
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 127.5,
+          "y" : 18.094784781822366
+        },
+        {
+          "x" : 244.65277777777777,
+          "y" : 22.89322942356384
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 244.65277777777777,
+          "y" : 38.79431983824705
+        },
+        {
+          "x" : 131.80804890661938,
+          "y" : 61.777777777777786
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 242.91666666666666,
+          "y" : 64.82952834922229
+        },
+        {
+          "x" : 293.33333333333337,
+          "y" : 55.39885432346546
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 127.5,
+          "y" : 30.285462278285248
+        },
+        {
+          "x" : 234.65277777777777,
+          "y" : 59.55555555555556
+        },
+        {
+          "x" : 384.65277777777777,
+          "y" : 59.55555555555556
+        },
+        {
+          "x" : 373.33333333333337,
+          "y" : 56.988385205232305
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 293.33333333333337,
+          "y" : 48.52134312126155
+        },
+        {
+          "x" : 77.91666666666666,
+          "y" : 51.777777777777786
+        },
+        {
+          "x" : 252.91666666666666,
+          "y" : 51.777777777777786
+        },
+        {
+          "x" : 208.62598094170403,
+          "y" : 77.33333333333334
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 297.58911730032423,
+          "y" : 49.55555555555556
+        },
+        {
+          "x" : 283.33333333333337,
+          "y" : 77.91666666666666
+        },
+        {
+          "x" : 383.33333333333337,
+          "y" : 77.91666666666666
+        },
+        {
+          "x" : 219.53125,
+          "y" : 95.64973111806727
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 219.53125,
+          "y" : 98.58351254480287
+        },
+        {
+          "x" : 320,
+          "y" : 93.32120669056152
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 242.91666666666666,
+          "y" : 69.27769402568399
+        },
+        {
+          "x" : 320,
+          "y" : 80.4747906197655
+        }
+      ],
+      "source" : "n3",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 320,
+          "y" : 105.61526307149306
+        },
+        {
+          "x" : 250.98958333333334,
+          "y" : 122.2824427480916
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 293.33333333333337,
+          "y" : 51.31115790272403
+        },
+        {
+          "x" : 104.53125,
+          "y" : 67.33333333333334
+        },
+        {
+          "x" : 229.53125,
+          "y" : 67.33333333333334
+        },
+        {
+          "x" : 188.70451546003017,
+          "y" : 121
+        }
+      ],
+      "source" : "n4",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 250.98958333333334,
+          "y" : 129.74511873350923
+        },
+        {
+          "x" : 337.9861111111111,
+          "y" : 117.11111111111111
+        },
+        {
+          "x" : 487.9861111111111,
+          "y" : 117.11111111111111
+        },
+        {
+          "x" : 441.1458333333333,
+          "y" : 122.22027855524458
+        }
+      ],
+      "source" : "n7",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 219.53125,
+          "y" : 106.99562476826104
+        },
+        {
+          "x" : 361.1458333333333,
+          "y" : 122.26920652576938
+        }
+      ],
+      "source" : "n5",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 361.1458333333333,
+          "y" : 129.7620708748616
+        },
+        {
+          "x" : 87.60416666666669,
+          "y" : 151.5
+        },
+        {
+          "x" : 262.6041666666667,
+          "y" : 151.5
+        },
+        {
+          "x" : 232.98611111111111,
+          "y" : 156.06856941508104
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 320,
+          "y" : 103.37656158785755
+        },
+        {
+          "x" : 87.60416666666669,
+          "y" : 151.5
+        },
+        {
+          "x" : 262.6041666666667,
+          "y" : 151.5
+        },
+        {
+          "x" : 232.98611111111111,
+          "y" : 156.06856941508104
+        }
+      ],
+      "source" : "n6",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e15",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 127.98611111111111,
+          "y" : 157.00704049844236
+        },
+        {
+          "x" : 87.60416666666669,
+          "y" : 151.5
+        },
+        {
+          "x" : 262.6041666666667,
+          "y" : 151.5
+        },
+        {
+          "x" : 347.9861111111111,
+          "y" : 149.008132584212
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e16",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 250.98958333333334,
+          "y" : 149.54294928173556
+        },
+        {
+          "x" : 347.9861111111111,
+          "y" : 160.2350320857357
+        }
+      ],
+      "source" : "n7",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e17",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 347.9861111111111,
+          "y" : 156.5979284369115
+        },
+        {
+          "x" : 252.60416666666669,
+          "y" : 170.51902202343587
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e18",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 371.1458333333333,
+          "y" : 150.58333333333334
+        },
+        {
+          "x" : 337.9861111111111,
+          "y" : 177.11111111111111
+        },
+        {
+          "x" : 487.9861111111111,
+          "y" : 177.11111111111111
+        },
+        {
+          "x" : 252.60416666666669,
+          "y" : 183.42209521695705
+        }
+      ],
+      "source" : "n8",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "refinement",
+  "fixedCenters" : {
+    "n0" : {
+      "x" : -80,
+      "y" : -64
+    }
+  },
+  "id" : "layout-barycenter",
+  "measuredMetrics" : {
+    "bends" : 18,
+    "crossings" : 18,
+    "displacement" : 0,
+    "drawingHeight" : 339,
+    "drawingWidth" : 657.4861111111111,
+    "edgeNodeIntersections" : 13,
+    "edges" : 19,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 7,
+    "nodes" : 12,
+    "routeLength" : 4293.950489830088,
+    "sharedSegments" : 4
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : -120,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 22.5,
+        "y" : -4.055555555555555
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 244.65277777777777,
+        "y" : 1.5555555555555536
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 87.91666666666666,
+        "y" : 61.777777777777786
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 293.33333333333337,
+        "y" : 27.916666666666664
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 114.53125,
+        "y" : 77.33333333333334
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 320,
+        "y" : 73.91666666666666
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 95.98958333333334,
+        "y" : 121
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 361.1458333333333,
+        "y" : 102.58333333333334
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 127.98611111111111,
+        "y" : 148.16666666666666
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 347.9861111111111,
+        "y" : 127.11111111111111
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 97.60416666666669,
+        "y" : 161.5
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "barycenter · mixed sizes",
+  "version" : 1
+}

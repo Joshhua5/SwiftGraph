@@ -1,0 +1,758 @@
+{
+  "configuration" : {
+    "input" : "dag",
+    "layout" : "orthogonal",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 173.75,
+          "y" : 16
+        },
+        {
+          "x" : 173.75,
+          "y" : 20
+        },
+        {
+          "x" : 255,
+          "y" : 20
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 360,
+          "y" : 20
+        },
+        {
+          "x" : 441.25,
+          "y" : 20
+        },
+        {
+          "x" : 441.25,
+          "y" : 24
+        },
+        {
+          "x" : 510,
+          "y" : 24
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 640,
+          "y" : 24
+        },
+        {
+          "x" : 708.75,
+          "y" : 24
+        },
+        {
+          "x" : 708.75,
+          "y" : 16
+        },
+        {
+          "x" : 765,
+          "y" : 16
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 765,
+          "y" : 16
+        },
+        {
+          "x" : 441.25,
+          "y" : 16
+        },
+        {
+          "x" : 441.25,
+          "y" : 168
+        },
+        {
+          "x" : 80,
+          "y" : 168
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 255,
+          "y" : 20
+        },
+        {
+          "x" : 173.75,
+          "y" : 20
+        },
+        {
+          "x" : 173.75,
+          "y" : 168
+        },
+        {
+          "x" : 80,
+          "y" : 168
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 168
+        },
+        {
+          "x" : 173.75,
+          "y" : 168
+        },
+        {
+          "x" : 173.75,
+          "y" : 172
+        },
+        {
+          "x" : 255,
+          "y" : 172
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 510,
+          "y" : 24
+        },
+        {
+          "x" : 441.25,
+          "y" : 24
+        },
+        {
+          "x" : 441.25,
+          "y" : 172
+        },
+        {
+          "x" : 360,
+          "y" : 172
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 360,
+          "y" : 172
+        },
+        {
+          "x" : 441.25,
+          "y" : 172
+        },
+        {
+          "x" : 441.25,
+          "y" : 164
+        },
+        {
+          "x" : 510,
+          "y" : 164
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 765,
+          "y" : 16
+        },
+        {
+          "x" : 708.75,
+          "y" : 16
+        },
+        {
+          "x" : 708.75,
+          "y" : 164
+        },
+        {
+          "x" : 640,
+          "y" : 164
+        }
+      ],
+      "source" : "n3",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 640,
+          "y" : 164
+        },
+        {
+          "x" : 708.75,
+          "y" : 164
+        },
+        {
+          "x" : 708.75,
+          "y" : 168
+        },
+        {
+          "x" : 765,
+          "y" : 168
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 168
+        },
+        {
+          "x" : 765,
+          "y" : 168
+        }
+      ],
+      "source" : "n4",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 765,
+          "y" : 168
+        },
+        {
+          "x" : 441.25,
+          "y" : 168
+        },
+        {
+          "x" : 441.25,
+          "y" : 320
+        },
+        {
+          "x" : 80,
+          "y" : 320
+        }
+      ],
+      "source" : "n7",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 255,
+          "y" : 172
+        },
+        {
+          "x" : 173.75,
+          "y" : 172
+        },
+        {
+          "x" : 173.75,
+          "y" : 320
+        },
+        {
+          "x" : 80,
+          "y" : 320
+        }
+      ],
+      "source" : "n5",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 320
+        },
+        {
+          "x" : 173.75,
+          "y" : 320
+        },
+        {
+          "x" : 173.75,
+          "y" : 312
+        },
+        {
+          "x" : 255,
+          "y" : 312
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 510,
+          "y" : 164
+        },
+        {
+          "x" : 441.25,
+          "y" : 164
+        },
+        {
+          "x" : 441.25,
+          "y" : 312
+        },
+        {
+          "x" : 360,
+          "y" : 312
+        }
+      ],
+      "source" : "n6",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e15",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 360,
+          "y" : 312
+        },
+        {
+          "x" : 441.25,
+          "y" : 312
+        },
+        {
+          "x" : 441.25,
+          "y" : 316
+        },
+        {
+          "x" : 510,
+          "y" : 316
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e16",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 765,
+          "y" : 168
+        },
+        {
+          "x" : 708.75,
+          "y" : 168
+        },
+        {
+          "x" : 708.75,
+          "y" : 316
+        },
+        {
+          "x" : 640,
+          "y" : 316
+        }
+      ],
+      "source" : "n7",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e17",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 640,
+          "y" : 316
+        },
+        {
+          "x" : 708.75,
+          "y" : 316
+        },
+        {
+          "x" : 708.75,
+          "y" : 320
+        },
+        {
+          "x" : 765,
+          "y" : 320
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e18",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 320
+        },
+        {
+          "x" : 765,
+          "y" : 320
+        }
+      ],
+      "source" : "n8",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "grid",
+  "fixedCenters" : {
+
+  },
+  "id" : "layout-orthogonal",
+  "measuredMetrics" : {
+    "bends" : 34,
+    "crossings" : 3,
+    "displacement" : 0,
+    "drawingHeight" : 393.5,
+    "drawingWidth" : 969.5,
+    "edgeNodeIntersections" : 8,
+    "edges" : 19,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 6230,
+    "sharedSegments" : 43
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 0,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 255,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 510,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 765,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 0,
+        "y" : 148
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 255,
+        "y" : 148
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 510,
+        "y" : 148
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 765,
+        "y" : 148
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 0,
+        "y" : 296
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 255,
+        "y" : 296
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 510,
+        "y" : 296
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 765,
+        "y" : 296
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "orthogonal · mixed sizes",
+  "version" : 1
+}

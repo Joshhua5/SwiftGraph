@@ -1,0 +1,554 @@
+{
+  "configuration" : {
+    "input" : "12 cyclic, mixed sizes",
+    "pattern" : "mindMap",
+    "pipeline" : "preset → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : true,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1628.8511965703033,
+          "y" : 4.766270846255166e-15
+        },
+        {
+          "x" : 1602.0893654776166,
+          "y" : 7.955124229492099e-15
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1497.0893654776166,
+          "y" : 2.062172204218304e-14
+        },
+        {
+          "x" : 1469.119604036726,
+          "y" : 2.4037158799608938e-14
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1339.119604036726,
+          "y" : 4.020104991717573e-14
+        },
+        {
+          "x" : 1313.1959758505473,
+          "y" : 4.348203475711875e-14
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1158.1959758505473,
+          "y" : 6.28605461961121e-14
+        },
+        {
+          "x" : 1131.8402369196529,
+          "y" : 6.61150007945367e-14
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1051.8402369196529,
+          "y" : 7.569656102389658e-14
+        },
+        {
+          "x" : 1021.8932331549755,
+          "y" : 7.917212601586091e-14
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 916.8932331549755,
+          "y" : 9.171161800924866e-14
+        },
+        {
+          "x" : 889.7273170555757,
+          "y" : 9.504732846288346e-14
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 759.7273170555757,
+          "y" : 1.1132648047344729e-13
+        },
+        {
+          "x" : 735.2479922029468,
+          "y" : 1.1445146731820155e-13
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 580.2479922029468,
+          "y" : 1.3373012989763132e-13
+        },
+        {
+          "x" : 551.0613240762736,
+          "y" : 1.3726459817673552e-13
+        }
+      ],
+      "source" : "n7",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 471.06132407627365,
+          "y" : 1.4678580199741133e-13
+        },
+        {
+          "x" : 442.029740402106,
+          "y" : 1.5018050488264595e-13
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 337.029740402106,
+          "y" : 1.6284595179182893e-13
+        },
+        {
+          "x" : 311.63841934302354,
+          "y" : 1.6600247987837795e-13
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 181.63841934302354,
+          "y" : 1.822748307510769e-13
+        },
+        {
+          "x" : 155,
+          "y" : 1.8563203405766511e-13
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 152.81073547441878,
+          "y" : -23.999999999999805
+        },
+        {
+          "x" : 171.63841934302354,
+          "y" : -29.999999999999826
+        },
+        {
+          "x" : 461.06132407627365,
+          "y" : -33.99999999999986
+        },
+        {
+          "x" : 1479.119604036726,
+          "y" : -33.99999999999997
+        },
+        {
+          "x" : 1612.0893654776166,
+          "y" : -29.999999999999986
+        },
+        {
+          "x" : 1638.578219987537,
+          "y" : -15.999999999999998
+        }
+      ],
+      "source" : "n11",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1628.8511965703033,
+          "y" : 4.766270846255166e-15
+        },
+        {
+          "x" : 1602.0893654776166,
+          "y" : 7.955124229492099e-15
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1602.0893654776166,
+          "y" : 7.955124229492099e-15
+        },
+        {
+          "x" : 1628.8511965703033,
+          "y" : 4.766270846255166e-15
+        }
+      ],
+      "source" : "n1",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 1656.8511965703033,
+          "y" : -16
+        },
+        {
+          "x" : 1638.8511965703033,
+          "y" : -76
+        },
+        {
+          "x" : 1698.8511965703033,
+          "y" : -76
+        },
+        {
+          "x" : 1680.8511965703033,
+          "y" : -16
+        }
+      ],
+      "source" : "n0",
+      "target" : "n0",
+      "width" : 1.5
+    }
+  ],
+  "family" : "preset",
+  "fixedCenters" : {
+
+  },
+  "id" : "preset-mindMap",
+  "measuredMetrics" : {
+    "bends" : 6,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 149.5000000000002,
+    "drawingWidth" : 1758.3511965703033,
+    "edgeNodeIntersections" : 0,
+    "edges" : 15,
+    "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 2027.9188474634127,
+    "sharedSegments" : 3
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 1628.8511965703033,
+        "y" : -16
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 1497.0893654776166,
+        "y" : -19.999999999999986
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 1339.119604036726,
+        "y" : -23.999999999999968
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 1158.1959758505473,
+        "y" : -15.999999999999947
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 1051.8402369196529,
+        "y" : -19.99999999999993
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 916.8932331549755,
+        "y" : -23.999999999999915
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 759.7273170555757,
+        "y" : -15.999999999999897
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 580.2479922029468,
+        "y" : -19.999999999999876
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 471.06132407627365,
+        "y" : -23.999999999999858
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 337.029740402106,
+        "y" : -15.999999999999844
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 181.63841934302354,
+        "y" : -19.999999999999826
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 0,
+        "y" : -23.999999999999805
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "mindMap",
+  "version" : 1
+}

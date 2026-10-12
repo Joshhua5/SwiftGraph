@@ -1,0 +1,539 @@
+{
+  "configuration" : {
+    "input" : "fan-in and fan-out",
+    "pipeline" : "router → self-loops → clip",
+    "router" : "bus"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : false,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 720,
+          "y" : 16
+        }
+      ],
+      "source" : "n0",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n0",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 130
+        },
+        {
+          "x" : 720,
+          "y" : 130
+        }
+      ],
+      "source" : "n0",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 105,
+          "y" : 130
+        },
+        {
+          "x" : 700,
+          "y" : 130
+        },
+        {
+          "x" : 700,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n1",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 244
+        },
+        {
+          "x" : 720,
+          "y" : 244
+        }
+      ],
+      "source" : "n0",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 130,
+          "y" : 244
+        },
+        {
+          "x" : 700,
+          "y" : 244
+        },
+        {
+          "x" : 700,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n2",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 346
+        },
+        {
+          "x" : 720,
+          "y" : 346
+        }
+      ],
+      "source" : "n0",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 155,
+          "y" : 346
+        },
+        {
+          "x" : 700,
+          "y" : 346
+        },
+        {
+          "x" : 700,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n3",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 460
+        },
+        {
+          "x" : 720,
+          "y" : 460
+        }
+      ],
+      "source" : "n0",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 460
+        },
+        {
+          "x" : 700,
+          "y" : 460
+        },
+        {
+          "x" : 700,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n4",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 80,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 16
+        },
+        {
+          "x" : 100,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n0",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 105,
+          "y" : 574
+        },
+        {
+          "x" : 720,
+          "y" : 574
+        }
+      ],
+      "source" : "n5",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "routing",
+  "fixedCenters" : {
+
+  },
+  "id" : "router-bus",
+  "measuredMetrics" : {
+    "bends" : 20,
+    "crossings" : 8,
+    "displacement" : 0,
+    "drawingHeight" : 647.5,
+    "drawingWidth" : 924.5,
+    "edgeNodeIntersections" : 17,
+    "edges" : 12,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 10853,
+    "sharedSegments" : 67
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 0,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 0,
+        "y" : 110
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 0,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 0,
+        "y" : 330
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 0,
+        "y" : 440
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 0,
+        "y" : 550
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 720,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 720,
+        "y" : 110
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 720,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 720,
+        "y" : 330
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 720,
+        "y" : 440
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 720,
+        "y" : 550
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+    "Only channel interprets ports. Styling routers do not guarantee obstacle clearance."
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "bus · fan-in and fan-out",
+  "version" : 1
+}

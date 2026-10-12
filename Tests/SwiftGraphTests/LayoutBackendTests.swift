@@ -141,10 +141,30 @@ struct LayoutBackendTests {
         let explicit = OrganicLayoutOperation(backend: .metal, executor: executor, configuration: configuration(1))
         await #expect(throws: LayoutExecutionError.precisionLimit) { try await explicit.applyLayoutAsync(g) }
         #expect(g.nodes.map(\.bounds) == before)
+        #expect(await executor.statistics().submittedBatches == 0)
         let automatic = OrganicLayoutOperation(backend: .automatic, executor: executor, configuration: configuration(1))
         try await automatic.applyLayoutAsync(g)
         #expect(automatic.lastMetrics?.backend == .cpu)
         #expect(automatic.lastMetrics?.fallbackReason == .precisionLimit)
+        #expect(await executor.statistics().submittedBatches == 0)
+        let reference = graph(2); reference.nodes[1].x = 1e10
+        try await OrganicLayoutOperation(backend: .cpu, configuration: configuration(1)).applyLayoutAsync(reference)
+        #expect(g.nodes.map(\.bounds) == reference.nodes.map(\.bounds))
+    }
+
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal device unavailable"))
+    func automaticSelectionRunsTheWholeQualitySearchOnMetal() async throws {
+        var options = MetalLayoutOptions(); options.minimumNodeCount = 0; options.minimumIterations = 0
+        let executor = LayoutExecutor(options: options), a = graph(65), b = graph(65)
+        let automatic = OrganicLayoutOperation(backend: .automatic, executor: executor, configuration: configuration())
+        let explicit = OrganicLayoutOperation(backend: .metal, executor: executor, configuration: configuration())
+        try await automatic.applyLayoutAsync(a)
+        try await explicit.applyLayoutAsync(b)
+        #expect(automatic.lastMetrics?.backend == .metal)
+        #expect(automatic.lastMetrics?.fallbackReason == nil)
+        #expect(automatic.lastDiagnostics?.candidateCount == 13)
+        #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds))
+        #expect(automatic.lastDiagnostics?.final == explicit.lastDiagnostics?.final)
     }
 
     func awaitSubmission(_ executor: LayoutExecutor) async throws {

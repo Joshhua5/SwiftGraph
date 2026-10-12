@@ -1,0 +1,678 @@
+{
+  "configuration" : {
+    "input" : "dag",
+    "layout" : "remove-overlaps",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → polyline → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 56,
+          "y" : 0.8311688311688312
+        },
+        {
+          "x" : 156,
+          "y" : 2.909090909090909
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 261,
+          "y" : 4.8659793814432994
+        },
+        {
+          "x" : 386,
+          "y" : 6.927835051546392
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 516,
+          "y" : 6.222222222222222
+        },
+        {
+          "x" : 666,
+          "y" : 2.1196581196581197
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 666,
+          "y" : 0.6424870466321243
+        },
+        {
+          "x" : 261,
+          "y" : 4
+        },
+        {
+          "x" : 386,
+          "y" : 4
+        },
+        {
+          "x" : 146,
+          "y" : 29.714285714285715
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 156,
+          "y" : 19.365853658536587
+        },
+        {
+          "x" : 146,
+          "y" : 22.29268292682927
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 146,
+          "y" : 34.735632183908045
+        },
+        {
+          "x" : 271,
+          "y" : 37.03448275862069
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 386,
+          "y" : 23.294117647058822
+        },
+        {
+          "x" : 376,
+          "y" : 25.647058823529413
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 376,
+          "y" : 36.429906542056074
+        },
+        {
+          "x" : 526,
+          "y" : 31.94392523364486
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 666,
+          "y" : 15.245901639344263
+        },
+        {
+          "x" : 656,
+          "y" : 17.21311475409836
+        }
+      ],
+      "source" : "n3",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 656,
+          "y" : 30.818897637795274
+        },
+        {
+          "x" : 831,
+          "y" : 33.023622047244096
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 146,
+          "y" : 36.146341463414636
+        },
+        {
+          "x" : 516,
+          "y" : 56
+        },
+        {
+          "x" : 666,
+          "y" : 56
+        },
+        {
+          "x" : 831,
+          "y" : 41.03092783505154
+        }
+      ],
+      "source" : "n4",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 831,
+          "y" : 34
+        },
+        {
+          "x" : 376,
+          "y" : 34
+        },
+        {
+          "x" : 526,
+          "y" : 34
+        },
+        {
+          "x" : 56,
+          "y" : 65.33333333333333
+        }
+      ],
+      "source" : "n7",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 271,
+          "y" : 36.816901408450704
+        },
+        {
+          "x" : 146,
+          "y" : 34
+        },
+        {
+          "x" : 271,
+          "y" : 34
+        },
+        {
+          "x" : 56,
+          "y" : 62.666666666666664
+        }
+      ],
+      "source" : "n5",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 56,
+          "y" : 66.33766233766234
+        },
+        {
+          "x" : 156,
+          "y" : 62.18181818181818
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 526,
+          "y" : 31.209302325581394
+        },
+        {
+          "x" : 376,
+          "y" : 34
+        },
+        {
+          "x" : 526,
+          "y" : 34
+        },
+        {
+          "x" : 261,
+          "y" : 55.7007874015748
+        }
+      ],
+      "source" : "n6",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e15",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 261,
+          "y" : 72
+        },
+        {
+          "x" : 386,
+          "y" : 72
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e16",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 831,
+          "y" : 34
+        },
+        {
+          "x" : 656,
+          "y" : 34
+        },
+        {
+          "x" : 831,
+          "y" : 34
+        },
+        {
+          "x" : 516,
+          "y" : 58.868421052631575
+        }
+      ],
+      "source" : "n7",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e17",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 516,
+          "y" : 64.88888888888889
+        },
+        {
+          "x" : 666,
+          "y" : 66.94017094017094
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e18",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 56,
+          "y" : 70.88888888888889
+        },
+        {
+          "x" : 376,
+          "y" : 94
+        },
+        {
+          "x" : 526,
+          "y" : 94
+        },
+        {
+          "x" : 666,
+          "y" : 77.26436781609195
+        }
+      ],
+      "source" : "n8",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "refinement",
+  "fixedCenters" : {
+
+  },
+  "id" : "layout-remove-overlaps",
+  "measuredMetrics" : {
+    "bends" : 14,
+    "crossings" : 9,
+    "displacement" : 0,
+    "drawingHeight" : 159.5,
+    "drawingWidth" : 1059.5,
+    "edgeNodeIntersections" : 15,
+    "edges" : 19,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 6075.479883363734,
+    "sharedSegments" : 4
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : -24,
+        "y" : -16
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 156,
+        "y" : -16
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 386,
+        "y" : -16
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 666,
+        "y" : -16
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 66,
+        "y" : 14
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 271,
+        "y" : 14
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 526,
+        "y" : 14
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 831,
+        "y" : 14
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : -24,
+        "y" : 44
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 156,
+        "y" : 44
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 386,
+        "y" : 44
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 666,
+        "y" : 44
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "remove-overlaps · mixed sizes",
+  "version" : 1
+}

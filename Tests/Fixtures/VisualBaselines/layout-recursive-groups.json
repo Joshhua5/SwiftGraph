@@ -1,0 +1,357 @@
+{
+  "configuration" : {
+    "input" : "groups",
+    "layout" : "recursive-groups",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : false,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 383.45703125,
+        "y" : 40
+      },
+      "path" : [
+        {
+          "x" : 339.03168402777777,
+          "y" : 72
+        },
+        {
+          "x" : 279.53559027777777,
+          "y" : 126
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 383.45703125,
+        "y" : 40
+      },
+      "path" : [
+        {
+          "x" : 368.80946180555554,
+          "y" : 72
+        },
+        {
+          "x" : 406.7760416666667,
+          "y" : 122
+        }
+      ],
+      "source" : "n0",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 383.45703125,
+        "y" : 40
+      },
+      "path" : [
+        {
+          "x" : 257.5,
+          "y" : 166
+        },
+        {
+          "x" : 257.5,
+          "y" : 220
+        }
+      ],
+      "source" : "n1",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 250,
+          "y" : 126
+        },
+        {
+          "x" : 250,
+          "y" : 100
+        },
+        {
+          "x" : -490,
+          "y" : 100
+        },
+        {
+          "x" : -490,
+          "y" : 126
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 430,
+          "y" : 170
+        },
+        {
+          "x" : 430,
+          "y" : 180
+        },
+        {
+          "x" : -350,
+          "y" : 180
+        },
+        {
+          "x" : -350,
+          "y" : 170
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 430,
+          "y" : 122
+        },
+        {
+          "x" : 430,
+          "y" : 100
+        },
+        {
+          "x" : -170,
+          "y" : 100
+        },
+        {
+          "x" : -170,
+          "y" : 130
+        }
+      ],
+      "source" : "n2",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 180,
+          "y" : 240
+        },
+        {
+          "x" : 10,
+          "y" : 240
+        },
+        {
+          "x" : 10,
+          "y" : 166
+        }
+      ],
+      "source" : "n3",
+      "target" : "n7",
+      "width" : 1.5
+    }
+  ],
+  "family" : "composition",
+  "fixedCenters" : {
+
+  },
+  "id" : "layout-recursive-groups",
+  "measuredMetrics" : {
+    "bends" : 7,
+    "crossings" : 4,
+    "displacement" : 0,
+    "drawingHeight" : 341,
+    "drawingWidth" : 1109.25,
+    "edgeNodeIntersections" : 0,
+    "edges" : 7,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 10,
+    "routeLength" : 2685.128958397214,
+    "sharedSegments" : 1
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 316.66015625,
+        "y" : 40
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 205,
+        "y" : 126
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 360,
+        "y" : 122
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 180,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : -530,
+        "y" : 126
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : -400,
+        "y" : 122
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : -245,
+        "y" : 130
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : -65,
+        "y" : 126
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 292,
+        "width" : 390,
+        "x" : 140,
+        "y" : 0
+      },
+      "group" : true,
+      "id" : "group-a",
+      "name" : "group-a"
+    },
+    {
+      "bounds" : {
+        "height" : 252,
+        "width" : 350,
+        "x" : 160,
+        "y" : 20
+      },
+      "group" : true,
+      "id" : "group-b",
+      "name" : "group-b",
+      "parent" : "group-a"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "recursive-groups · mixed sizes",
+  "version" : 1
+}

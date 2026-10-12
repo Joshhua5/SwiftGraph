@@ -1,0 +1,702 @@
+{
+  "configuration" : {
+    "input" : "dag",
+    "layout" : "vertical-stack",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → polyline → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : false,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 42
+        },
+        {
+          "x" : 87.5,
+          "y" : 82
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 100.96153846153847,
+          "y" : 122
+        },
+        {
+          "x" : 175,
+          "y" : 232
+        },
+        {
+          "x" : 175,
+          "y" : 300
+        },
+        {
+          "x" : 126.38888888888889,
+          "y" : 330
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 378
+        },
+        {
+          "x" : 87.5,
+          "y" : 418
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 450
+        },
+        {
+          "x" : 87.5,
+          "y" : 490
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 100.96153846153847,
+          "y" : 122
+        },
+        {
+          "x" : 175,
+          "y" : 232
+        },
+        {
+          "x" : 175,
+          "y" : 300
+        },
+        {
+          "x" : 95.83333333333333,
+          "y" : 490
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 530
+        },
+        {
+          "x" : 87.5,
+          "y" : 570
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 104.16666666666666,
+          "y" : 378
+        },
+        {
+          "x" : 175,
+          "y" : 480
+        },
+        {
+          "x" : 175,
+          "y" : 540
+        },
+        {
+          "x" : 126.38888888888889,
+          "y" : 570
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 618
+        },
+        {
+          "x" : 87.5,
+          "y" : 658
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 98.61111111111111,
+          "y" : 450
+        },
+        {
+          "x" : 175,
+          "y" : 560
+        },
+        {
+          "x" : 175,
+          "y" : 628
+        },
+        {
+          "x" : 117.93478260869566,
+          "y" : 658
+        }
+      ],
+      "source" : "n3",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 690
+        },
+        {
+          "x" : 87.5,
+          "y" : 730
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 100.18115942028986,
+          "y" : 530
+        },
+        {
+          "x" : 175,
+          "y" : 648
+        },
+        {
+          "x" : 175,
+          "y" : 700
+        },
+        {
+          "x" : 122.5,
+          "y" : 730
+        }
+      ],
+      "source" : "n4",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 770
+        },
+        {
+          "x" : 87.5,
+          "y" : 810
+        }
+      ],
+      "source" : "n7",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 104.16666666666666,
+          "y" : 618
+        },
+        {
+          "x" : 175,
+          "y" : 720
+        },
+        {
+          "x" : 175,
+          "y" : 780
+        },
+        {
+          "x" : 126.38888888888889,
+          "y" : 810
+        }
+      ],
+      "source" : "n5",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 858
+        },
+        {
+          "x" : 87.5,
+          "y" : 898
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 98.61111111111111,
+          "y" : 690
+        },
+        {
+          "x" : 175,
+          "y" : 800
+        },
+        {
+          "x" : 175,
+          "y" : 868
+        },
+        {
+          "x" : 117.93478260869566,
+          "y" : 898
+        }
+      ],
+      "source" : "n6",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e15",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 89.55278592375366,
+          "y" : 898
+        },
+        {
+          "x" : 175,
+          "y" : 232
+        },
+        {
+          "x" : 175,
+          "y" : 300
+        },
+        {
+          "x" : 102.33050847457628,
+          "y" : 202
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e16",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 90.87837837837837,
+          "y" : 730
+        },
+        {
+          "x" : 175,
+          "y" : 232
+        },
+        {
+          "x" : 175,
+          "y" : 300
+        },
+        {
+          "x" : 102.33050847457628,
+          "y" : 202
+        }
+      ],
+      "source" : "n7",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e17",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 87.5,
+          "y" : 202
+        },
+        {
+          "x" : 87.5,
+          "y" : 242
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e18",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 105.92105263157895,
+          "y" : 810
+        },
+        {
+          "x" : 175,
+          "y" : 720
+        },
+        {
+          "x" : 175,
+          "y" : 780
+        },
+        {
+          "x" : 91.58560311284046,
+          "y" : 290
+        }
+      ],
+      "source" : "n8",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "packing",
+  "fixedCenters" : {
+
+  },
+  "id" : "layout-vertical-stack",
+  "measuredMetrics" : {
+    "bends" : 20,
+    "crossings" : 36,
+    "displacement" : 0,
+    "drawingHeight" : 969.5,
+    "drawingWidth" : 214.5,
+    "edgeNodeIntersections" : 29,
+    "edges" : 19,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 4518.758181053572,
+    "sharedSegments" : 9
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 10,
+        "y" : 10
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 10,
+        "y" : 82
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 10,
+        "y" : 330
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 10,
+        "y" : 418
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 10,
+        "y" : 490
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 10,
+        "y" : 570
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 10,
+        "y" : 658
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 10,
+        "y" : 730
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 10,
+        "y" : 810
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 10,
+        "y" : 898
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 10,
+        "y" : 162
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 10,
+        "y" : 242
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "vertical-stack · mixed sizes",
+  "version" : 1
+}

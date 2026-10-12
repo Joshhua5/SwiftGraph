@@ -1,0 +1,440 @@
+{
+  "configuration" : {
+    "input" : "tree",
+    "layout" : "radial-tree",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : true,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 509.4411568180442,
+          "y" : 16
+        },
+        {
+          "x" : 509.4411568180442,
+          "y" : 112.37056726235605
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 509.4411568180442,
+          "y" : -16
+        },
+        {
+          "x" : 509.4411568180442,
+          "y" : -108.37056726235605
+        }
+      ],
+      "source" : "n0",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 561.9411568180442,
+          "y" : 152.19702052678628
+        },
+        {
+          "x" : 679.7671338955139,
+          "y" : 196.69361534321067
+        }
+      ],
+      "source" : "n1",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 456.9411568180442,
+          "y" : 152.19702052678628
+        },
+        {
+          "x" : 336.7475414748335,
+          "y" : 197.58774618935908
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 445.88969941943265,
+          "y" : -156.37056726235605
+        },
+        {
+          "x" : 349.2475414748335,
+          "y" : -192.86716207878044
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 572.9926142166556,
+          "y" : -156.37056726235605
+        },
+        {
+          "x" : 679.7671338955139,
+          "y" : -196.69361534321072
+        }
+      ],
+      "source" : "n2",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 799.6347721612549,
+          "y" : 203.12930809919678
+        },
+        {
+          "x" : 876.3823136360884,
+          "y" : 193.6578620748354
+        }
+      ],
+      "source" : "n3",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 720.1602055044262,
+          "y" : 228.69361534321067
+        },
+        {
+          "x" : 696.4965616341087,
+          "y" : 420.4411568180442
+        }
+      ],
+      "source" : "n3",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 299.2157497958693,
+          "y" : 232.6936153432107
+        },
+        {
+          "x" : 323.37303533039403,
+          "y" : 428.4411568180442
+        }
+      ],
+      "source" : "n4",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 256.7475414748335,
+          "y" : 207.757198701139
+        },
+        {
+          "x" : 130,
+          "y" : 192.115231874188
+        }
+      ],
+      "source" : "n4",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 272.7475414748335,
+          "y" : -236.69361534321067
+        },
+        {
+          "x" : 193.2806220671636,
+          "y" : -316.1605347508805
+        }
+      ],
+      "source" : "n5",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "tree",
+  "fixedCenters" : {
+
+  },
+  "id" : "layout-radial-tree",
+  "measuredMetrics" : {
+    "bends" : 0,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 882.1016915689247,
+    "drawingWidth" : 1080.8823136360884,
+    "edgeNodeIntersections" : 0,
+    "edges" : 11,
+    "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 1368.4635686294778,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 469.4411568180442,
+        "y" : -16
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 456.9411568180442,
+        "y" : 112.37056726235605
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 444.4411568180442,
+        "y" : -156.37056726235605
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 644.6347721612549,
+        "y" : 196.69361534321067
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 256.7475414748335,
+        "y" : 192.6936153432107
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 244.2475414748335,
+        "y" : -236.69361534321067
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 657.1347721612549,
+        "y" : -228.69361534321072
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 876.3823136360884,
+        "y" : 164.0935548308215
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 653.5347116488657,
+        "y" : 420.4411568180442
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 272.84760198722273,
+        "y" : 428.4411568180442
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 0,
+        "y" : 164.09355483082152
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 91.78062206716356,
+        "y" : -364.1605347508805
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "radial-tree · mixed sizes",
+  "version" : 1
+}

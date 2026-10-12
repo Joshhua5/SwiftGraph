@@ -1,0 +1,976 @@
+{
+  "configuration" : {
+    "input" : "disconnected",
+    "iterations" : "600 per candidate",
+    "nodes" : "32",
+    "pipeline" : "quality organic → obstacle-aware polyline → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : true,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : -63.31182795698925
+        },
+        {
+          "x" : 100,
+          "y" : -60.903225806451616
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : -59.096774193548384
+        },
+        {
+          "x" : 320,
+          "y" : -57.11827956989247
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : -58.236559139784944
+        },
+        {
+          "x" : 540,
+          "y" : -61.333333333333336
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 90.68817204301075
+        },
+        {
+          "x" : 100,
+          "y" : 93.09677419354838
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 92.19354838709677
+        },
+        {
+          "x" : 320,
+          "y" : 88.23655913978494
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 87.11827956989248
+        },
+        {
+          "x" : 540,
+          "y" : 88.66666666666667
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 242.6236559139785
+        },
+        {
+          "x" : 100,
+          "y" : 237.80645161290323
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 236.90322580645162
+        },
+        {
+          "x" : 320,
+          "y" : 238.88172043010752
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 241.11827956989248
+        },
+        {
+          "x" : 540,
+          "y" : 242.66666666666666
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 386.68817204301075
+        },
+        {
+          "x" : 100,
+          "y" : 389.0967741935484
+        }
+      ],
+      "source" : "n12",
+      "target" : "n13",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 390.9032258064516
+        },
+        {
+          "x" : 320,
+          "y" : 392.8817204301075
+        }
+      ],
+      "source" : "n13",
+      "target" : "n14",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 391.76344086021504
+        },
+        {
+          "x" : 540,
+          "y" : 388.6666666666667
+        }
+      ],
+      "source" : "n14",
+      "target" : "n15",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 540.6881720430108
+        },
+        {
+          "x" : 100,
+          "y" : 543.0967741935484
+        }
+      ],
+      "source" : "n16",
+      "target" : "n17",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 542.1935483870968
+        },
+        {
+          "x" : 320,
+          "y" : 538.236559139785
+        }
+      ],
+      "source" : "n17",
+      "target" : "n18",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 537.1182795698925
+        },
+        {
+          "x" : 540,
+          "y" : 538.6666666666666
+        }
+      ],
+      "source" : "n18",
+      "target" : "n19",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e15",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 692.6236559139785
+        },
+        {
+          "x" : 100,
+          "y" : 687.8064516129032
+        }
+      ],
+      "source" : "n20",
+      "target" : "n21",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e16",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 686.9032258064516
+        },
+        {
+          "x" : 320,
+          "y" : 688.8817204301075
+        }
+      ],
+      "source" : "n21",
+      "target" : "n22",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e17",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 691.1182795698925
+        },
+        {
+          "x" : 540,
+          "y" : 692.6666666666666
+        }
+      ],
+      "source" : "n22",
+      "target" : "n23",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e18",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 836.6881720430108
+        },
+        {
+          "x" : 100,
+          "y" : 839.0967741935484
+        }
+      ],
+      "source" : "n24",
+      "target" : "n25",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e19",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 840.9032258064516
+        },
+        {
+          "x" : 320,
+          "y" : 842.8817204301075
+        }
+      ],
+      "source" : "n25",
+      "target" : "n26",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e20",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 841.763440860215
+        },
+        {
+          "x" : 540,
+          "y" : 838.6666666666666
+        }
+      ],
+      "source" : "n26",
+      "target" : "n27",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e21",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 990.6881720430108
+        },
+        {
+          "x" : 100,
+          "y" : 993.0967741935484
+        }
+      ],
+      "source" : "n28",
+      "target" : "n29",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e22",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : 992.1935483870968
+        },
+        {
+          "x" : 320,
+          "y" : 988.236559139785
+        }
+      ],
+      "source" : "n29",
+      "target" : "n30",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e23",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : 987.1182795698925
+        },
+        {
+          "x" : 540,
+          "y" : 988.6666666666666
+        }
+      ],
+      "source" : "n30",
+      "target" : "n31",
+      "width" : 1.5
+    }
+  ],
+  "family" : "organic",
+  "fixedCenters" : {
+
+  },
+  "id" : "organic-quality-disconnected",
+  "measuredMetrics" : {
+    "bends" : 0,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 1147.5,
+    "drawingWidth" : 864.5,
+    "edgeNodeIntersections" : 0,
+    "edges" : 24,
+    "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
+    "labelNodeOverlaps" : 0,
+    "medianEdgeLength" : 115.01701804939925,
+    "missingRoutes" : 0,
+    "nodeAreaUtilization" : 0.16690692502821639,
+    "nodeOverlaps" : 0,
+    "nodes" : 32,
+    "p95EdgeLength" : 140.08285211716066,
+    "reported.candidates" : 13,
+    "reported.placement.area" : 894870,
+    "reported.placement.clearanceViolations" : 0,
+    "reported.placement.crossings" : 0,
+    "reported.placement.edgeLength" : 5581.6512464588695,
+    "reported.placement.edgeNodeIntersections" : 0,
+    "reported.selectedCandidate" : 0,
+    "reported.solverIterations" : 7200,
+    "routeLength" : 2760.8056501153355,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : -120,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 100,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 320,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 540,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : -120,
+        "y" : 70
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 100,
+        "y" : 70
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 320,
+        "y" : 70
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 540,
+        "y" : 70
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : -120,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 100,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 320,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 540,
+        "y" : 220
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : -120,
+        "y" : 370
+      },
+      "group" : false,
+      "id" : "n12",
+      "name" : "n12"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 100,
+        "y" : 370
+      },
+      "group" : false,
+      "id" : "n13",
+      "name" : "n13"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 320,
+        "y" : 370
+      },
+      "group" : false,
+      "id" : "n14",
+      "name" : "n14"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 540,
+        "y" : 370
+      },
+      "group" : false,
+      "id" : "n15",
+      "name" : "n15"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : -120,
+        "y" : 520
+      },
+      "group" : false,
+      "id" : "n16",
+      "name" : "n16"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 100,
+        "y" : 520
+      },
+      "group" : false,
+      "id" : "n17",
+      "name" : "n17"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 320,
+        "y" : 520
+      },
+      "group" : false,
+      "id" : "n18",
+      "name" : "n18"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 540,
+        "y" : 520
+      },
+      "group" : false,
+      "id" : "n19",
+      "name" : "n19"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : -120,
+        "y" : 670
+      },
+      "group" : false,
+      "id" : "n20",
+      "name" : "n20"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 100,
+        "y" : 670
+      },
+      "group" : false,
+      "id" : "n21",
+      "name" : "n21"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 320,
+        "y" : 670
+      },
+      "group" : false,
+      "id" : "n22",
+      "name" : "n22"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 540,
+        "y" : 670
+      },
+      "group" : false,
+      "id" : "n23",
+      "name" : "n23"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : -120,
+        "y" : 820
+      },
+      "group" : false,
+      "id" : "n24",
+      "name" : "n24"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 100,
+        "y" : 820
+      },
+      "group" : false,
+      "id" : "n25",
+      "name" : "n25"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 320,
+        "y" : 820
+      },
+      "group" : false,
+      "id" : "n26",
+      "name" : "n26"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 540,
+        "y" : 820
+      },
+      "group" : false,
+      "id" : "n27",
+      "name" : "n27"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : -120,
+        "y" : 970
+      },
+      "group" : false,
+      "id" : "n28",
+      "name" : "n28"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 100,
+        "y" : 970
+      },
+      "group" : false,
+      "id" : "n29",
+      "name" : "n29"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 320,
+        "y" : 970
+      },
+      "group" : false,
+      "id" : "n30",
+      "name" : "n30"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 540,
+        "y" : 970
+      },
+      "group" : false,
+      "id" : "n31",
+      "name" : "n31"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+    "candidates" : 13,
+    "placement.area" : 894870,
+    "placement.clearanceViolations" : 0,
+    "placement.crossings" : 0,
+    "placement.edgeLength" : 5581.6512464588695,
+    "placement.edgeNodeIntersections" : 0,
+    "selectedCandidate" : 0,
+    "solverIterations" : 7200
+  },
+  "title" : "Organic quality · disconnected",
+  "version" : 1
+}

@@ -1,0 +1,59 @@
+{
+  "configuration" : {
+    "input" : "dense",
+    "iterations" : "40",
+    "nodes" : "0",
+    "pipeline" : "quality organic (budget constrained) → legacy polyline → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+
+  ],
+  "family" : "organic",
+  "fixedCenters" : {
+
+  },
+  "id" : "organic-0",
+  "measuredMetrics" : {
+    "bends" : 0,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 148,
+    "drawingWidth" : 288,
+    "edgeNodeIntersections" : 0,
+    "edges" : 0,
+    "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
+    "labelNodeOverlaps" : 0,
+    "medianEdgeLength" : 0,
+    "missingRoutes" : 0,
+    "nodeAreaUtilization" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 0,
+    "p95EdgeLength" : 0,
+    "routeLength" : 0,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "Organic · 0 nodes",
+  "version" : 1
+}

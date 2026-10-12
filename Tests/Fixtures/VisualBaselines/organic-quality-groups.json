@@ -1,0 +1,360 @@
+{
+  "configuration" : {
+    "input" : "groups",
+    "iterations" : "600 per candidate",
+    "nodes" : "8",
+    "pipeline" : "quality organic → obstacle-aware polyline → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : true,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 40,
+        "y" : 40
+      },
+      "path" : [
+        {
+          "x" : 384.98488906351923,
+          "y" : 89.31271685749739
+        },
+        {
+          "x" : 550.0692421548492,
+          "y" : 106.38493427168103
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 40,
+        "y" : 40
+      },
+      "path" : [
+        {
+          "x" : 304.98488906351923,
+          "y" : 81.64653797368211
+        },
+        {
+          "x" : 170,
+          "y" : 69.73555818972412
+        }
+      ],
+      "source" : "n0",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 40,
+        "y" : 40
+      },
+      "path" : [
+        {
+          "x" : 655.0692421548492,
+          "y" : 118.03219279491532
+        },
+        {
+          "x" : 764.5864125432263,
+          "y" : 131.00312477419084
+        }
+      ],
+      "source" : "n1",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 550.0692421548492,
+          "y" : 124.59725814972006
+        },
+        {
+          "x" : 215,
+          "y" : 206.18202544181196
+        },
+        {
+          "x" : 198.33333333333331,
+          "y" : 216.18202544181196
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 97.84830562686349,
+          "y" : 88
+        },
+        {
+          "x" : 59.65169437313651,
+          "y" : 216.18202544181196
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 106.68797707905927,
+          "y" : 88
+        },
+        {
+          "x" : 115,
+          "y" : 206.18202544181196
+        },
+        {
+          "x" : 115,
+          "y" : 274.18202544181196
+        },
+        {
+          "x" : 95.7692307692307,
+          "y" : 284.182025441812
+        }
+      ],
+      "source" : "n2",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 764.5864125432263,
+          "y" : 153.97036374509344
+        },
+        {
+          "x" : 380,
+          "y" : 222.3936871385305
+        }
+      ],
+      "source" : "n3",
+      "target" : "n7",
+      "width" : 1.5
+    }
+  ],
+  "family" : "organic",
+  "fixedCenters" : {
+
+  },
+  "id" : "organic-quality-groups",
+  "measuredMetrics" : {
+    "bends" : 3,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 365.432025441812,
+    "drawingWidth" : 1008.8364125432263,
+    "edgeNodeIntersections" : 0,
+    "edges" : 7,
+    "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
+    "labelNodeOverlaps" : 0,
+    "medianEdgeLength" : 165.96476807750514,
+    "missingRoutes" : 0,
+    "nodeAreaUtilization" : 0.14395217500107368,
+    "nodeOverlaps" : 0,
+    "nodes" : 10,
+    "p95EdgeLength" : 390.62572866757193,
+    "reported.candidates" : 13,
+    "reported.placement.area" : 303403.9755043595,
+    "reported.placement.clearanceViolations" : 0,
+    "reported.placement.crossings" : 0,
+    "reported.placement.edgeLength" : 0,
+    "reported.placement.edgeNodeIntersections" : 0,
+    "reported.selectedCandidate" : 1,
+    "reported.solverIterations" : 7200,
+    "routeLength" : 1508.579037149333,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 304.98488906351923,
+        "y" : 69.17611224428157
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 550.0692421548492,
+        "y" : 91.8142278265268
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 40,
+        "y" : 40
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 764.5864125432263,
+        "y" : 124.18202544181199
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3",
+      "parent" : "group-b"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 125,
+        "y" : 216.18202544181196
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 0,
+        "y" : 216.18202544181196
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 0,
+        "y" : 284.182025441812
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 225,
+        "y" : 216.18202544181196
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 196.182025441812,
+        "width" : 959.5864125432263,
+        "x" : 0,
+        "y" : 0
+      },
+      "group" : true,
+      "id" : "group-a",
+      "name" : "group-a"
+    },
+    {
+      "bounds" : {
+        "height" : 156.182025441812,
+        "width" : 919.5864125432263,
+        "x" : 20,
+        "y" : 20
+      },
+      "group" : true,
+      "id" : "group-b",
+      "name" : "group-b",
+      "parent" : "group-a"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+    "candidates" : 13,
+    "placement.area" : 303403.9755043595,
+    "placement.clearanceViolations" : 0,
+    "placement.crossings" : 0,
+    "placement.edgeLength" : 0,
+    "placement.edgeNodeIntersections" : 0,
+    "selectedCandidate" : 1,
+    "solverIterations" : 7200
+  },
+  "title" : "Organic quality · groups",
+  "version" : 1
+}

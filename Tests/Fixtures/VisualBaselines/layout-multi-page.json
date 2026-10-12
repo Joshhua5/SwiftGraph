@@ -1,0 +1,392 @@
+{
+  "configuration" : {
+    "input" : "disconnected",
+    "layout" : "multi-page",
+    "nodes" : "12 (8 leaves for groups)",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "layout → self-loops → clip"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : false,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 225,
+        "y" : 49
+      },
+      "path" : [
+        {
+          "x" : 225,
+          "y" : 81
+        },
+        {
+          "x" : 225,
+          "y" : 131
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 225,
+        "y" : 49
+      },
+      "path" : [
+        {
+          "x" : 225,
+          "y" : 171
+        },
+        {
+          "x" : 225,
+          "y" : 221
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 225,
+        "y" : 49
+      },
+      "path" : [
+        {
+          "x" : 225,
+          "y" : 269
+        },
+        {
+          "x" : 225,
+          "y" : 319
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 775,
+        "y" : 45
+      },
+      "path" : [
+        {
+          "x" : 775,
+          "y" : 85
+        },
+        {
+          "x" : 775,
+          "y" : 135
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 775,
+        "y" : 45
+      },
+      "path" : [
+        {
+          "x" : 775,
+          "y" : 183
+        },
+        {
+          "x" : 775,
+          "y" : 233
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 775,
+        "y" : 45
+      },
+      "path" : [
+        {
+          "x" : 775,
+          "y" : 265
+        },
+        {
+          "x" : 775,
+          "y" : 315
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 1325,
+        "y" : 41
+      },
+      "path" : [
+        {
+          "x" : 1325,
+          "y" : 89
+        },
+        {
+          "x" : 1325,
+          "y" : 139
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 1325,
+        "y" : 41
+      },
+      "path" : [
+        {
+          "x" : 1325,
+          "y" : 171
+        },
+        {
+          "x" : 1325,
+          "y" : 221
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 1325,
+        "y" : 41
+      },
+      "path" : [
+        {
+          "x" : 1325,
+          "y" : 261
+        },
+        {
+          "x" : 1325,
+          "y" : 311
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "composition",
+  "fixedCenters" : {
+
+  },
+  "id" : "layout-multi-page",
+  "measuredMetrics" : {
+    "bends" : 0,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 367.5,
+    "drawingWidth" : 1304.5,
+    "edgeNodeIntersections" : 0,
+    "edges" : 9,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "routeLength" : 450,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : 185,
+        "y" : 49
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 172.5,
+        "y" : 131
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 160,
+        "y" : 221
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 147.5,
+        "y" : 319
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 735,
+        "y" : 45
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 722.5,
+        "y" : 135
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 710,
+        "y" : 233
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 697.5,
+        "y" : 315
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 1285,
+        "y" : 41
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 1272.5,
+        "y" : 139
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 1260,
+        "y" : 221
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 1247.5,
+        "y" : 311
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "multi-page · mixed sizes",
+  "version" : 1
+}

@@ -1,0 +1,208 @@
+{
+  "configuration" : {
+    "input" : "obstacle, ports and reciprocal edges",
+    "pipeline" : "router → self-loops → clip",
+    "router" : "polyline"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : false,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -70,
+          "y" : 62.765957446808514
+        },
+        {
+          "x" : 110,
+          "y" : -10
+        },
+        {
+          "x" : 210,
+          "y" : -10
+        },
+        {
+          "x" : 420,
+          "y" : 65.28301886792453
+        }
+      ],
+      "source" : "source",
+      "target" : "target",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -70,
+          "y" : 62.765957446808514
+        },
+        {
+          "x" : 110,
+          "y" : -10
+        },
+        {
+          "x" : 210,
+          "y" : -10
+        },
+        {
+          "x" : 420,
+          "y" : 65.28301886792453
+        }
+      ],
+      "source" : "source",
+      "target" : "target",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 420,
+          "y" : 70.68493150684931
+        },
+        {
+          "x" : 110,
+          "y" : -10
+        },
+        {
+          "x" : 210,
+          "y" : -10
+        },
+        {
+          "x" : -70,
+          "y" : 69.40298507462687
+        }
+      ],
+      "source" : "target",
+      "target" : "source",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -137,
+          "y" : 60
+        },
+        {
+          "x" : -155,
+          "y" : 0
+        },
+        {
+          "x" : -95,
+          "y" : 0
+        },
+        {
+          "x" : -113,
+          "y" : 60
+        }
+      ],
+      "source" : "source",
+      "target" : "source",
+      "width" : 1.5
+    }
+  ],
+  "family" : "routing",
+  "fixedCenters" : {
+
+  },
+  "id" : "router-polyline",
+  "measuredMetrics" : {
+    "bends" : 8,
+    "crossings" : 0,
+    "displacement" : 0,
+    "drawingHeight" : 239.5,
+    "drawingWidth" : 759.5,
+    "edgeNodeIntersections" : 1,
+    "edges" : 4,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 3,
+    "routeLength" : 1931.128844920513,
+    "sharedSegments" : 5
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 50,
+        "width" : 110,
+        "x" : -180,
+        "y" : 60
+      },
+      "group" : false,
+      "id" : "source",
+      "name" : "source"
+    },
+    {
+      "bounds" : {
+        "height" : 50,
+        "width" : 110,
+        "x" : 420,
+        "y" : 60
+      },
+      "group" : false,
+      "id" : "target",
+      "name" : "target"
+    },
+    {
+      "bounds" : {
+        "height" : 180,
+        "width" : 80,
+        "x" : 120,
+        "y" : 0
+      },
+      "group" : false,
+      "id" : "wall",
+      "name" : "wall"
+    }
+  ],
+  "notes" : [
+    "Only channel interprets ports. Styling routers do not guarantee obstacle clearance."
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "polyline · obstacle, ports and reciprocal edges",
+  "version" : 1
+}

@@ -1,0 +1,647 @@
+{
+  "configuration" : {
+    "iterations" : "100",
+    "scope" : "subset"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
+    "noNodeOverlaps" : false,
+    "noObstacleIntersections" : false,
+    "orthogonal" : false,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : -63.31182795698925
+        },
+        {
+          "x" : 100,
+          "y" : -60.903225806451616
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 205,
+          "y" : -59.096774193548384
+        },
+        {
+          "x" : 320,
+          "y" : -57.11827956989247
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 450,
+          "y" : -58.236559139784944
+        },
+        {
+          "x" : 540,
+          "y" : -61.333333333333336
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 545.0324675324675,
+          "y" : -48
+        },
+        {
+          "x" : -40,
+          "y" : 81.168458781362
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 121.5,
+          "y" : -40
+        },
+        {
+          "x" : -49,
+          "y" : 70
+        }
+      ],
+      "source" : "n1",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -40,
+          "y" : 90.68817204301075
+        },
+        {
+          "x" : 100,
+          "y" : 93.09677419354838
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 347.8,
+          "y" : -32
+        },
+        {
+          "x" : 189.7,
+          "y" : 70
+        }
+      ],
+      "source" : "n2",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 197.56419826887046,
+          "y" : 118
+        },
+        {
+          "x" : 384.3599161994789,
+          "y" : 217.48245841602923
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 606.5764767221024,
+          "y" : -48
+        },
+        {
+          "x" : 425.3262383232902,
+          "y" : 217.48245841602923
+        }
+      ],
+      "source" : "n3",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 382.73798720448383,
+          "y" : 249.48245841602923
+        },
+        {
+          "x" : 87.24821094316061,
+          "y" : 398.79169751433994
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -72.2341529845682,
+          "y" : 110
+        },
+        {
+          "x" : 39.901454126592945,
+          "y" : 398.79169751433994
+        }
+      ],
+      "source" : "n4",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 125.16730114202475,
+          "y" : 434.1360282706221
+        },
+        {
+          "x" : 216.37893154131223,
+          "y" : 452.1951434405115
+        }
+      ],
+      "source" : "n7",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e12",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 159.30959734609073,
+          "y" : 118
+        },
+        {
+          "x" : 249.5693341952215,
+          "y" : 436.1147980243991
+        }
+      ],
+      "source" : "n5",
+      "target" : "n8",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e13",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 296.3789315413122,
+          "y" : 462.8421868015749
+        },
+        {
+          "x" : 423.8898813168015,
+          "y" : 471.53648513619225
+        }
+      ],
+      "source" : "n8",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e14",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 418.50725244982567,
+          "y" : 249.48245841602923
+        },
+        {
+          "x" : 472.2853439123684,
+          "y" : 459.11618290623545
+        }
+      ],
+      "source" : "n6",
+      "target" : "n9",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e15",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 452.16913535286335,
+          "y" : 491.11618290623545
+        },
+        {
+          "x" : 206.82641344163522,
+          "y" : 653.1873080658088
+        }
+      ],
+      "source" : "n9",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e16",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 57.79980142890469,
+          "y" : 438.79169751433994
+        },
+        {
+          "x" : 166.41798069983258,
+          "y" : 653.1873080658088
+        }
+      ],
+      "source" : "n7",
+      "target" : "n10",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e17",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 192.30000641473492,
+          "y" : 693.1873080658088
+        },
+        {
+          "x" : 282.0618491210308,
+          "y" : 807.1740349884966
+        }
+      ],
+      "source" : "n10",
+      "target" : "n11",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e18",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 259.26250442577816,
+          "y" : 484.1147980243991
+        },
+        {
+          "x" : 298.07770675019174,
+          "y" : 807.1740349884966
+        }
+      ],
+      "source" : "n8",
+      "target" : "n11",
+      "width" : 1.5
+    }
+  ],
+  "family" : "organic",
+  "fixedCenters" : {
+    "n0" : {
+      "x" : -80,
+      "y" : -64
+    },
+    "n1" : {
+      "x" : 152.5,
+      "y" : -60
+    },
+    "n2" : {
+      "x" : 385,
+      "y" : -56
+    },
+    "n3" : {
+      "x" : 617.5,
+      "y" : -64
+    },
+    "n4" : {
+      "x" : -80,
+      "y" : 90
+    },
+    "n5" : {
+      "x" : 152.5,
+      "y" : 94
+    }
+  },
+  "id" : "organic-subset",
+  "measuredMetrics" : {
+    "bends" : 0,
+    "crossings" : 3,
+    "displacement" : 0,
+    "drawingHeight" : 984.6740349884966,
+    "drawingWidth" : 864.5,
+    "edgeNodeIntersections" : 0,
+    "edges" : 19,
+    "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
+    "labelNodeOverlaps" : 0,
+    "medianEdgeLength" : 211.63506271340867,
+    "missingRoutes" : 0,
+    "nodeAreaUtilization" : 0.07399954596534676,
+    "nodeOverlaps" : 0,
+    "nodes" : 12,
+    "p95EdgeLength" : 599.1222569818952,
+    "routeLength" : 4421.977191744762,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 80,
+        "x" : -120,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : 100,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : 320,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : 540,
+        "y" : -80
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : -120,
+        "y" : 70
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 100,
+        "y" : 70
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 349.40271504539254,
+        "y" : 217.48245841602923
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : -29.832698857975245,
+        "y" : 398.79169751433994
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : 216.37893154131223,
+        "y" : 436.1147980243991
+      },
+      "group" : false,
+      "id" : "n8",
+      "name" : "n8"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 105,
+        "x" : 423.8898813168015,
+        "y" : 459.11618290623545
+      },
+      "group" : false,
+      "id" : "n9",
+      "name" : "n9"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 130,
+        "x" : 111.55048098671253,
+        "y" : 653.1873080658088
+      },
+      "group" : false,
+      "id" : "n10",
+      "name" : "n10"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 155,
+        "x" : 223.46127963465767,
+        "y" : 807.1740349884966
+      },
+      "group" : false,
+      "id" : "n11",
+      "name" : "n11"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+
+  },
+  "title" : "Organic · subset",
+  "version" : 1
+}

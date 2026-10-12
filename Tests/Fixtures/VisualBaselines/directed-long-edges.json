@@ -1,0 +1,524 @@
+{
+  "configuration" : {
+    "mode" : "long-edges",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "DirectedLayoutOperation; exact returned geometry"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : true,
+    "orthogonal" : true,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -505,
+          "y" : 4.902197109339269
+        },
+        {
+          "x" : -489,
+          "y" : 4.902197109339269
+        },
+        {
+          "x" : -489,
+          "y" : -16.58202648462506
+        },
+        {
+          "x" : -467,
+          "y" : -16.58202648462506
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -362,
+          "y" : -10.582026484625061
+        },
+        {
+          "x" : -346,
+          "y" : -10.582026484625061
+        },
+        {
+          "x" : -346,
+          "y" : -4.871699667066764
+        },
+        {
+          "x" : -330,
+          "y" : -4.871699667066764
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -200,
+          "y" : -4.871699667066764
+        },
+        {
+          "x" : -184,
+          "y" : -4.871699667066764
+        },
+        {
+          "x" : -184,
+          "y" : -0.5125239126086001
+        },
+        {
+          "x" : -168,
+          "y" : -0.5125239126086001
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -13,
+          "y" : -0.5125239126086001
+        },
+        {
+          "x" : 3,
+          "y" : -0.5125239126086001
+        },
+        {
+          "x" : 3,
+          "y" : -1.5429668995770527
+        },
+        {
+          "x" : 19,
+          "y" : -1.5429668995770527
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 99,
+          "y" : -1.5429668995770527
+        },
+        {
+          "x" : 115,
+          "y" : -1.5429668995770527
+        },
+        {
+          "x" : 115,
+          "y" : -9.518527899234115
+        },
+        {
+          "x" : 131,
+          "y" : -9.518527899234115
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 236,
+          "y" : -9.518527899234115
+        },
+        {
+          "x" : 252,
+          "y" : -9.518527899234115
+        },
+        {
+          "x" : 252,
+          "y" : 18.39352789923411
+        },
+        {
+          "x" : 268,
+          "y" : 18.39352789923411
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 398,
+          "y" : 24.393527899234115
+        },
+        {
+          "x" : 414,
+          "y" : 24.393527899234115
+        },
+        {
+          "x" : 414,
+          "y" : 24.518527899234115
+        },
+        {
+          "x" : 430,
+          "y" : 24.518527899234115
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 507.5,
+          "y" : 4.518527899234108
+        },
+        {
+          "x" : 507.5,
+          "y" : -44.518527899234115
+        },
+        {
+          "x" : -527,
+          "y" : -44.518527899234115
+        },
+        {
+          "x" : -527,
+          "y" : -7.097802890660731
+        }
+      ],
+      "source" : "n7",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -505,
+          "y" : 16.90219710933927
+        },
+        {
+          "x" : -483,
+          "y" : 16.90219710933927
+        },
+        {
+          "x" : -483,
+          "y" : -4.582026484625061
+        },
+        {
+          "x" : -467,
+          "y" : -4.582026484625061
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -414.5,
+          "y" : -30.58202648462506
+        },
+        {
+          "x" : -414.5,
+          "y" : -40.58202648462506
+        },
+        {
+          "x" : -539,
+          "y" : -40.58202648462506
+        },
+        {
+          "x" : -539,
+          "y" : -7.097802890660731
+        }
+      ],
+      "source" : "n1",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -563,
+          "y" : -7.097802890660731
+        },
+        {
+          "x" : -563,
+          "y" : -17.09780289066073
+        },
+        {
+          "x" : -551,
+          "y" : -17.09780289066073
+        },
+        {
+          "x" : -551,
+          "y" : -7.097802890660731
+        }
+      ],
+      "source" : "n0",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e11",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -505,
+          "y" : 28.90219710933927
+        },
+        {
+          "x" : -489,
+          "y" : 28.90219710933927
+        },
+        {
+          "x" : -489,
+          "y" : 30.393527899234115
+        },
+        {
+          "x" : 268,
+          "y" : 30.393527899234115
+        }
+      ],
+      "source" : "n0",
+      "target" : "n6",
+      "width" : 1.5
+    }
+  ],
+  "family" : "directed",
+  "fixedCenters" : {
+
+  },
+  "id" : "directed-long-edges",
+  "measuredMetrics" : {
+    "bends" : 24,
+    "crossings" : 1,
+    "displacement" : 0,
+    "drawingHeight" : 138.53705579846823,
+    "drawingWidth" : 1219.5,
+    "edgeNodeIntersections" : 0,
+    "edges" : 12,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 8,
+    "reported.bends" : 24,
+    "reported.crossings" : 1,
+    "reported.displacement" : 0,
+    "reported.fixedConflicts" : 0,
+    "reported.routeLength" : 2453.5143447359396,
+    "reported.sharedRuns" : 0,
+    "reported.unroutableEdges" : 0,
+    "routeLength" : 2453.5143447359396,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 80,
+        "x" : -585,
+        "y" : -7.097802890660731
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : -467,
+        "y" : -30.58202648462506
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : -330,
+        "y" : -28.871699667066764
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : -168,
+        "y" : -16.5125239126086
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 19,
+        "y" : -21.542966899577053
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 131,
+        "y" : -33.518527899234115
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 36,
+        "width" : 130,
+        "x" : 268,
+        "y" : 6.393527899234115
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 430,
+        "y" : 4.518527899234115
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+    "bends" : 24,
+    "crossings" : 1,
+    "displacement" : 0,
+    "fixedConflicts" : 0,
+    "routeLength" : 2453.5143447359396,
+    "sharedRuns" : 0,
+    "unroutableEdges" : 0
+  },
+  "title" : "Directed · long-edges",
+  "version" : 1
+}

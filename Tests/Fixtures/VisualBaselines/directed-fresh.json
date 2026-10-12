@@ -1,0 +1,493 @@
+{
+  "configuration" : {
+    "mode" : "fresh",
+    "options" : "catalogue-v1 defaults",
+    "pipeline" : "DirectedLayoutOperation; exact returned geometry"
+  },
+  "contracts" : {
+    "expectMissingRoutes" : false,
+    "noNodeOverlaps" : true,
+    "noObstacleIntersections" : true,
+    "orthogonal" : true,
+    "orthogonalSelfLoops" : true,
+    "routesRequired" : true
+  },
+  "edges" : [
+    {
+      "fallback" : false,
+      "id" : "e0",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -502,
+          "y" : -1.125
+        },
+        {
+          "x" : -486,
+          "y" : -1.125
+        },
+        {
+          "x" : -486,
+          "y" : -1
+        },
+        {
+          "x" : -470,
+          "y" : -1
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e1",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -365,
+          "y" : 5
+        },
+        {
+          "x" : -349,
+          "y" : 5
+        },
+        {
+          "x" : -349,
+          "y" : 5.125
+        },
+        {
+          "x" : -333,
+          "y" : 5.125
+        }
+      ],
+      "source" : "n1",
+      "target" : "n2",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e2",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -203,
+          "y" : 5.125
+        },
+        {
+          "x" : -187,
+          "y" : 5.125
+        },
+        {
+          "x" : -187,
+          "y" : 5.25
+        },
+        {
+          "x" : -171,
+          "y" : 5.25
+        }
+      ],
+      "source" : "n2",
+      "target" : "n3",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e3",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -16,
+          "y" : 5.25
+        },
+        {
+          "x" : 0,
+          "y" : 5.25
+        },
+        {
+          "x" : 0,
+          "y" : 5.375
+        },
+        {
+          "x" : 16,
+          "y" : 5.375
+        }
+      ],
+      "source" : "n3",
+      "target" : "n4",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e4",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 96,
+          "y" : 5.375
+        },
+        {
+          "x" : 112,
+          "y" : 5.375
+        },
+        {
+          "x" : 112,
+          "y" : 5.5
+        },
+        {
+          "x" : 128,
+          "y" : 5.5
+        }
+      ],
+      "source" : "n4",
+      "target" : "n5",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e5",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 233,
+          "y" : 5.5
+        },
+        {
+          "x" : 249,
+          "y" : 5.5
+        },
+        {
+          "x" : 249,
+          "y" : 5.625
+        },
+        {
+          "x" : 265,
+          "y" : 5.625
+        }
+      ],
+      "source" : "n5",
+      "target" : "n6",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e6",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 395,
+          "y" : 5.625
+        },
+        {
+          "x" : 411,
+          "y" : 5.625
+        },
+        {
+          "x" : 411,
+          "y" : 5.75
+        },
+        {
+          "x" : 427,
+          "y" : 5.75
+        }
+      ],
+      "source" : "n6",
+      "target" : "n7",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e7",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : 504.5,
+          "y" : -14.25
+        },
+        {
+          "x" : 504.5,
+          "y" : -29.5
+        },
+        {
+          "x" : -524,
+          "y" : -29.5
+        },
+        {
+          "x" : -524,
+          "y" : -13.125
+        }
+      ],
+      "source" : "n7",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e8",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -502,
+          "y" : 10.875
+        },
+        {
+          "x" : -486,
+          "y" : 10.875
+        },
+        {
+          "x" : -486,
+          "y" : 11
+        },
+        {
+          "x" : -470,
+          "y" : 11
+        }
+      ],
+      "source" : "n0",
+      "target" : "n1",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e9",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -417.5,
+          "y" : -15
+        },
+        {
+          "x" : -417.5,
+          "y" : -25
+        },
+        {
+          "x" : -536,
+          "y" : -25
+        },
+        {
+          "x" : -536,
+          "y" : -13.125
+        }
+      ],
+      "source" : "n1",
+      "target" : "n0",
+      "width" : 1.5
+    },
+    {
+      "fallback" : false,
+      "id" : "e10",
+      "labelBounds" : {
+        "height" : 0,
+        "width" : 0,
+        "x" : 0,
+        "y" : 0
+      },
+      "path" : [
+        {
+          "x" : -560,
+          "y" : -13.125
+        },
+        {
+          "x" : -560,
+          "y" : -23.125
+        },
+        {
+          "x" : -548,
+          "y" : -23.125
+        },
+        {
+          "x" : -548,
+          "y" : -13.125
+        }
+      ],
+      "source" : "n0",
+      "target" : "n0",
+      "width" : 1.5
+    }
+  ],
+  "family" : "directed",
+  "fixedCenters" : {
+
+  },
+  "id" : "directed-fresh",
+  "measuredMetrics" : {
+    "bends" : 22,
+    "crossings" : 1,
+    "displacement" : 0,
+    "drawingHeight" : 108.5,
+    "drawingWidth" : 1213.5,
+    "edgeNodeIntersections" : 0,
+    "edges" : 11,
+    "fallbackRoutes" : 0,
+    "labelNodeOverlaps" : 0,
+    "missingRoutes" : 0,
+    "nodeOverlaps" : 0,
+    "nodes" : 8,
+    "reported.bends" : 22,
+    "reported.crossings" : 1,
+    "reported.displacement" : 0,
+    "reported.fixedConflicts" : 0,
+    "reported.routeLength" : 1489.5,
+    "reported.sharedRuns" : 0,
+    "reported.unroutableEdges" : 0,
+    "routeLength" : 1489.5,
+    "sharedSegments" : 0
+  },
+  "nodes" : [
+    {
+      "bounds" : {
+        "height" : 36,
+        "width" : 80,
+        "x" : -582,
+        "y" : -13.125
+      },
+      "group" : false,
+      "id" : "n0",
+      "name" : "n0"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 105,
+        "x" : -470,
+        "y" : -15
+      },
+      "group" : false,
+      "id" : "n1",
+      "name" : "n1"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 130,
+        "x" : -333,
+        "y" : -18.875
+      },
+      "group" : false,
+      "id" : "n2",
+      "name" : "n2"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 155,
+        "x" : -171,
+        "y" : -10.75
+      },
+      "group" : false,
+      "id" : "n3",
+      "name" : "n3"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 80,
+        "x" : 16,
+        "y" : -14.625
+      },
+      "group" : false,
+      "id" : "n4",
+      "name" : "n4"
+    },
+    {
+      "bounds" : {
+        "height" : 48,
+        "width" : 105,
+        "x" : 128,
+        "y" : -18.5
+      },
+      "group" : false,
+      "id" : "n5",
+      "name" : "n5"
+    },
+    {
+      "bounds" : {
+        "height" : 32,
+        "width" : 130,
+        "x" : 265,
+        "y" : -10.375
+      },
+      "group" : false,
+      "id" : "n6",
+      "name" : "n6"
+    },
+    {
+      "bounds" : {
+        "height" : 40,
+        "width" : 155,
+        "x" : 427,
+        "y" : -14.25
+      },
+      "group" : false,
+      "id" : "n7",
+      "name" : "n7"
+    }
+  ],
+  "notes" : [
+
+  ],
+  "previousBounds" : {
+
+  },
+  "reportedMetrics" : {
+    "bends" : 22,
+    "crossings" : 1,
+    "displacement" : 0,
+    "fixedConflicts" : 0,
+    "routeLength" : 1489.5,
+    "sharedRuns" : 0,
+    "unroutableEdges" : 0
+  },
+  "title" : "Directed · fresh",
+  "version" : 1
+}
