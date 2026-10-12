@@ -103,7 +103,8 @@ public final class VerticalStackLayoutAlgorithm: LayoutAlgorithm {
         try Task.checkCancellation()
         var y = paddingY
         let width = graph.nodes.map(\.width).max() ?? 0
-        for n in graph.nodes.sorted(by: { $0.id < $1.id }) {
+        // Numeric-aware ordering keeps n2 before n10.
+        for n in graph.nodes.sorted(by: { $0.id.compare($1.id, options: .numeric) == .orderedAscending }) {
             n.x = paddingX; n.y = y; n.width = width; y += n.height + spacing
         }
     }
@@ -164,15 +165,27 @@ public final class ClearAreaLayoutAlgorithm: LayoutAlgorithm {
     public init(_ areaToClear: Rect = Rect(width: 100, height: 100)) { clearArea = areaToClear }
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
+        let gap = 10.0
         for n in graph.nodes where n.bounds.intersects(clearArea) {
-            let distances = [abs(n.bounds.right - clearArea.left), abs(n.x - clearArea.right), abs(n.bounds.bottom - clearArea.top), abs(n.y - clearArea.bottom)]
-            let d = distances.min()!
-            switch distances.firstIndex(of: d)! {
-            case 0: n.x -= d + 10
-            case 1: n.x += d + 10
-            case 2: n.y -= d + 10
-            default: n.y += d + 10
-            }
+            let start = n.bounds
+            let others = n.isGroup ? [] : graph.nodes.filter { $0 !== n && !$0.isGroup }.map(\.bounds)
+            // Leave the area on each side, then keep going past any node the move would land on.
+            let moves = [Point(x: clearArea.left - start.right - gap, y: 0), Point(x: clearArea.right - start.left + gap, y: 0),
+                         Point(x: 0, y: clearArea.top - start.bottom - gap), Point(x: 0, y: clearArea.bottom - start.top + gap)]
+                .enumerated().map { side, initial in
+                    var offset = initial
+                    while let hit = others.first(where: { start.translated(by: offset).inflated(by: gap - 1e-6).intersects($0) }) {
+                        switch side {
+                        case 0: offset.x = hit.left - gap - start.right
+                        case 1: offset.x = hit.right + gap - start.left
+                        case 2: offset.y = hit.top - gap - start.bottom
+                        default: offset.y = hit.bottom + gap - start.top
+                        }
+                    }
+                    return offset
+                }
+            let best = moves.min { abs($0.x) + abs($0.y) < abs($1.x) + abs($1.y) }!
+            n.x += best.x; n.y += best.y
         }
         straightEdges(graph)
     }
@@ -187,16 +200,89 @@ public final class RemoveOverlapsLayoutAlgorithm: LayoutAlgorithm {
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
+        let leaves = graph.nodes.filter { !$0.isGroup }
+        try forceScan(leaves, spacing: minSpacing)
+        // Force scan cannot split nodes with identical centers; separate any such remainder locally.
+        if try separateOverlaps(leaves, spacing: minSpacing, movable: leaves.map { _ in true }) { return }
+        // Dense clusters can exhaust the pass budget; a rightward sweep always terminates.
         // Compare all preceding rectangles: a wide rectangle can overlap beyond its immediate neighbor.
         let sorted = graph.nodes.enumerated().sorted { a, b in a.element.x == b.element.x ? a.offset < b.offset : a.element.x < b.element.x }.map(\.element)
         for i in sorted.indices {
             if i % 64 == 0 { try Task.checkCancellation() }
             let node = sorted[i]
-            for other in sorted[..<i].sorted(by: { $0.x < $1.x }) where node.y < other.bounds.bottom && node.bounds.bottom > other.y {
+            for other in sorted[..<i].sorted(by: { $0.x < $1.x }) where node.y < other.bounds.bottom + minSpacing && node.bounds.bottom + minSpacing > other.y {
                 if node.x < other.bounds.right + minSpacing && node.bounds.right > other.x { node.x = other.bounds.right + minSpacing }
             }
         }
     }
+}
+
+/// Force-scan overlap removal (Misue et al. 1995): sweeps each axis in center order and shifts everything
+/// beyond a conflict by the same amount, so no left/right or above/below relation between nodes changes.
+func forceScan(_ nodes: [LayoutNode], spacing: Double) throws {
+    for horizontal in [true, false] {
+        try Task.checkCancellation()
+        let centers = nodes.map(\.center)
+        let key = { (i: Int) in horizontal ? centers[i].x : centers[i].y }
+        let order = nodes.indices.sorted { key($0) == key($1) ? $0 < $1 : key($0) < key($1) }
+        var i = 0
+        while i < order.count {
+            var k = i
+            while k + 1 < order.count && key(order[k + 1]) == key(order[i]) { k += 1 }
+            var shift = 0.0
+            for m in order[i...k] {
+                for j in order[(k + 1)...] {
+                    let a = nodes[m].bounds, b = nodes[j].bounds, d = b.center - a.center
+                    let needX = (a.width + b.width) / 2 + spacing, needY = (a.height + b.height) / 2 + spacing
+                    guard abs(d.x) < needX - 1e-9 && abs(d.y) < needY - 1e-9 else { continue }
+                    // Scale the center offset until either axis clears; this axis takes its component.
+                    let t = min(d.x != 0 ? needX / abs(d.x) : .infinity, d.y != 0 ? needY / abs(d.y) : .infinity)
+                    shift = max(shift, (horizontal ? d.x : d.y) * (t - 1))
+                }
+            }
+            if shift > 0 {
+                for j in order[(k + 1)...] { if horizontal { nodes[j].x += shift } else { nodes[j].y += shift } }
+            }
+            i = k + 1
+        }
+    }
+}
+
+/// Pushes each pair closer than `spacing` on both axes apart along the axis needing the smaller move,
+/// so rows stay rows and columns stay columns. Pairs with one fixed member move only the other;
+/// fixed pairs are left alone. Returns false if the pass budget runs out before every pair is clear.
+func separateOverlaps(_ nodes: [LayoutNode], spacing: Double, movable: [Bool], passes: Int = 200) throws -> Bool {
+    let candidates = nodes.indices.filter { !nodes[$0].isGroup }
+    for pass in 0..<passes {
+        if pass % 16 == 0 { try Task.checkCancellation() }
+        // Window by the pass-start positions; pairs missed after a move are caught by the next pass,
+        // and the final, motionless pass is exact.
+        let order = candidates.sorted { nodes[$0].x == nodes[$1].x ? $0 < $1 : nodes[$0].x < nodes[$1].x }
+        let lefts = order.map { nodes[$0].x }, rights = order.map { nodes[$0].bounds.right }
+        var moved = false
+        for k in order.indices {
+            for m in (k + 1)..<order.count {
+                if lefts[m] >= rights[k] + spacing { break }
+                let (i, j) = (order[k], order[m])
+                guard movable[i] || movable[j] else { continue }
+                let a = nodes[i].bounds, b = nodes[j].bounds
+                let needX = min(a.right, b.right) - max(a.left, b.left) + spacing
+                let needY = min(a.bottom, b.bottom) - max(a.top, b.top) + spacing
+                guard needX > 1e-9 && needY > 1e-9 else { continue }
+                let horizontal = needX <= needY
+                let forward = horizontal ? (a.center.x == b.center.x ? i < j : a.center.x < b.center.x)
+                                         : (a.center.y == b.center.y ? i < j : a.center.y < b.center.y)
+                let need = horizontal ? needX : needY
+                let share = movable[i] && movable[j] ? need / 2 : need
+                let step = forward ? share : -share
+                if movable[i] { if horizontal { nodes[i].x -= step } else { nodes[i].y -= step } }
+                if movable[j] { if horizontal { nodes[j].x += step } else { nodes[j].y += step } }
+                moved = true
+            }
+        }
+        if !moved { return true }
+    }
+    return false
 }
 public final class CompactDiskLayoutAlgorithm: LayoutAlgorithm {
     public var spacing: Double = 40

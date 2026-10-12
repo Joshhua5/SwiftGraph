@@ -203,7 +203,11 @@ enum VisualCatalogue {
                                     configuration: fixture.config.mapValues { String($0) }.merging(["router": fixture.router, "pipeline": "router only; raw reference geometry"], uniquingKeysWith: { a, _ in a }),
                                     contracts: VisualContracts(routesRequired: false)) {
                 let g = fixture.graph(), r = fixture.makeRouter(); r.routeEdges(g)
-                var drawing = VisualDrawing(graph: g, fallbackEdges: fallbacks(r, g), notes: ["Raw C# reference contract; existing paths and self-loops are preserved."])
+                var drawing = VisualDrawing(graph: g, fallbackEdges: fallbacks(r, g), notes: [fixture.divergesFromReference
+                    ? "Default router, intentionally diverging from the C# reference; the reference is the comparison baseline. Parity tests pin the legacy mode."
+                    : "Raw C# reference contract; existing paths and self-loops are preserved."])
+                // Divergence is reviewed against the reference baseline rather than failed.
+                guard !fixture.divergesFromReference else { return drawing }
                 for (index, n) in g.nodes.enumerated() {
                     let b = fixture.expected.bounds[index]
                     if zip([n.x, n.y, n.width, n.height], b).contains(where: { abs($0 - $1) >= 1e-7 }) {

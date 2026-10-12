@@ -148,17 +148,16 @@ The routing algorithms follow their distinct Waring contracts:
 - **Channel:** `gridSize` sets the actual lattice pitch. Non-group nodes block cells; source/target cells remain accessible. Direction-aware A* charges bend and cell congestion costs, reset per call. Explicit ports sit one unit outside the selected side; candidates are selected greedily by distance. Endpoint doglegs join the lattice.
 - **Grouped:** channels come from both endpoint ancestor chains. Shared corridors can nudge leaf nodes when the destination is free, then reroute incident edges. Canonical shared segments receive lane offsets in both traversal directions, followed by boundary trimming. Group nodes stay fixed.
 - **BSP:** routes follow bounded partition segments split at their intersections. Nested wrapper cuts extend to the appropriate parent partition, without extending through sibling bodies. Endpoints project from center-to-center boundary intersections onto the segment graph.
-- **Polyline:** a quadtree selects the first intersected obstacle, then two corner waypoints detour around it. This is the reference's local heuristic, not a multi-obstacle pathfinding guarantee.
+- **Polyline:** shortest path over padded obstacle corners, clear of every node body. `avoidAllObstacles = false` restores the reference's local heuristic: a quadtree selects the first intersected obstacle, then two corner waypoints detour around it.
 
-Only the channel router interprets port constraints and candidates. Channel, BSP and grouped searches retain the reference's direct-line fallback when no route is found; `unroutableEdges` identifies those fallbacks, whose paths remain populated. Polyline keeps that property for compatibility and returns a heuristic path in its default legacy mode. Legacy routers do not silently change clearance or try alternative ports after their initial selection.
+Only the channel router interprets port constraints and candidates. Channel, BSP and grouped searches retain the reference's direct-line fallback when no route is found; `unroutableEdges` identifies those fallbacks, whose paths remain populated. Polyline likewise never returns an empty path. Legacy routers do not silently change clearance or try alternative ports after their initial selection.
 
-`PolylineEdgeRouter.avoidAllObstacles = true` enables deterministic multi-obstacle
-search. It retains valid heuristic routes and repairs blocked ones using padded
+`PolylineEdgeRouter.avoidAllObstacles` defaults to `true`: deterministic multi-obstacle
+search that retains valid heuristic routes and repairs blocked ones using padded
 obstacle corners. Padding guides detours; nearby endpoints can limit the extra
-clearance beyond node bodies. If no route is available, the path is empty and the edge appears
-in `unroutableEdges`. The standalone default remains `false` for reference parity.
-Standard-tree, organization-chart, hybrid, and mind-map presets enable this mode.
-The mode retains the polyline router's endpoint/group exclusions and does not
+clearance beyond node bodies. If no route is available, the edge keeps the legacy detour
+and appears in `unroutableEdges`. Set it to `false` for the C# reference geometry; the
+routing parity tests pin that mode. The mode retains the polyline router's endpoint/group exclusions and does not
 interpret ports. Clipping remains explicit.
 
 General routers preserve self-loops; route them last with `SelfLoopRouter`. `EdgeEndpointClipper.clipToNodeBounds` trims endpoints along the actual boundary-crossing segments, making it safe to run repeatedly. Most positioning algorithms emit center-to-center paths; clipping is an explicit rendering preparation step.

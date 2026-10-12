@@ -168,6 +168,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
 
 public final class BarycenterLayoutAlgorithm: LayoutAlgorithm {
     public var iterations = 3
+    public var minSpacing: Double = 10
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -186,6 +187,8 @@ public final class BarycenterLayoutAlgorithm: LayoutAlgorithm {
             positions = next
         }
         for i in a.nodes.indices where !fixed[i] { a.nodes[i].center = positions[i] }
+        // Averaging pulls nodes that share neighbors onto one point; spread them without moving anchors.
+        _ = try separateOverlaps(a.nodes, spacing: minSpacing, movable: fixed.map { !$0 })
         straightEdges(graph)
     }
 }

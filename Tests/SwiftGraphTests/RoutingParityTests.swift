@@ -27,7 +27,7 @@ private func approximatelyEqual(_ a: Rect, _ b: [Double]) -> Bool {
             #expect(local.count == expected.count)
             for (a, b) in zip(local, expected) { #expect(approximatelyEqual([a.start, a.end], b), "\(fixture.name): local segments of \(node.id)") }
         }
-        fixture.makeRouter().routeEdges(graph)
+        fixture.makeRouter(reference: true).routeEdges(graph)
         for (node, bounds) in zip(graph.nodes, fixture.expected.bounds) { #expect(approximatelyEqual(node.bounds, bounds), "\(fixture.name): bounds of \(node.id)") }
         #expect(approximatelyEqual(graph.root.bounds, fixture.expected.root))
         for (index, edge) in graph.edges.enumerated() {

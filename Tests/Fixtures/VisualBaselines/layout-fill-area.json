@@ -8,6 +8,7 @@
   },
   "contracts" : {
     "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
     "noNodeOverlaps" : false,
     "noObstacleIntersections" : false,
     "orthogonal" : false,
@@ -119,19 +120,23 @@
       "path" : [
         {
           "x" : 222.5,
-          "y" : 13.342507645259936
+          "y" : -8.666666666666671
         },
         {
-          "x" : 442.5,
-          "y" : 34.33333333333333
+          "x" : 275,
+          "y" : -25.66666666666667
+        },
+        {
+          "x" : 425,
+          "y" : -25.66666666666667
         },
         {
           "x" : 617.5,
-          "y" : 34.33333333333333
+          "y" : -17.66666666666667
         },
         {
           "x" : 670,
-          "y" : 19.57657657657657
+          "y" : -2.9099099099099153
         }
       ],
       "source" : "n1",
@@ -311,19 +316,23 @@
       "path" : [
         {
           "x" : 42.5,
-          "y" : 230.77981651376146
+          "y" : 212
+        },
+        {
+          "x" : 95,
+          "y" : 199
         },
         {
           "x" : 262.5,
-          "y" : 255
+          "y" : 195
         },
         {
           "x" : 437.5,
-          "y" : 255
+          "y" : 195
         },
         {
           "x" : 490,
-          "y" : 237.97297297297297
+          "y" : 212.02702702702703
         }
       ],
       "source" : "n5",
@@ -364,20 +373,24 @@
       },
       "path" : [
         {
-          "x" : 235,
-          "y" : 232.1290322580645
+          "x" : 219.33333333333334,
+          "y" : 209
+        },
+        {
+          "x" : 262.5,
+          "y" : 195
         },
         {
           "x" : 480,
-          "y" : 259
+          "y" : 191
         },
         {
           "x" : 580,
-          "y" : 259
+          "y" : 191
         },
         {
           "x" : 657.5,
-          "y" : 238.73076923076923
+          "y" : 211.26923076923077
         }
       ],
       "source" : "n6",
@@ -483,19 +496,23 @@
   },
   "id" : "layout-fill-area",
   "measuredMetrics" : {
-    "bends" : 6,
-    "crossings" : 6,
+    "bends" : 9,
+    "crossings" : 5,
     "displacement" : 0,
-    "drawingHeight" : 530.8333333333333,
+    "drawingHeight" : 540.8333333333333,
     "drawingWidth" : 887,
-    "edgeNodeIntersections" : 3,
+    "edgeNodeIntersections" : 0,
     "edges" : 19,
     "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
     "labelNodeOverlaps" : 0,
+    "medianEdgeLength" : 327.08768119574074,
     "missingRoutes" : 0,
+    "nodeAreaUtilization" : 0.1399098689378592,
     "nodeOverlaps" : 0,
     "nodes" : 12,
-    "routeLength" : 4848.110855747442,
+    "p95EdgeLength" : 655.2964241888865,
+    "routeLength" : 4866.713600677071,
     "sharedSegments" : 0
   },
   "nodes" : [

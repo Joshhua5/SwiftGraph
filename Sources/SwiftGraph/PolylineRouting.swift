@@ -1,11 +1,11 @@
 import Foundation
 
-/// The reference's two-corner detour around the first intersected obstacle.
-/// Enable `avoidAllObstacles` for validated multi-obstacle routing. Ports are not interpreted.
+/// Shortest polyline that keeps `padding` clear of every obstacle. Ports are not interpreted.
+/// Set `avoidAllObstacles = false` for the C# reference's two-corner detour around the first intersected obstacle.
 public final class PolylineEdgeRouter: EdgeRouter {
     public var padding: Double = 10
-    public var avoidAllObstacles = false
-    /// Empty in legacy mode. Obstacle-aware mode leaves impossible routes empty.
+    public var avoidAllObstacles = true
+    /// Empty in legacy mode. Impossible routes keep the legacy detour so the edge stays visible.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
@@ -30,8 +30,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
                 if !ObstaclePolyline.clear(edge.path, obstacles) {
                     let path = ObstaclePolyline.search(start, end, obstacles, padding: padding)
                     if Task.isCancelled { return }
-                    edge.path = path ?? []
-                    if path == nil { unroutableEdges.append(edge) }
+                    if let path { edge.path = path } else { unroutableEdges.append(edge) }
                 }
             }
         }

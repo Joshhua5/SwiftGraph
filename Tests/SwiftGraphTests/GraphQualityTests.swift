@@ -39,8 +39,8 @@ import Testing
         let loop = LayoutEdge(source: g.nodes[0], target: g.nodes[0]); g.addEdge(loop)
         SelfLoopRouter().routeEdges(g); let loopPath = loop.path
         let router = PolylineEdgeRouter()
-        #expect(!router.avoidAllObstacles)
-        router.avoidAllObstacles = true; router.routeEdges(g)
+        #expect(router.avoidAllObstacles)
+        router.routeEdges(g)
         #expect(router.unroutableEdges.isEmpty)
         #expect(measured(g).values["edgeNodeIntersections"] == 0)
         #expect(loop.path == loopPath)
@@ -50,9 +50,12 @@ import Testing
         router.routeEdges(g); #expect(edge.path == first)
         g.nodes[2].bounds = Rect(x: -10, y: -10, width: 100, height: 100)
         router.routeEdges(g)
-        #expect(edge.path.isEmpty && router.unroutableEdges == [edge])
-        router.avoidAllObstacles = false; router.routeEdges(g)
-        #expect(!edge.path.isEmpty && router.unroutableEdges.isEmpty)
+        // An impossible route is diagnosed but still drawn, using the legacy detour.
+        let legacy = PolylineEdgeRouter(); legacy.avoidAllObstacles = false
+        let diagnosed = edge.path
+        legacy.routeEdges(g)
+        #expect(!diagnosed.isEmpty && diagnosed == edge.path && router.unroutableEdges == [edge])
+        #expect(legacy.unroutableEdges.isEmpty)
     }
 
     @Test func cancelledObstacleRoutingPreservesInput() async {
@@ -123,5 +126,55 @@ import Testing
         #expect(crowded.edges[0].labelBounds.size == Size(width: 500, height: 500))
         #expect(crowded.edges[0].labelBounds.x.isFinite)
         #expect(!measured(crowded, contracts: .init(noLabelOverlaps: true)).failures.isEmpty)
+    }
+
+    @Test func barycenterWithSingleAnchorKeepsNodesApart() throws {
+        let g = VisualGraphs.graph()
+        g.nodes[0].metadata[GraphMetadataKeys.fixed] = true
+        let anchor = g.nodes[0].bounds
+        try BarycenterLayoutAlgorithm().applyLayout(g)
+        #expect(measured(g).values["nodeOverlaps"] == 0)
+        #expect(g.nodes[0].bounds == anchor)
+    }
+
+    @Test func overlapRemovalPreservesOrthogonalOrder() throws {
+        let g = VisualGraphs.graph()
+        for n in g.nodes { n.x *= 0.2; n.y *= 0.2 }
+        let before = g.nodes.map(\.center)
+        try RemoveOverlapsLayoutAlgorithm().applyLayout(g)
+        #expect(measured(g).values["nodeOverlaps"] == 0)
+        let after = g.nodes.map(\.center)
+        for i in g.nodes.indices { for j in g.nodes.indices where before[i].x < before[j].x { #expect(after[i].x < after[j].x) } }
+        for i in g.nodes.indices { for j in g.nodes.indices where before[i].y < before[j].y { #expect(after[i].y < after[j].y) } }
+    }
+
+    @Test func overlapRemovalKeepsStackedNodesStacked() throws {
+        let g = LayoutGraph()
+        for (id, bounds) in [("a", Rect(x: 0, y: 0, width: 100, height: 40)), ("b", Rect(x: 0, y: 30, width: 100, height: 40))] {
+            let n = LayoutNode(id: id, width: bounds.width, height: bounds.height); n.bounds = bounds; g.addNode(n)
+        }
+        try RemoveOverlapsLayoutAlgorithm().applyLayout(g)
+        // Stacked nodes stay stacked: a 20pt vertical move beats a 110pt horizontal one.
+        #expect(g.nodes[0].x == g.nodes[1].x)
+        #expect(g.nodes[1].y - g.nodes[0].bounds.bottom >= 10 - 1e-9)
+        #expect(abs(g.nodes[0].y) + abs(g.nodes[1].y - 30) <= 20 + 1e-9)
+    }
+
+    @Test func clearAreaDoesNotPushNodesOntoOtherNodes() throws {
+        let g = LayoutGraph()
+        for (id, bounds) in [("above", Rect(x: 100, y: -80, width: 105, height: 40)), ("inside", Rect(x: 100, y: 70, width: 105, height: 40))] {
+            let n = LayoutNode(id: id, width: bounds.width, height: bounds.height); n.bounds = bounds; g.addNode(n)
+        }
+        let area = Rect(x: 0, y: 0, width: 400, height: 300)
+        try ClearAreaLayoutAlgorithm(area).applyLayout(g)
+        #expect(!g.nodes[1].bounds.intersects(area))
+        #expect(!g.nodes[1].bounds.intersects(g.nodes[0].bounds))
+        #expect(g.nodes[0].bounds == Rect(x: 100, y: -80, width: 105, height: 40))
+    }
+
+    @Test func verticalStackOrdersNumberedIdsNumerically() throws {
+        let g = VisualGraphs.graph()
+        try VerticalStackLayoutAlgorithm().applyLayout(g)
+        #expect(g.nodes.sorted { $0.y < $1.y }.map(\.id) == (0..<12).map { "n\($0)" })
     }
 }

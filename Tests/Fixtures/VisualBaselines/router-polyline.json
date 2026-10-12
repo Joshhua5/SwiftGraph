@@ -6,6 +6,7 @@
   },
   "contracts" : {
     "expectMissingRoutes" : false,
+    "noLabelOverlaps" : false,
     "noNodeOverlaps" : true,
     "noObstacleIntersections" : false,
     "orthogonal" : false,
@@ -87,19 +88,19 @@
       "path" : [
         {
           "x" : 420,
-          "y" : 70.68493150684931
-        },
-        {
-          "x" : 110,
-          "y" : -10
+          "y" : 65.28301886792453
         },
         {
           "x" : 210,
           "y" : -10
         },
         {
+          "x" : 110,
+          "y" : -10
+        },
+        {
           "x" : -70,
-          "y" : 69.40298507462687
+          "y" : 62.765957446808514
         }
       ],
       "source" : "target",
@@ -149,15 +150,19 @@
     "displacement" : 0,
     "drawingHeight" : 239.5,
     "drawingWidth" : 759.5,
-    "edgeNodeIntersections" : 1,
+    "edgeNodeIntersections" : 0,
     "edges" : 4,
     "fallbackRoutes" : 0,
+    "labelLabelOverlaps" : 0,
     "labelNodeOverlaps" : 0,
+    "medianEdgeLength" : 517.2380849964379,
     "missingRoutes" : 0,
+    "nodeAreaUtilization" : 0.19874804381846636,
     "nodeOverlaps" : 0,
     "nodes" : 3,
-    "routeLength" : 1931.128844920513,
-    "sharedSegments" : 5
+    "p95EdgeLength" : 517.2380849964379,
+    "routeLength" : 1736.9979330962406,
+    "sharedSegments" : 9
   },
   "nodes" : [
     {
