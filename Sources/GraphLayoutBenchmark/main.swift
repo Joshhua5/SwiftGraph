@@ -53,6 +53,10 @@ let args = Array(CommandLine.arguments.dropFirst())
 func option(_ name: String) -> String? {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }; return args[i + 1]
 }
+if args.contains("--production") {
+    try await runProductionBenchmark(args)
+    exit(0)
+}
 let sizes = (option("--sizes") ?? "64,256,1024,4096").split(separator: ",").compactMap { Int($0) }.filter { $0 > 0 }
 let iterations = max(1, Int(option("--iterations") ?? "30") ?? 30)
 let trials = max(1, Int(option("--trials") ?? "3") ?? 3)

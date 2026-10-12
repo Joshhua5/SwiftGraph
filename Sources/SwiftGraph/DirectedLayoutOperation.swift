@@ -258,11 +258,11 @@ public struct DirectedLayoutOperation {
         return diagnostics
     }
 
-    private func milliseconds(_ duration: Duration) -> Double {
+    func milliseconds(_ duration: Duration) -> Double {
         Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
     }
 
-    private func ordered(_ nodes: [LayoutNode], edges: [LayoutEdge], trial: Int) -> [LayoutNode] {
+    func ordered(_ nodes: [LayoutNode], edges: [LayoutEdge], trial: Int) -> [LayoutNode] {
         let counts = Dictionary(grouping: edges, by: { trial == 2 ? $0.target : $0.source }).mapValues(\.count)
         return nodes.sorted {
             if trial == 0 { return $0.id < $1.id }
@@ -272,7 +272,7 @@ public struct DirectedLayoutOperation {
         }
     }
 
-    private func placeIncrementally(_ nodes: [LayoutNode], edges: [LayoutEdge], pitch: Double) {
+    func placeIncrementally(_ nodes: [LayoutNode], edges: [LayoutEdge], pitch: Double) {
         var placed = nodes.filter { configuration.previousBounds[$0.id] != nil }
         let widest = configuration.edgeWidths.max() ?? 1
         let routeClearance = max(configuration.clearance, (widest * 2.5 + 4) / 2 + 2)
@@ -302,7 +302,7 @@ public struct DirectedLayoutOperation {
         }
     }
 
-    private func widenCorridors(_ nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>) {
+    func widenCorridors(_ nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>) {
         let ranks = Array(Set(nodes.map { $0.center.x })).sorted()
         guard ranks.count > 1 else { return }
         let rankIndex = Dictionary(uniqueKeysWithValues: ranks.enumerated().map { ($0.element, $0.offset) })
@@ -324,7 +324,7 @@ public struct DirectedLayoutOperation {
         }
     }
 
-    private func pack(_ drawings: inout [(nodes: [LayoutNode], edges: [LayoutEdge], bounds: Rect)]) {
+    func pack(_ drawings: inout [(nodes: [LayoutNode], edges: [LayoutEdge], bounds: Rect)]) {
         let gap = configuration.componentSpacing
         let area = drawings.reduce(0.0) { $0 + ($1.bounds.width + gap) * ($1.bounds.height + gap) }
         let target = max(drawings.map { $0.bounds.width }.max() ?? 0, sqrt(area * max(0.25, configuration.canvasAspectRatio)))

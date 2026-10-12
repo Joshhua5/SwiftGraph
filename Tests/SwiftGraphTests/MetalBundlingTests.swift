@@ -5,6 +5,42 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct MetalBundlingTests {
+    func midpointBoundaryGraph() -> LayoutGraph {
+        let graph = LayoutGraph()
+        for (i, x) in [-10.0, 2.2, -6.1, 6.1].enumerated() {
+            let node = LayoutNode(id: String(i), width: 0, height: 0); node.center = Point(x: x, y: 0); graph.addNode(node)
+        }
+        graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1]))
+        graph.addEdge(LayoutEdge(source: graph.nodes[2], target: graph.nodes[3]))
+        return graph
+    }
+
+    @Test func midpointCompatibilityMatchesLegacyAtDistanceBoundary() throws {
+        let graph = midpointBoundaryGraph()
+        var configuration = EdgeBundlingConfiguration(); configuration.iterations = 1; configuration.segments = 2
+        configuration.bundlingDistance = 3.9
+        let midpoint = (graph.edges[0].source.center + graph.edges[0].target.center) / 2
+        let alternate = graph.edges[0].source.center + (graph.edges[0].target.center - graph.edges[0].source.center) / 2
+        #expect(midpoint.x == -3.9 && alternate.x < -3.9)
+        let prepared = try GraphCheckpoint(graph).snapshot.prepareBundling(configuration, tolerance: 0.01)
+        #expect(prepared.state.compatible.count == 2)
+        #expect(prepared.state.offsets == [0, 1, 2])
+    }
+
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal device unavailable"))
+    func gpuBundlingKeepsMidpointBoundaryCompatibility() async throws {
+        let cpu = midpointBoundaryGraph(), gpu = midpointBoundaryGraph()
+        var configuration = EdgeBundlingConfiguration(); configuration.iterations = 1; configuration.segments = 2
+        configuration.bundlingDistance = 3.9
+        try await EdgeBundlingOperation(backend: .cpu, configuration: configuration).applyLayoutAsync(cpu)
+        let operation = EdgeBundlingOperation(backend: .metal, configuration: configuration)
+        try await operation.applyLayoutAsync(gpu)
+        #expect(operation.lastMetrics?.backend == .metal)
+        for (a, b) in zip(cpu.edges, gpu.edges) {
+            for (p, q) in zip(a.path, b.path) { #expect((p - q).length < 1e-5) }
+        }
+    }
+
     func graph() -> LayoutGraph {
         let g = LayoutGraph()
         for i in 0..<8 {
@@ -43,6 +79,41 @@ struct MetalBundlingTests {
         let paths = g.edges.map(\.path)
         await #expect(throws: LayoutExecutionError.self) { try await operation.applyLayoutAsync(g) }
         #expect(g.edges.map(\.path) == paths)
+    }
+
+    @Test func automaticSelectionAndUnavailableDeviceAreExplicit() async throws {
+        let below = EdgeBundlingOperation(backend: .automatic)
+        try await below.applyLayoutAsync(graph())
+        #expect(below.lastMetrics?.fallbackReason == .belowThreshold)
+        var options = MetalLayoutOptions(); options.minimumBundlingEdgeCount = 0; options.minimumIterations = 0
+        let executor = LayoutExecutor(options: options, metalEnabled: false)
+        let automatic = EdgeBundlingOperation(backend: .automatic, executor: executor)
+        try await automatic.applyLayoutAsync(graph())
+        #expect(automatic.lastMetrics?.backend == .cpu && automatic.lastMetrics?.fallbackReason == .metalUnavailable)
+        let explicit = EdgeBundlingOperation(backend: .metal, executor: executor), g = graph()
+        let paths = g.edges.map(\.path)
+        await #expect(throws: OrganicLayoutError.self) { try await explicit.applyLayoutAsync(g) }
+        #expect(g.edges.map(\.path) == paths && explicit.lastMetrics == nil)
+    }
+
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal device unavailable"))
+    func automaticSelectionAndPrecisionFallbackMatchReferenceBackends() async throws {
+        var options = MetalLayoutOptions(); options.minimumBundlingEdgeCount = 0; options.minimumIterations = 0
+        let executor = LayoutExecutor(options: options), a = graph(), b = graph()
+        let automatic = EdgeBundlingOperation(backend: .automatic, executor: executor)
+        let explicit = EdgeBundlingOperation(backend: .metal, executor: executor)
+        try await automatic.applyLayoutAsync(a); try await explicit.applyLayoutAsync(b)
+        #expect(automatic.lastMetrics?.backend == .metal && a.edges.map(\.path) == b.edges.map(\.path))
+        let wide = graph(), reference = graph()
+        wide.nodes[0].x = -1e10; reference.nodes[0].x = -1e10
+        let before = wide.edges.map(\.path), submitted = await executor.statistics().submittedBatches
+        await #expect(throws: LayoutExecutionError.precisionLimit) { try await explicit.applyLayoutAsync(wide) }
+        #expect(wide.edges.map(\.path) == before)
+        try await automatic.applyLayoutAsync(wide)
+        try await EdgeBundlingOperation(backend: .cpu).applyLayoutAsync(reference)
+        #expect(wide.edges.map(\.path) == reference.edges.map(\.path))
+        #expect(automatic.lastMetrics?.fallbackReason == .precisionLimit)
+        #expect(await executor.statistics().submittedBatches == submitted)
     }
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [1, 3, 8, 9, 30])

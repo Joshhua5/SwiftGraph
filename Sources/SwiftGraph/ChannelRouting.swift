@@ -26,13 +26,18 @@ public final class ChannelEdgeRouter: EdgeRouter {
             return GridRect(minX: a.x, minY: a.y, maxX: b.x, maxY: b.y)
         }
         var blocked = Set<Cell>(), usage: [Cell: Int] = [:]
-        for node in graph.nodes where !node.isGroup {
-            let r = rect(node.bounds)
-            guard r.minX <= r.maxX && r.minY <= r.maxY else { continue }
-            for x in r.minX...r.maxX { for y in r.minY...r.maxY { blocked.insert(Cell(x: x, y: y)) } }
+        let rectangles = graph.nodes.filter { !$0.isGroup }.map { rect($0.bounds) }
+        let fits = rectangles.allSatisfy { r in [r.minX, r.minY, r.maxX, r.maxY].allSatisfy { Int32(exactly: $0) != nil } }
+        let occupied = fits ? RoutingCompute.current?.occupiedCells(rectangles.map { SIMD4(Int32($0.minX), Int32($0.minY), Int32($0.maxX), Int32($0.maxY)) }) : nil
+        if let occupied { blocked = Set(occupied.map { Cell(x: Int($0.x), y: Int($0.y)) }) }
+        else {
+            for r in rectangles {
+                guard r.minX <= r.maxX && r.minY <= r.maxY else { continue }
+                for x in r.minX...r.maxX { for y in r.minY...r.maxY { blocked.insert(Cell(x: x, y: y)) } }
+            }
         }
         for edge in graph.edges where edge.source !== edge.target {
-            if Task.isCancelled { return }
+            if RoutingCompute.isCancelled { return }
             let start = bestPort(edge.source, other: edge.target, active: edge.sourcePort, candidates: edge.sourcePortCandidates)
             let end = bestPort(edge.target, other: edge.source, active: edge.targetPort, candidates: edge.targetPortCandidates)
             if let path = findPath(start, end, origin: origin, blocked: blocked, usage: usage, source: rect(edge.source.bounds), target: rect(edge.target.bounds)), path.count >= 2 {
@@ -41,7 +46,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                 // cell along each segment). Preserve that observable congestion behavior.
                 if congestionPenalty > 0 { for p in edge.path { usage[cell(p), default: 0] += 1 } }
             } else {
-                if Task.isCancelled { return }
+                if RoutingCompute.isCancelled { return }
                 edge.path = [start, end]; unroutableEdges.append(edge)
             }
         }
@@ -65,7 +70,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
         queue.push(initial, priority: heuristic(a))
         var iterations = 0, finish: State?
         while let current = queue.pop() {
-            if iterations >= maxIterations || Task.isCancelled { break }; iterations += 1
+            if iterations >= maxIterations || RoutingCompute.isCancelled { break }; iterations += 1
             if !closed.insert(current).inserted { continue }
             if current.cell == b { finish = current; break }
             for (dx, dy, dir) in [(0, 1, 2), (0, -1, 2), (1, 0, 1), (-1, 0, 1)] {

@@ -39,7 +39,6 @@ import Testing
         let loop = LayoutEdge(source: g.nodes[0], target: g.nodes[0]); g.addEdge(loop)
         SelfLoopRouter().routeEdges(g); let loopPath = loop.path
         let router = PolylineEdgeRouter()
-        #expect(router.avoidAllObstacles)
         router.routeEdges(g)
         #expect(router.unroutableEdges.isEmpty)
         #expect(measured(g).values["edgeNodeIntersections"] == 0)
@@ -50,18 +49,14 @@ import Testing
         router.routeEdges(g); #expect(edge.path == first)
         g.nodes[2].bounds = Rect(x: -10, y: -10, width: 100, height: 100)
         router.routeEdges(g)
-        // An impossible route is diagnosed but still drawn, using the legacy detour.
-        let legacy = PolylineEdgeRouter(); legacy.avoidAllObstacles = false
-        let diagnosed = edge.path
-        legacy.routeEdges(g)
-        #expect(!diagnosed.isEmpty && diagnosed == edge.path && router.unroutableEdges == [edge])
-        #expect(legacy.unroutableEdges.isEmpty)
+        // An impossible route is diagnosed but still drawn as a straight line.
+        #expect(edge.path == [g.nodes[0].center, g.nodes[1].center] && router.unroutableEdges == [edge])
     }
 
     @Test func cancelledObstacleRoutingPreservesInput() async {
         let result = await Task { () -> Bool in
             let g = VisualGraphs.obstacle(), paths = g.edges.map(\.path)
-            let router = PolylineEdgeRouter(); router.avoidAllObstacles = true
+            let router = PolylineEdgeRouter()
             withUnsafeCurrentTask { $0?.cancel() }
             router.routeEdges(g)
             return g.edges.map(\.path) == paths

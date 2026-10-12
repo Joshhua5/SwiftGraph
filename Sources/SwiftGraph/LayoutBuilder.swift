@@ -2,14 +2,24 @@
 public final class LayoutBuilder {
     public let graph: LayoutGraph
     private var pipeline: [(LayoutGraph) async throws -> Void] = []
+    private let executionReport = LayoutPipelineReport()
+    /// Records completed backend-aware stages from the latest applyAsync call.
+    /// On failure, records from earlier successful pipeline stages remain available.
+    public var lastExecutionMetrics: [LayoutExecutionMetrics] { executionReport.metrics }
     public var pipelineLength: Int { pipeline.count }
     public init(graph: LayoutGraph) { self.graph = graph }
     public static func create(_ graph: LayoutGraph) -> LayoutBuilder { LayoutBuilder(graph: graph) }
     @discardableResult public func useAlgorithm(_ algorithm: any LayoutAlgorithm) -> Self {
-        pipeline.append { graph in try await algorithm.applyLayoutAsync(graph) }; return self
+        pipeline.append { [executionReport] graph in
+            try await algorithm.applyLayoutAsync(graph)
+            executionReport.metrics += (algorithm as? any LayoutExecutionReporting)?.lastExecutionMetrics ?? []
+        }; return self
     }
     @discardableResult public func useAsyncAlgorithm(_ algorithm: any AsyncLayoutAlgorithm) -> Self {
-        pipeline.append { graph in try await algorithm.applyLayoutAsync(graph) }; return self
+        pipeline.append { [executionReport] graph in
+            try await algorithm.applyLayoutAsync(graph)
+            executionReport.metrics += (algorithm as? any LayoutExecutionReporting)?.lastExecutionMetrics ?? []
+        }; return self
     }
     @discardableResult public func useAlgorithm<A: LayoutAlgorithm>(_ algorithm: A, configure: (A) -> Void) -> Self {
         configure(algorithm); return useAlgorithm(algorithm)
@@ -27,8 +37,13 @@ public final class LayoutBuilder {
         pipeline.append(operation); return self
     }
     public func applyAsync() async throws {
+        executionReport.metrics = []
         for operation in pipeline { try Task.checkCancellation(); try await operation(graph); try Task.checkCancellation() }
     }
+}
+
+private final class LayoutPipelineReport {
+    var metrics: [LayoutExecutionMetrics] = []
 }
 
 public extension LayoutBuilder {
@@ -155,7 +170,7 @@ public extension LayoutBuilder {
         configure(value); return useAlgorithm(value)
     }
     @discardableResult func useStandardHierarchical(_ configure: (HierarchicalLayoutAlgorithm) -> Void = { _ in }) -> Self { useHierarchical(configure).routeSelfLoops() }
-    @discardableResult func useStandardOrganic(_ configure: (OrganicLayoutAlgorithm) -> Void = { _ in }) -> Self { useOrganic(configure).routePolyline { $0.avoidAllObstacles = true }.routeSelfLoops { $0.avoidObstacles = true } }
+    @discardableResult func useStandardOrganic(_ configure: (OrganicLayoutAlgorithm) -> Void = { _ in }) -> Self { useOrganic(configure).routePolyline().routeSelfLoops() }
     @discardableResult func useEdgeBundlingPattern() -> Self { routePolyline().routeWithBundling() }
     @discardableResult func clipEdgeEndpoints() -> Self { transform(EdgeEndpointClipper.clipToNodeBounds) }
     @discardableResult func placeLabels(_ configure: (LabelPlacementAlgorithm) -> Void = { _ in }) -> Self {

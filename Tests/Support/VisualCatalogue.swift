@@ -164,7 +164,7 @@ enum VisualCatalogue {
                 if spec.id == "barycenter" { drawing.fixedCenters[g.nodes[0].id] = g.nodes[0].center }
                 if spec.id == "subgraph" {
                     // A local layout preserves existing unrelated routes; seed the input, never overwrite its output.
-                    let router = PolylineEdgeRouter(); router.avoidAllObstacles = true; router.routeEdges(g)
+                    PolylineEdgeRouter().routeEdges(g)
                     for n in g.nodes.dropFirst(6) { drawing.fixedCenters[n.id] = n.center }
                 }
                 try spec.factory().applyLayout(g)
@@ -191,7 +191,7 @@ enum VisualCatalogue {
             let input = ["curve-fitting": "hierarchical bends", "octilinear": "diagonal tree edges", "bundling": "parallel traffic", "bus": "fan-in and fan-out"][name] ?? "obstacle, ports and reciprocal edges"
             cases.append(VisualCase(id: "router-\(name)", family: "routing", title: "\(name) · \(input)",
                                     configuration: ["router": name, "input": input, "pipeline": "router → self-loops → clip"],
-                                    contracts: VisualContracts(noNodeOverlaps: true, noObstacleIntersections: name == "channel", orthogonal: name == "channel", orthogonalSelfLoops: false), smoke: name == "channel") {
+                                    contracts: VisualContracts(noNodeOverlaps: true, noObstacleIntersections: name == "channel", orthogonal: name == "channel"), smoke: name == "channel") {
                 let g = try VisualGraphs.routing(name), r = router(name)
                 r.routeEdges(g); let failures = fallbacks(r, g); VisualGraphs.finish(g)
                 return VisualDrawing(graph: g, fallbackEdges: failures,
@@ -204,7 +204,7 @@ enum VisualCatalogue {
                                     contracts: VisualContracts(routesRequired: false)) {
                 let g = fixture.graph(), r = fixture.makeRouter(); r.routeEdges(g)
                 var drawing = VisualDrawing(graph: g, fallbackEdges: fallbacks(r, g), notes: [fixture.divergesFromReference
-                    ? "Default router, intentionally diverging from the C# reference; the reference is the comparison baseline. Parity tests pin the legacy mode."
+                    ? "Router intentionally diverging from the C# reference; the reference is the comparison baseline."
                     : "Raw C# reference contract; existing paths and self-loops are preserved."])
                 // Divergence is reviewed against the reference baseline rather than failed.
                 guard !fixture.divergesFromReference else { return drawing }
@@ -265,6 +265,7 @@ enum VisualCatalogue {
                 return VisualDrawing(graph: g, notes: ["Metal Float output is reviewed visually; it is not required to equal CPU geometry."])
             })
         }
+        cases += MetalVisualCatalogue.all()
         return cases.sorted { $0.id < $1.id }
     }
 
@@ -320,7 +321,7 @@ enum VisualCatalogue {
                         "placement.edgeLength": d.final.edgeLength, "placement.area": d.final.drawingArea,
                         "candidates": Double(d.candidateCount), "selectedCandidate": Double(d.selectedCandidate), "solverIterations": Double(d.solverIterations)]
                 }
-                let router = PolylineEdgeRouter(); router.avoidAllObstacles = true; router.routeEdges(g)
+                let router = PolylineEdgeRouter(); router.routeEdges(g)
                 drawing.fallbackEdges = g.edges.indices.filter { i in router.unroutableEdges.contains { $0 === g.edges[i] } }
                 VisualGraphs.finish(g)
                 return drawing

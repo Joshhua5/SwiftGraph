@@ -37,14 +37,14 @@ public final class EdgeSeparator: EdgeRouter {
                                         lowBends: ta <= tb ? startBends : endBends, highBends: ta <= tb ? endBends : startBends))
             }
         }
-        if Task.isCancelled { return }
+        if RoutingCompute.isCancelled { return }
         // Collinear runs that nearly meet at a bend count as shared: once that bend moves to its lane,
         // the runs would otherwise be pushed into each other. Runs meeting only at path ends stay apart.
         let reach = 2 * spacing
         let groups = Self.sharedGroups(segments, reach: reach)
         var shifts = paths.map { Array(repeating: Point.zero, count: max(0, $0.count - 1)) }
         for group in groups {
-            if Task.isCancelled { return }
+            if RoutingCompute.isCancelled { return }
             let u = segments[group[0]].direction, n = segments[group[0]].normal
             var spans: [Int: (low: Double, high: Double, first: Int)] = [:]
             for s in group {
@@ -78,7 +78,7 @@ public final class EdgeSeparator: EdgeRouter {
                 shifts[segments[s].edge][segments[s].index] = n * offset
             }
         }
-        if Task.isCancelled { return }
+        if RoutingCompute.isCancelled { return }
         for (e, edge) in edges.enumerated() where shifts[e].contains(where: { $0 != .zero }) {
             var path = Self.shifted(paths[e], shifts[e])
             path[0] = Self.keep(path[0], original: paths[e][0], inside: edge.source.bounds)
@@ -112,12 +112,14 @@ public final class EdgeSeparator: EdgeRouter {
         }
         var buckets: [Key: [Int]] = [:]
         for (i, s) in segments.enumerated() { buckets[key(s), default: []].append(i) }
+        let candidates = RoutingCompute.current?.overlapMatrix(segments.map { (start: $0.start, end: $0.end) }, padding: reach + tolerance)
         var parent = Array(segments.indices)
         func root(_ i: Int) -> Int { var i = i; while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }; return i }
         for (i, s) in segments.enumerated() {
             let k = key(s)
             for da in -1...1 { for dc in -1...1 {
                 for j in buckets[Key(angle: k.angle + da, offset: k.offset + dc)] ?? [] where j > i && segments[j].edge != s.edge {
+                    if let candidates, candidates[i * segments.count + j] == 0 { continue }
                     let t = segments[j], length = (s.end - s.start).length
                     guard abs(cross(s.end - s.start, t.start - s.start)) / length < tolerance,
                           abs(cross(s.end - s.start, t.end - s.start)) / length < tolerance,
@@ -213,7 +215,8 @@ public final class EdgeSeparator: EdgeRouter {
     }
 
     private static func hits(_ path: [Point], _ obstacles: [Rect]) -> Set<Int> {
-        Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0, $1) } })
+        if let compute = RoutingCompute.current { return compute.hits(path, obstacles) }
+        return Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0, $1) } })
     }
     private static func overlaps(_ a: (Double, Double), _ b: (Double, Double), reach: Double) -> Bool {
         min(a.1, b.1) - max(a.0, b.0) > -reach

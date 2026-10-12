@@ -1,7 +1,7 @@
 import Foundation
 
 /// A deterministic spanning forest, with iterative traversal for deep and cyclic input.
-private struct Forest {
+struct Forest {
     var roots: [Int] = []
     var children: [[Int]]
     var depth: [Int]

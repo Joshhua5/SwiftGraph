@@ -65,6 +65,7 @@ struct VisualResult: Codable {
     var error: String?
     var hasSnapshot = false
     var hasBefore = false
+    var notes: [String]?
     var failed: Bool { status == "contract-failure" || status == "error" }
 }
 
@@ -191,6 +192,7 @@ enum VisualEvaluation {
             let start = ContinuousClock.now
             do {
                 let drawing = try await item.run()
+                row.notes = drawing.notes
                 var snapshot = VisualSnapshot(case: item, drawing: drawing)
                 try VisualStorage.validate(snapshot)
                 let dir = try VisualStorage.caseDirectory(output, item.id)
@@ -330,6 +332,11 @@ enum VisualGallery {
         for row in run.cases {
             let dir = "cases/\(row.id)"
             body += "<article class=\"case\" data-family=\"\(esc(row.family))\" data-status=\"\(esc(row.status))\"><span class=\"status\">\(esc(row.status))</span><h2>\(esc(row.id))</h2><p>\(esc(row.title))</p>"
+            if let notes = row.notes, !notes.isEmpty {
+                body += "<details><summary>Execution and presentation notes</summary><ul>"
+                for note in notes { body += "<li>\(esc(note))</li>" }
+                body += "</ul></details>"
+            }
             let findings = currentFindings(row)
             if !findings.isEmpty { body += "<p class=\"warning\">Current findings: \(esc(findings))</p>" }
             if let error = row.error { body += "<pre class=\"warning\">\(esc(error))</pre>" }

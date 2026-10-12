@@ -133,23 +133,18 @@ import Testing
         #expect(c["reported.selectedCandidate", default: 0] > 0)
     }
 
-    @Test func compactSelfLoopsAvoidNeighborsWithoutChangingLegacy() {
+    @Test func selfLoopsAvoidNeighborsAndStayVisibleWhenBlocked() {
         let g = VisualGraphs.graph(2)
         g.edges = []
         g.nodes[0].bounds = Rect(x: 0, y: 100, width: 80, height: 32)
         g.nodes[1].bounds = Rect(x: 0, y: 20, width: 100, height: 60)
         let loop = LayoutEdge(source: g.nodes[0], target: g.nodes[0]); g.addEdge(loop)
-        let router = SelfLoopRouter(); router.legacy = true; router.routeEdges(g)
-        let legacy = loop.path
-        #expect(!ObstaclePolyline.clear(legacy, [g.nodes[1].bounds]))
-        router.avoidObstacles = true; router.routeEdges(g)
-        #expect(loop.path != legacy && ObstaclePolyline.clear(loop.path, [g.nodes[1].bounds]))
-        #expect(router.unroutableEdges.isEmpty)
-        router.avoidObstacles = false; router.routeEdges(g)
-        #expect(loop.path == legacy)
+        let router = SelfLoopRouter(); router.routeEdges(g)
+        #expect(ObstaclePolyline.clear(loop.path, [g.nodes[1].bounds]) && router.unroutableEdges.isEmpty)
+        // Fully enclosed by a neighbour: the loop is still drawn, and reported.
         g.nodes[1].bounds = g.nodes[0].bounds.inflated(by: 100)
-        router.avoidObstacles = true; router.routeEdges(g)
-        #expect(loop.path.isEmpty && router.unroutableEdges == [loop])
+        router.routeEdges(g)
+        #expect(loop.path.count == 5 && router.unroutableEdges == [loop])
     }
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal device unavailable"))

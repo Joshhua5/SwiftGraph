@@ -2,7 +2,7 @@ import Foundation
 
 /// Routes on the bounded segments of the hierarchical BSP visibility graph. By default routes leave and enter
 /// through orthogonal side ports, keep `margin` clear of the outermost nodes, prefer fewer bends and finish with
-/// `EdgeSeparator`. `legacy` restores the C# reference geometry.
+/// `EdgeSeparator`.
 public final class BspEdgeRouter: EdgeRouter {
     /// Clearance between the outermost nodes and the outer routing frame.
     public var margin: Double = 20
@@ -10,9 +10,7 @@ public final class BspEdgeRouter: EdgeRouter {
     public var bendPenalty: Double = 40
     /// Lane spacing for edges sharing a channel; 0 leaves them merged.
     public var edgeSpacing: Double = 6
-    /// The reference's tight frame, centre-line endpoints, bend-free costs and merged channels.
-    public var legacy = false
-    /// Searches that used the reference's direct-line fallback.
+    /// Edges with no route through the partition; they keep a straight centre-to-centre line.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
@@ -24,28 +22,16 @@ public final class BspEdgeRouter: EdgeRouter {
                                               width: global[0].end.x - global[0].start.x, height: global[2].end.y - global[2].start.y) : nil
         let blockers = graph.nodes.filter { !$0.isGroup }
         for edge in graph.edges where edge.source !== edge.target {
-            if Task.isCancelled { return }
+            if RoutingCompute.isCancelled { return }
             var segments = global + calculator.getLocalGridSegments(edge.source) + calculator.getLocalGridSegments(edge.target)
-            if !legacy {
-                if let frame, margin > 0 { segments = Self.expand(segments, frame: frame, by: margin) }
-                let obstacles = blockers.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: -1e-6) }
-                if let path = orthogonalRoute(edge, segments, obstacles) {
-                    if Task.isCancelled { return }
-                    edge.path = path; continue
-                }
-            }
-            var visibility = BspVisibilityGraph(segments)
-            let start = boundary(edge.source.bounds, toward: edge.target.center), end = boundary(edge.target.bounds, toward: edge.source.center)
-            visibility.connect(start, segments: segments); visibility.connect(end, segments: segments)
-            let found = visibility.path(from: start, to: end)
-            if Task.isCancelled { return }
-            var path = found ?? [start, end]
-            let length = zip(path, path.dropFirst()).reduce(0.0) { $0 + ($1.1 - $1.0).length }
-            if path.count < 2 || length < 0.5 { path = [edge.source.center, edge.target.center] }
-            if found == nil || length < 0.5 { unroutableEdges.append(edge) }
-            edge.path = path
+            if let frame, margin > 0 { segments = Self.expand(segments, frame: frame, by: margin) }
+            let obstacles = blockers.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: -1e-6) }
+            let path = orthogonalRoute(edge, segments, obstacles)
+            if RoutingCompute.isCancelled { return }
+            if path == nil { unroutableEdges.append(edge) }
+            edge.path = path ?? [edge.source.center, edge.target.center]
         }
-        if !legacy && edgeSpacing > 0 {
+        if edgeSpacing > 0 {
             let separator = EdgeSeparator(); separator.spacing = edgeSpacing; separator.routeEdges(graph)
         }
     }
@@ -104,19 +90,9 @@ public final class BspEdgeRouter: EdgeRouter {
                 let d = along ? (s.start.y - port.y) * direction.y : (s.start.x - port.x) * direction.x
                 if d > 1e-6 && d < distance { distance = d; best = port + direction * d }
             }
-            if let hit = best, !obstacles.contains(where: { $0.intersectsLine(port, hit) }) { result.append((port, hit)) }
+            if let hit = best, (RoutingCompute.current.map { $0.hits([port, hit], obstacles).isEmpty } ?? !obstacles.contains(where: { $0.intersectsLine(port, hit) })) { result.append((port, hit)) }
         }
         return result
-    }
-    private func boundary(_ r: Rect, toward target: Point) -> Point {
-        let c = r.center, d = target - c
-        if d == .zero { return c }
-        var t = Double.infinity
-        if d.x > 0 { t = min(t, (r.right - c.x) / d.x) }
-        if d.x < 0 { t = min(t, (r.left - c.x) / d.x) }
-        if d.y > 0 { t = min(t, (r.bottom - c.y) / d.y) }
-        if d.y < 0 { t = min(t, (r.top - c.y) / d.y) }
-        return c + d * t
     }
 }
 
@@ -133,8 +109,9 @@ struct BspVisibilityGraph {
     init(_ segments: [(start: Point, end: Point)]) {
         self.segments = segments
         for s in segments { _ = insert(s.start); _ = insert(s.end) }
+        let candidates = RoutingCompute.current?.overlapMatrix(segments)
         for i in segments.indices {
-            for j in (i + 1)..<segments.count {
+            for j in (i + 1)..<segments.count where candidates == nil || candidates![i * segments.count + j] != 0 {
                 if let p = intersection(segments[i], segments[j]) { _ = insert(p) }
             }
         }
@@ -150,22 +127,6 @@ struct BspVisibilityGraph {
         let i = points.count; points.append(p); adjacency.append([]); indices[key] = i; return i
     }
     private mutating func link(_ a: Int, _ b: Int) { adjacency[a].append(b); adjacency[b].append(a) }
-    mutating func connect(_ p: Point, segments: [(start: Point, end: Point)]) {
-        if indices[BspPointKey(p)] != nil { return }
-        var closest: (start: Point, end: Point)?, projection = p, distance = Double.infinity
-        for s in segments {
-            let d = s.end - s.start
-            let t = d.lengthSquared == 0 ? 0 : max(0, min(1, ((p.x - s.start.x) * d.x + (p.y - s.start.y) * d.y) / d.lengthSquared))
-            let q = s.start + d * t, length = (q - p).length
-            if length < distance { distance = length; projection = q; closest = s }
-        }
-        guard let closest else { return }
-        if BspPointKey(p) == BspPointKey(projection) { projection = p }
-        let a = insert(p), b = insert(projection); link(a, b)
-        // Match the reference's two nearest existing points on this bounded segment.
-        let neighbors = points.indices.filter { $0 != b && onSegment(closest, points[$0]) }.sorted { (points[$0] - projection).length < (points[$1] - projection).length }.prefix(2)
-        for n in neighbors { link(b, n) }
-    }
     /// Joins a side port to its hit point, splicing the hit into every segment it lies on.
     mutating func attach(_ port: Point, to hit: Point) {
         let existing = indices[BspPointKey(hit)] != nil, h = insert(hit)
@@ -191,7 +152,7 @@ struct BspVisibilityGraph {
         }
         var settled = Set<Int>()
         while let state = queue.pop() {
-            if Task.isCancelled { return nil }
+            if RoutingCompute.isCancelled { return nil }
             guard settled.insert(state).inserted else { continue }
             let vertex = state / 3, axis = state % 3
             if goals.contains(vertex) {
@@ -212,28 +173,6 @@ struct BspVisibilityGraph {
         }
         return nil
     }
-    func path(from start: Point, to end: Point) -> [Point]? {
-        guard let a = indices[BspPointKey(start)], let b = indices[BspPointKey(end)] else { return nil }
-        var queue = RoutingPriorityQueue<(Int, Point)>(), costs = [a: 0.0], previous: [Int: Point] = [:]
-        queue.push((a, start), priority: 0)
-        while let (current, currentPoint) = queue.pop() {
-            if Task.isCancelled { return nil }
-            if current == b {
-                var p = currentPoint, path = [p]
-                while let predecessor = previous[indices[BspPointKey(p)]!] { p = predecessor; path.append(p) }
-                path.reverse(); return path.count >= 2 ? path : [start, end]
-            }
-            for next in adjacency[current] {
-                let cost = costs[current]! + (currentPoint - points[next]).length
-                if cost < costs[next, default: .infinity] {
-                    costs[next] = cost; previous[next] = currentPoint
-                    queue.push((next, points[next]), priority: cost + (points[next] - end).length)
-                }
-            }
-        }
-        return nil
-    }
-
     private func onSegment(_ s: (start: Point, end: Point), _ p: Point) -> Bool { abs((s.start - p).length + (p - s.end).length - (s.start - s.end).length) < 0.001 }
     private func intersection(_ a: (start: Point, end: Point), _ b: (start: Point, end: Point)) -> Point? {
         let da = a.end - a.start, db = b.end - b.start

@@ -21,7 +21,7 @@ public final class LabelPlacementAlgorithm {
             let center = LabelCollisionRepair.midpoint(edge.path)
             edge.labelBounds = Rect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
             for _ in 0..<10 {
-                if tree.query(edge.labelBounds).isEmpty { break }
+                if (RoutingCompute.current.map { $0.intersections(edge.labelBounds, graph.nodes.filter { !$0.isGroup }.map(\.bounds)).isEmpty } ?? tree.query(edge.labelBounds).isEmpty) { break }
                 edge.labelBounds.y -= 5
             }
         }
@@ -45,9 +45,12 @@ public final class LabelLayoutAlgorithm {
         }
         func energy() -> Double {
             var result = 0.0
+            let rectangles = edges.map(\.labelBounds)
+            let obstacleFlags = RoutingCompute.current?.candidates(rectangles, obstacles)
+            let labelFlags = RoutingCompute.current?.candidates(rectangles, rectangles)
             for (i, e) in edges.enumerated() {
-                result += Double(obstacles.filter { $0.intersects(e.labelBounds) }.count) * 1000
-                for j in edges.indices where i != j && e.labelBounds.intersects(edges[j].labelBounds) { result += 100 }
+                result += Double(obstacles.indices.filter { j in (obstacleFlags?[i * obstacles.count + j] ?? 1) != 0 && obstacles[j].intersects(e.labelBounds) }.count) * 1000
+                for j in edges.indices where i != j && (labelFlags?[i * edges.count + j] ?? 1) != 0 && e.labelBounds.intersects(edges[j].labelBounds) { result += 100 }
                 if e.path.count >= 2 {
                     let c = e.labelBounds.center
                     result += LabelCollisionRepair.distance(c, to: e.path) * 0.1
@@ -58,7 +61,7 @@ public final class LabelLayoutAlgorithm {
         var random = SeededRandom(state: 123), temperature = 100.0, current = energy()
         var best = current, bestBounds = edges.map(\.labelBounds)
         for _ in 0..<max(0, iterations) {
-            if Task.isCancelled { return }
+            if RoutingCompute.isCancelled { return }
             let edge = edges[Int(random.next() * Double(edges.count))], old = edge.labelBounds
             edge.labelBounds.x += (random.next() - 0.5) * temperature; edge.labelBounds.y += (random.next() - 0.5) * temperature
             let candidate = energy()
@@ -94,16 +97,10 @@ private enum LabelCollisionRepair {
         for _ in 0..<8 {
             var changed = false
             for (index, edge) in edges.enumerated() where edge.labelBounds.width > 0 && edge.labelBounds.height > 0 {
-                if Task.isCancelled { return }
+                if RoutingCompute.isCancelled { return }
                 let original = edge.labelBounds
-                func score(_ rect: Rect) -> [Double] {
-                    [Double(obstacles.filter { $0.intersects(rect) }.count),
-                     Double(edges.indices.filter { $0 != index && edges[$0].labelBounds.intersects(rect) }.count),
-                     distance(rect.center, to: edge.path), (rect.center - original.center).lengthSquared]
-                }
-                var best = original, bestScore = score(original)
-                // Prefer the existing placement when it is already readable.
-                if bestScore[0] == 0 && bestScore[1] == 0 { continue }
+                let labelRects = edges.map(\.labelBounds)
+                var candidates = [original]
                 for (a, b) in zip(edge.path, edge.path.dropFirst()) {
                     let delta = b - a
                     guard delta.length > 1e-9 else { continue }
@@ -112,11 +109,23 @@ private enum LabelCollisionRepair {
                     for t in [0.5, 0.25, 0.75] {
                         for offset in [0.0, 1, -1, 2, -2, 3, -3] {
                             let center = a + delta * t + normal * (offset * clearance)
-                            let rect = Rect(x: center.x - original.width / 2, y: center.y - original.height / 2, width: original.width, height: original.height)
-                            let candidate = score(rect)
-                            if candidate.lexicographicallyPrecedes(bestScore) { best = rect; bestScore = candidate }
+                            candidates.append(Rect(x: center.x - original.width / 2, y: center.y - original.height / 2, width: original.width, height: original.height))
                         }
                     }
+                }
+                let obstacleFlags = RoutingCompute.current?.candidates(candidates, obstacles)
+                let labelFlags = RoutingCompute.current?.candidates(candidates, labelRects)
+                func score(_ i: Int) -> [Double] {
+                    let rect = candidates[i]
+                    return [Double(obstacles.indices.filter { j in (obstacleFlags?[i * obstacles.count + j] ?? 1) != 0 && obstacles[j].intersects(rect) }.count),
+                            Double(edges.indices.filter { j in j != index && (labelFlags?[i * edges.count + j] ?? 1) != 0 && labelRects[j].intersects(rect) }.count),
+                            distance(rect.center, to: edge.path), (rect.center - original.center).lengthSquared]
+                }
+                var best = original, bestScore = score(0)
+                if bestScore[0] == 0 && bestScore[1] == 0 { continue }
+                for i in candidates.indices.dropFirst() {
+                    let candidate = score(i)
+                    if candidate.lexicographicallyPrecedes(bestScore) { best = candidates[i]; bestScore = candidate }
                 }
                 if best != original { edge.labelBounds = best; changed = true }
             }

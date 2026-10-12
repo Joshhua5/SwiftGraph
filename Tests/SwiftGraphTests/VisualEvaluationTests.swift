@@ -26,6 +26,17 @@ import ImageIO
         #expect(throws: EvaluationError.self) { try VisualEvaluation.selected(cases, suite: "full", ids: ["typo"]) }
     }
 
+    @Test func metalGalleryCoversEveryPublicFamily() throws {
+        let cases = try VisualEvaluation.selected(VisualCatalogue.all(), suite: "metal", ids: [])
+        let ids = Set(cases.map(\.id))
+        #expect(ids.isSuperset(of: VisualCatalogue.layouts().map { "metal-layout-" + $0.id }))
+        #expect(ids.isSuperset(of: RoutingKind.allCases.map { "metal-router-" + $0.rawValue }))
+        #expect(ids.isSuperset(of: LayoutPatternType.allCases.map { "metal-preset-" + $0.rawValue }))
+        #expect(ids.isSuperset(of: ["metal-directed-fresh", "metal-directed-incremental", "metal-directed-routes-only",
+            "metal-analysis-pageRank", "metal-analysis-clusters", "metal-composition-importance", "metal-composition-cluster"]))
+        #expect(MetalVisualCatalogue.all().allSatisfy { $0.metal })
+    }
+
     @Test func fullCPUCatalogueIsIsolatedAndObeysContracts() async throws {
         for item in try VisualCatalogue.all() where !item.metal && item.family != "performance" {
             let first = try await item.run(), second = try await item.run()

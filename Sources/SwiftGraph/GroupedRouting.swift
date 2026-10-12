@@ -18,11 +18,11 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
         var paths: [LayoutEdge: [Point]] = [:]
         let edges = graph.edges.filter { $0.source !== $0.target }
         for edge in edges {
-            if Task.isCancelled { return }
+            if RoutingCompute.isCancelled { return }
             let path = route(edge); edge.path = path; paths[edge] = path
         }
         nudge(graph, edges: edges, paths: &paths)
-        if Task.isCancelled { return }
+        if RoutingCompute.isCancelled { return }
         bundle(edges, paths: paths)
         EdgeEndpointClipper.clipToNodeBounds(graph)
     }
@@ -51,14 +51,18 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
             let grid = calculator.getGrid(n)
             let xStart = lowerBound(xGrid, Int(n.x)), xEnd = lowerBound(xGrid, Int(n.bounds.right))
             let yStart = lowerBound(yGrid, Int(n.y)), yEnd = lowerBound(yGrid, Int(n.bounds.bottom))
-            for x in grid.xChannels {
+            let xBlockers = RoutingCompute.current?.axisBlockers(grid.xChannels.map(Double.init), rectangles: n.children.map(\.bounds), vertical: true)
+            let yBlockers = RoutingCompute.current?.axisBlockers(grid.yChannels.map(Double.init), rectangles: n.children.map(\.bounds), vertical: false)
+            for (i, x) in grid.xChannels.enumerated() {
                 let ix = lowerBound(xGrid, x)
-                let blocked = n.children.filter { $0.x < Double(x) && Double(x) < $0.bounds.right }.map { (lowerBound(yGrid, Int($0.y)), lowerBound(yGrid, Int($0.bounds.bottom))) }
+                let blockers = xBlockers?[i].map { n.children[$0] } ?? n.children.filter { $0.x < Double(x) && Double(x) < $0.bounds.right }
+                let blocked = blockers.map { (lowerBound(yGrid, Int($0.y)), lowerBound(yGrid, Int($0.bounds.bottom))) }
                 if yStart < yEnd { for y in yStart..<yEnd where !blocked.contains(where: { y >= $0.0 && y < $0.1 }) { vertical.insert(y * width + ix) } }
             }
-            for y in grid.yChannels {
+            for (i, y) in grid.yChannels.enumerated() {
                 let iy = lowerBound(yGrid, y)
-                let blocked = n.children.filter { $0.y < Double(y) && Double(y) < $0.bounds.bottom }.map { (lowerBound(xGrid, Int($0.x)), lowerBound(xGrid, Int($0.bounds.right))) }
+                let blockers = yBlockers?[i].map { n.children[$0] } ?? n.children.filter { $0.y < Double(y) && Double(y) < $0.bounds.bottom }
+                let blocked = blockers.map { (lowerBound(xGrid, Int($0.x)), lowerBound(xGrid, Int($0.bounds.right))) }
                 if xStart < xEnd { for x in xStart..<xEnd where !blocked.contains(where: { x >= $0.0 && x < $0.1 }) { horizontal.insert(iy * width + x) } }
             }
         }
@@ -75,7 +79,7 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
         var previous = Array(repeating: -1, count: costs.count), closed = RoutingBitSet(count: costs.count)
         queue.push(start, priority: 0); costs[start] = 0
         while let current = queue.pop() {
-            if Task.isCancelled { return edge.path }
+            if RoutingCompute.isCancelled { return edge.path }
             if closed.contains(current) { continue }; closed.insert(current)
             let direction = current % 3, cell = current / 3, y = cell / width, x = cell % width
             if x == endX && y == endY {
@@ -140,12 +144,13 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
                 if vertical { shift = Point(x: node.center.x < a.x ? bus.left - node.bounds.right : bus.right - node.x, y: 0) }
                 else { shift = Point(x: 0, y: node.center.y < a.y ? bus.top - node.bounds.bottom : bus.bottom - node.y) }
                 let destination = node.bounds.translated(by: shift)
-                if tree.query(destination).contains(where: { $0 !== node && !$0.isGroup && $0.bounds.intersects(destination) }) { continue }
+                let nearby = tree.query(destination).filter { $0 !== node && !$0.isGroup }
+                if (RoutingCompute.current.map { !$0.intersections(destination, nearby.map(\.bounds)).isEmpty } ?? nearby.contains(where: { $0.bounds.intersects(destination) })) { continue }
                 node.bounds = destination; moved.insert(node); tree.insert(bounds: node.bounds, item: node)
             }
         }
         for edge in edges where moved.contains(edge.source) || moved.contains(edge.target) {
-            if Task.isCancelled { return }
+            if RoutingCompute.isCancelled { return }
             unroutableEdges.removeAll { $0 === edge }
             let path = route(edge); paths[edge] = path; edge.path = path
         }

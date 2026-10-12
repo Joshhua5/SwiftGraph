@@ -29,6 +29,9 @@ struct LayoutBackendTests {
         #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds))
         #expect(operation.lastMetrics?.backend == .cpu)
         #expect(operation.lastMetrics?.fallbackReason == nil)
+        let timings = try #require(operation.lastMetrics?.qualityPhases)
+        #expect(timings.preparationSeconds >= 0 && timings.solverSeconds > 0 && timings.evaluationSeconds > 0)
+        #expect(timings.preparationSeconds + timings.solverSeconds + timings.evaluationSeconds <= operation.lastMetrics!.computeSeconds)
         #expect(b.nodes.allSatisfy { $0.data as? String == "payload" && $0.parent === b.root })
     }
 

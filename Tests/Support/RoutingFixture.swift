@@ -33,16 +33,16 @@ struct RoutingFixture: Decodable, Sendable {
         }
         return graph
     }
-    /// Routers whose default no longer reproduces the C# reference; their fixtures pin the legacy mode with `reference: true`.
+    /// Routers that intentionally no longer reproduce the C# reference paths.
     var divergesFromReference: Bool { router == "polyline" || router == "bsp" }
-    func makeRouter(reference: Bool = false) -> any EdgeRouter {
+    func makeRouter() -> any EdgeRouter {
         switch router {
         case "channel":
             let r = ChannelEdgeRouter(); r.gridSize = Int(config["gridSize"] ?? 20); r.bendPenalty = Int(config["bendPenalty"] ?? 2); r.congestionPenalty = Int(config["congestionPenalty"] ?? 2); return r
         case "grouped":
             let r = OrthogonalGroupedEdgeRouter(); r.bundleSpacing = config["bundleSpacing"] ?? 4; r.obstacleMargin = config["obstacleMargin"] ?? 10; r.bendPenalty = config["bendPenalty"] ?? 100; return r
-        case "polyline": let r = PolylineEdgeRouter(); r.padding = config["padding"] ?? 10; r.avoidAllObstacles = !reference; return r
-        default: let r = BspEdgeRouter(); r.legacy = reference; return r
+        case "polyline": let r = PolylineEdgeRouter(); r.padding = config["padding"] ?? 10; return r
+        default: return BspEdgeRouter()
         }
     }
 }

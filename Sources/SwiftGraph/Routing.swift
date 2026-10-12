@@ -46,7 +46,8 @@ public enum EdgeEndpointClipper {
         }
     }
     private static func clipStart(_ path: [Point], to rect: Rect) -> [Point] {
-        guard let first = path.first, rect.contains(first), let k = path.indices.dropFirst().first(where: { !rect.contains(path[$0]) }) else { return path }
+        let containment = RoutingCompute.current?.contains(path, rect)
+        guard let first = path.first, (containment?.first ?? rect.contains(first)), let k = path.indices.dropFirst().first(where: { !(containment?[$0] ?? rect.contains(path[$0])) }) else { return path }
         let inside = path[k - 1], outside = path[k], delta = outside - inside
         var exit = 1.0
         if delta.x > 0 { exit = min(exit, (rect.right - inside.x) / delta.x) }
@@ -60,23 +61,15 @@ public enum EdgeEndpointClipper {
 /// Routes self-loops as compact orthogonal corner loops: out of one side near a corner, `loopSize` round the
 /// corner and back into the adjacent side. Each loop takes the corner that is clear of other nodes, crosses the
 /// fewest routes and is furthest from where incident edges attach; further loops on a node take other corners,
-/// then nest outward. `legacy` restores the reference's flared loop above the top side.
+/// then nest outward.
 public final class SelfLoopRouter: EdgeRouter {
-    /// Legacy loop width.
-    public var loopWidth: Double = 60
-    /// Legacy loop height.
-    public var loopHeight: Double = 60
     /// How far a corner loop reaches beyond the node.
     public var loopSize: Double = 16
-    /// Legacy only: try alternate sides and smaller loops when a compact layout blocks the top loop.
-    public var avoidObstacles = false
-    public var legacy = false
-    /// Legacy: loops with no clear placement (left empty). Default: loops drawn despite a node in the way.
+    /// Loops with no clear corner; they are still drawn at the best one.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
         unroutableEdges = []
-        if legacy { routeLegacy(graph); return }
         let loops = graph.edges.filter { $0.source === $0.target }
         var pending = Set(loops), used: [LayoutNode: [Int]] = [:]
         for edge in loops {
@@ -128,58 +121,29 @@ public final class SelfLoopRouter: EdgeRouter {
     private static func crossings(_ path: [Point], _ routes: [[Point]]) -> Int {
         func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
         var count = 0
-        for (a, b) in zip(path, path.dropFirst()) {
-            for route in routes {
-                for (c, d) in zip(route, route.dropFirst()) {
-                    let u = b - a, v = d - c, denominator = cross(u, v)
-                    guard abs(denominator) > 1e-12 else { continue }
-                    let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
-                    if t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9 { count += 1 }
-                }
+        let segments = Array(zip(path, path.dropFirst())), other = routes.flatMap { Array(zip($0, $0.dropFirst())) }
+        let flags = RoutingCompute.current?.candidates(segments.map { RoutingCompute.bounds($0.0, $0.1) }, other.map { RoutingCompute.bounds($0.0, $0.1) })
+        for (i, segment) in segments.enumerated() {
+            let (a, b) = segment
+            for (j, pair) in other.enumerated() where flags == nil || flags![i * other.count + j] != 0 {
+                let (c, d) = pair, u = b - a, v = d - c, denominator = cross(u, v)
+                guard abs(denominator) > 1e-12 else { continue }
+                let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
+                if t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9 { count += 1 }
             }
         }
         return count
-    }
-    private func routeLegacy(_ graph: LayoutGraph) {
-        for edge in graph.edges where edge.source === edge.target {
-            let r = edge.source.bounds, half = loopWidth / 2, y = r.y - loopHeight
-            edge.path = [Point(x: r.center.x - half * 0.4, y: r.y), Point(x: r.center.x - half, y: y), Point(x: r.center.x + half, y: y), Point(x: r.center.x + half * 0.4, y: r.y)]
-            guard avoidObstacles else { continue }
-            let obstacles = ObstaclePolyline.obstacles(edge, graph)
-            if ObstaclePolyline.clear(edge.path, obstacles) { continue }
-            var result: [Point]?
-            for scale in [1.0, 0.5, 0.25, 0.125] {
-                for side in 0..<4 {
-                    let horizontal = side % 2 == 0
-                    let extent = horizontal ? r.width : r.height
-                    let h = min(max(1, loopWidth * scale / 2), extent / 2)
-                    let depth = max(1, loopHeight * scale)
-                    let offsets = [-h * 0.4, -h, h, h * 0.4]
-                    let path = offsets.enumerated().map { i, offset -> Point in
-                        let outside = i == 1 || i == 2 ? depth : 0
-                        switch side {
-                        case 0: return Point(x: r.center.x + offset, y: r.top - outside)
-                        case 1: return Point(x: r.right + outside, y: r.center.y + offset)
-                        case 2: return Point(x: r.center.x - offset, y: r.bottom + outside)
-                        default: return Point(x: r.left - outside, y: r.center.y - offset)
-                        }
-                    }
-                    if ObstaclePolyline.clear(path, obstacles) { result = path; break }
-                }
-                if result != nil { break }
-            }
-            edge.path = result ?? []
-            if result == nil { unroutableEdges.append(edge) }
-        }
     }
 }
 public final class OctilinearEdgeRouter: EdgeRouter {
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
-        for e in graph.edges where e.source !== e.target {
+        let edges = graph.edges.filter { $0.source !== $0.target }
+        let bends = RoutingCompute.current?.octilinear(edges.map { $0.source.center }, edges.map { $0.target.center })
+        for (i, e) in edges.enumerated() {
             let a = e.source.center, b = e.target.center, d = b - a, diagonal = min(abs(d.x), abs(d.y))
             let bend = a + Point(x: d.x >= 0 ? diagonal : -diagonal, y: d.y >= 0 ? diagonal : -diagonal)
-            e.path = [a] + ((bend - a).length > 1 && (bend - b).length > 1 ? [bend] : []) + [b]
+            e.path = [a] + ((bend - a).length > 1 && (bend - b).length > 1 ? [bends?[i] ?? bend] : []) + [b]
         }
     }
 }
@@ -192,9 +156,11 @@ public final class ParallelEdgeRouter: EdgeRouter {
         for edges in groups.values {
             let a = edges[0].source.center, b = edges[0].target.center, delta = b - a, length = max(0.001, delta.length)
             let normal = Point(x: -delta.y / length, y: delta.x / length)
+            let offsets = edges.indices.map { (Double($0) - Double(edges.count - 1) / 2) * edgeSpacing }
+            let midpoints = RoutingCompute.current?.parallel(Array(repeating: a, count: edges.count), Array(repeating: b, count: edges.count), offsets: offsets)
             for (i, e) in edges.enumerated() {
                 let offset = (Double(i) - Double(edges.count - 1) / 2) * edgeSpacing
-                e.path = edges.count == 1 ? [e.source.center, e.target.center] : [e.source.center, (a + b) / 2 + normal * offset, e.target.center]
+                e.path = edges.count == 1 ? [e.source.center, e.target.center] : [e.source.center, midpoints?[i] ?? ((a + b) / 2 + normal * offset), e.target.center]
             }
         }
     }
@@ -211,10 +177,11 @@ public final class BusEdgeRouter: EdgeRouter {
             let horizontal = others.map(\.x).max()! - others.map(\.x).min()! > others.map(\.y).max()! - others.map(\.y).min()!
             let mean = others.reduce(Point.zero) { $0 + $1.center } / Double(others.count)
             let bus = horizontal ? (mean.y >= hub.center.y ? hub.bounds.bottom + busSpacing : hub.y - busSpacing) : (mean.x >= hub.center.x ? hub.bounds.right + busSpacing : hub.x - busSpacing)
-            for e in edges where processed.insert(e).inserted {
+            let joints = RoutingCompute.current?.bus(hub.center, others: others.map(\.center), coordinate: bus, horizontal: horizontal)
+            for (i, e) in edges.enumerated() where processed.insert(e).inserted {
                 let other = e.source === hub ? e.target : e.source
-                let p = horizontal ? Point(x: hub.center.x, y: bus) : Point(x: bus, y: hub.center.y)
-                let q = horizontal ? Point(x: other.center.x, y: bus) : Point(x: bus, y: other.center.y)
+                let p = joints?[i * 2] ?? (horizontal ? Point(x: hub.center.x, y: bus) : Point(x: bus, y: hub.center.y))
+                let q = joints?[i * 2 + 1] ?? (horizontal ? Point(x: other.center.x, y: bus) : Point(x: bus, y: other.center.y))
                 let path = [hub.center, p, q, other.center]
                 e.path = e.source === hub ? path : Array(path.reversed())
             }
@@ -230,9 +197,11 @@ public final class CurveFittingEdgeRouter: EdgeRouter {
         for e in graph.edges where e.source !== e.target && e.path.count > 2 {
             for _ in 0..<min(5, max(0, iterations)) {
                 let p = e.path
-                var next = [p[0], p[0] * 0.25 + p[1] * 0.75]
-                if p.count > 3 { for i in 1..<(p.count - 2) { next += [p[i] * 0.75 + p[i + 1] * 0.25, p[i] * 0.25 + p[i + 1] * 0.75] } }
-                next += [p[p.count - 2] * 0.75 + p[p.count - 1] * 0.25, p.last!]; e.path = next
+                var aa = [p[0], p[0]], bb = [p[0], p[1]], weights = [0.0, 0.75]
+                if p.count > 3 { for i in 1..<(p.count - 2) { aa += [p[i], p[i]]; bb += [p[i + 1], p[i + 1]]; weights += [0.25, 0.75] } }
+                aa += [p[p.count - 2], p.last!]; bb += [p.last!, p.last!]; weights += [0.25, 0]
+                var next = RoutingCompute.current?.blend(aa, bb, weights: weights) ?? aa.indices.map { aa[$0] * (1 - weights[$0]) + bb[$0] * weights[$0] }
+                next[0] = p[0]; next[next.count - 1] = p.last!; e.path = next
             }
         }
     }

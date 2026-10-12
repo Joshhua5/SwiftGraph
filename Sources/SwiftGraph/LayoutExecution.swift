@@ -1,6 +1,6 @@
 import Foundation
 
-/// CPU retains the package's Double/Barnes–Hut implementation. Metal uses Float exact forces.
+/// Selects CPU, Metal, or per-operation automatic backend selection.
 public enum LayoutBackend: String, Sendable { case cpu, metal, automatic }
 public enum LayoutFallbackReason: String, Sendable {
     case belowThreshold, metalUnavailable, precisionLimit, noWork
@@ -16,7 +16,22 @@ public struct OrganicLayoutConfiguration: Sendable {
     public var initialization: OrganicInitialization = .automatic
     public var nodeSeparation: Double = 20
     public var scope: OrganicScope = .all
-    public var iterations: Int
+    private var storedIterationBudget: Double = 0
+    /// Compatibility step count. Setting it replaces any fractional budget.
+    public var iterations: Int {
+        get {
+            guard storedIterationBudget.isFinite, storedIterationBudget >= 0,
+                  storedIterationBudget < Double(Int.max / 16) else { return 0 }
+            return Int(ceil(storedIterationBudget))
+        }
+        set { storedIterationBudget = Double(newValue) }
+    }
+    /// Legacy mode executes ceil(budget) steps and cools using the original fractional
+    /// divisor. Quality mode retains its CPU contract of rounding the budget up first.
+    public var iterationBudget: Double {
+        get { storedIterationBudget }
+        set { storedIterationBudget = newValue }
+    }
     public var initialTemperature: Double = 100
     /// Nominal strength; quality mode compares half, nominal and double strength.
     public var repulsionForce: Double
@@ -24,11 +39,11 @@ public struct OrganicLayoutConfiguration: Sendable {
     var preparedPositions = false
     public init(quality: OrganicLayoutQuality = .quality) {
         self.quality = quality
-        iterations = quality == .quality ? 600 : 100
+        storedIterationBudget = quality == .quality ? 600 : 100
         repulsionForce = quality == .quality ? 100 : 2000
     }
     func validate() throws {
-        guard iterations >= 0, iterations < Int.max / 16,
+        guard iterationBudget.isFinite, iterationBudget >= 0, iterationBudget < Double(Int.max / 16),
               [initialTemperature, repulsionForce, attractionForce, nodeSeparation].allSatisfy({ $0.isFinite && $0 >= 0 }),
               (repulsionForce * repulsionForce * 4).isFinite else {
             throw LayoutExecutionError.invalidInput("Iterations, temperature, forces and separation must be finite, nonnegative and within numerical range.")
@@ -41,12 +56,14 @@ public struct MetalLayoutOptions: Sendable {
     public var minimumNodeCount = 1_024
     public var minimumIterations = 10
     public var minimumBundlingEdgeCount = 256
+    /// Radial layouts are selected by within-ring pair count, independent of iteration thresholds.
+    public var minimumRadialPairCount = 131_072
     public var iterationsPerBatch = 8
-    /// Maximum Float coordinate ULP after local-origin translation, including a movement allowance.
+    /// Float precision allowance: coordinate ULP for forces/averaging, and pair-ranking error for radial clearance.
     public var maximumCoordinateError: Double = 0.01
     public init() {}
     func validate() throws {
-        guard minimumNodeCount >= 0, minimumIterations >= 0, minimumBundlingEdgeCount >= 0, iterationsPerBatch > 0,
+        guard minimumNodeCount >= 0, minimumIterations >= 0, minimumBundlingEdgeCount >= 0, minimumRadialPairCount >= 0, iterationsPerBatch > 0,
               maximumCoordinateError.isFinite, maximumCoordinateError > 0 else {
             throw LayoutExecutionError.invalidInput("Invalid Metal selection, batch or precision options.")
         }
@@ -60,11 +77,40 @@ public struct LayoutExecutionMetrics: Sendable {
     public let nodeCount: Int
     public let iterations: Int
     /// Compute-side preparation, lazy pipeline creation, submission, waiting and readback.
-    public let computeSeconds: Double
+    public internal(set) var computeSeconds: Double
     /// Includes snapshot capture, executor queueing and graph write-back when obtained from an operation.
     public internal(set) var totalSeconds: Double
     public let gpuSeconds: Double?
     public let deviceName: String?
+    /// CPU tree rebuilding and upload within organic Metal solves; included in computeSeconds.
+    public internal(set) var cpuPreparationSeconds: Double = 0
+    /// Stages executed on CPU, including preparation or exact reconstruction in hybrid operations.
+    public internal(set) var cpuStages: [String] = []
+    /// Stages that actually submitted computation to Metal; empty for CPU/no-work execution.
+    public internal(set) var metalStages: [String] = []
+    /// Organic quality CPU preparation, candidate solves and CPU quality cleanup/scoring.
+    /// Nil for operations that do not run a candidate search. Solver time includes
+    /// backend preparation, submission and readback, not just GPU execution.
+    public internal(set) var qualityPhases: OrganicQualityTimings? = nil
+}
+public struct OrganicQualityTimings: Sendable {
+    public let preparationSeconds: Double
+    public let solverSeconds: Double
+    public let evaluationSeconds: Double
+}
+/// Execution records for successfully completed backend-aware operations.
+/// Composite operations report each child separately, in execution order.
+public protocol LayoutExecutionReporting: AsyncLayoutAlgorithm {
+    var lastExecutionMetrics: [LayoutExecutionMetrics] { get }
+}
+extension OrganicLayoutOperation: LayoutExecutionReporting {
+    public var lastExecutionMetrics: [LayoutExecutionMetrics] { lastMetrics.map { [$0] } ?? [] }
+}
+extension EdgeBundlingOperation: LayoutExecutionReporting {
+    public var lastExecutionMetrics: [LayoutExecutionMetrics] { lastMetrics.map { [$0] } ?? [] }
+}
+extension BarycenterLayoutOperation: LayoutExecutionReporting {
+    public var lastExecutionMetrics: [LayoutExecutionMetrics] { lastMetrics.map { [$0] } ?? [] }
 }
 public struct LayoutExecutorStatistics: Sendable {
     public let pipelineBuilds: Int
@@ -81,21 +127,26 @@ public actor LayoutExecutor {
     public nonisolated static var isMetalAvailable: Bool { MetalForceSolver.isAvailable }
     public let options: MetalLayoutOptions
     var metal: MetalForceSolver?
+    var routingWorker: RoutingComputeWorker?
     let metalEnabled: Bool
     public init(options: MetalLayoutOptions = .init()) { self.options = options; metalEnabled = true }
     // Deterministic unavailable-device testing, without a public "pretend Metal" backend.
     init(options: MetalLayoutOptions = .init(), metalEnabled: Bool) { self.options = options; self.metalEnabled = metalEnabled }
 
     public func statistics() -> LayoutExecutorStatistics {
-        LayoutExecutorStatistics(pipelineBuilds: metal?.pipelineBuilds ?? 0,
-                                 bufferAllocations: metal?.bufferAllocations ?? 0,
-                                 bufferReuses: metal?.bufferReuses ?? 0,
-                                 submittedBatches: metal?.submittedBatches ?? 0,
-                                 completedBatches: metal?.completedBatches ?? 0,
-                                 cachedBufferBytes: metal?.cachedBufferBytes ?? 0)
+        let routing = routingWorker?.statisticsSnapshot()
+        return LayoutExecutorStatistics(pipelineBuilds: (metal?.pipelineBuilds ?? 0) + (routing?.pipelineBuilds ?? 0),
+                                 bufferAllocations: (metal?.bufferAllocations ?? 0) + (routing?.bufferAllocations ?? 0),
+                                 bufferReuses: (metal?.bufferReuses ?? 0) + (routing?.bufferReuses ?? 0),
+                                 submittedBatches: (metal?.submittedBatches ?? 0) + (routing?.submittedBatches ?? 0),
+                                 completedBatches: (metal?.completedBatches ?? 0) + (routing?.completedBatches ?? 0),
+                                 cachedBufferBytes: (metal?.cachedBufferBytes ?? 0) + (routing?.cachedBufferBytes ?? 0))
     }
     /// Releases idle buffers only; resources belonging to in-flight requests remain retained.
-    public func releaseCachedBuffers() { metal?.releaseCachedBuffers() }
+    public func releaseCachedBuffers() async {
+        metal?.releaseCachedBuffers()
+        await routingWorker?.releaseCachedBuffers()
+    }
 
     func organic(_ snapshot: GeometrySnapshot, configuration: OrganicLayoutConfiguration, backend: LayoutBackend) async throws -> OrganicResult {
         let start = ContinuousClock.now
@@ -124,6 +175,7 @@ public actor LayoutExecutor {
             }
         }
         var centers: [Point]
+        var cpuPreparation = 0.0
         var gpuTime: Double?
         var deviceName: String?
         if chosen == .metal {
@@ -139,8 +191,10 @@ public actor LayoutExecutor {
                 let result = try await solver.solveAsync(prepared.state, iterations: configuration.iterations,
                     temperature: Float(configuration.initialTemperature),
                     parameters: ForceParameters(repulsionSquared: Float(configuration.repulsionForce * configuration.repulsionForce), attraction: Float(configuration.attractionForce)),
-                    batchSize: min(options.iterationsPerBatch, workBound))
+                    batchSize: min(options.iterationsPerBatch, workBound),
+                    coolingIterationBudget: configuration.iterationBudget)
                 gpuTime = result.gpuSeconds; deviceName = solver.deviceName
+                cpuPreparation += result.cpuPreparationSeconds
                 guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
                     throw OrganicLayoutError.metalFailure("Non-finite output coordinates")
                 }
@@ -166,11 +220,12 @@ public actor LayoutExecutor {
             throw LayoutExecutionError.invalidInput("Force calculation produced non-finite coordinates.")
         }
         return OrganicResult(centers: centers, fixed: fixed,
-            metrics: metrics(backend, chosen, reason, snapshot, configuration, start, gpu: gpuTime, device: deviceName))
+            metrics: metrics(backend, chosen, reason, snapshot, configuration, start, gpu: gpuTime, device: deviceName, cpuPreparation: cpuPreparation))
     }
     private func qualityOrganic(_ snapshot: GeometrySnapshot, configuration: OrganicLayoutConfiguration,
                                 requested: LayoutBackend, actual: LayoutBackend, reason: LayoutFallbackReason?,
                                 start: ContinuousClock.Instant) async throws -> OrganicResult {
+        let preparationStart = ContinuousClock.now
         var search = try OrganicQualitySearch(snapshot, configuration)
         let starts = search.starts()
         // Reject predictable precision failures before submitting any candidate. Automatic
@@ -184,29 +239,44 @@ public actor LayoutExecutor {
                 }
             }
         }
+        let preparationSeconds = preparationStart.duration(to: .now).seconds
+        var solverSeconds = 0.0, evaluationSeconds = 0.0, cpuPreparation = 0.0
         var gpu: Double?, device: String?
         for positions in starts {
             for strength in [0.5, 1.0, 2.0] {
                 try Task.checkCancellation()
                 let (input, candidate) = search.candidate(positions, strength: strength)
+                let solveStart = ContinuousClock.now
                 let result = try await organic(input, configuration: candidate, backend: actual)
+                solverSeconds += solveStart.duration(to: .now).seconds
+                cpuPreparation += result.metrics.cpuPreparationSeconds
                 if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
                 device = result.metrics.deviceName
+                let evaluationStart = ContinuousClock.now
                 try search.consider(result.centers)
+                evaluationSeconds += evaluationStart.duration(to: .now).seconds
             }
         }
         try Task.checkCancellation()
+        var executionMetrics = metrics(requested, actual, reason, snapshot, configuration, start, gpu: gpu, device: device, cpuPreparation: cpuPreparation)
+        executionMetrics.qualityPhases = OrganicQualityTimings(preparationSeconds: preparationSeconds,
+            solverSeconds: solverSeconds, evaluationSeconds: evaluationSeconds)
         return OrganicResult(centers: search.best, fixed: search.fixed,
-                             metrics: metrics(requested, actual, reason, snapshot, configuration, start, gpu: gpu, device: device),
+                             metrics: executionMetrics,
                              diagnostics: search.diagnostics)
     }
     private func metrics(_ requested: LayoutBackend, _ actual: LayoutBackend, _ reason: LayoutFallbackReason?,
                          _ snapshot: GeometrySnapshot, _ configuration: OrganicLayoutConfiguration, _ start: ContinuousClock.Instant,
-                         gpu: Double? = nil, device: String? = nil) -> LayoutExecutionMetrics {
+                         gpu: Double? = nil, device: String? = nil, cpuPreparation: Double = 0) -> LayoutExecutionMetrics {
         let elapsed = start.duration(to: .now).seconds
         return LayoutExecutionMetrics(requestedBackend: requested, backend: actual, fallbackReason: reason,
             nodeCount: snapshot.nodes.count, iterations: configuration.iterations, computeSeconds: elapsed,
-            totalSeconds: elapsed, gpuSeconds: gpu, deviceName: device)
+            totalSeconds: elapsed, gpuSeconds: gpu, deviceName: device, cpuPreparationSeconds: cpuPreparation,
+            cpuStages: reason == .noWork ? ["no-work preservation"] :
+                (actual == .cpu ? ["organic placement"] : ["initialization, topology and coordinate reconstruction"] +
+                    (snapshot.nodes.count >= 64 ? ["Barnes–Hut topology rebuild between iterations"] : [])) +
+                (configuration.quality == .quality ? ["candidate cleanup and quality scoring"] : []),
+            metalStages: gpu != nil ? [actual == .metal ? "organic force iterations" : "organic force iterations discarded after precision fallback"] : [])
     }
 }
 
@@ -252,7 +322,7 @@ struct OrganicResult: Sendable {
     var diagnostics: OrganicLayoutDiagnostics? = nil
 }
 struct GeometrySnapshot: Sendable {
-    struct Node: Sendable, Equatable { var bounds: Rect; var fixed: Bool; var selected: Bool }
+    struct Node: Sendable, Equatable { var bounds: Rect; var fixed: Bool; var selected: Bool; var isGroup: Bool = false }
     struct Edge: Sendable { var source: Int; var target: Int; var index: Int }
     var nodes: [Node]
     var edges: [Edge]
@@ -261,6 +331,7 @@ struct GeometrySnapshot: Sendable {
         for (i, state) in nodes.enumerated() {
             let n = LayoutNode(id: String(i), width: state.bounds.width, height: state.bounds.height)
             n.bounds = state.bounds
+            n.isGroup = state.isGroup
             n.metadata[GraphMetadataKeys.fixed] = state.fixed
             n.metadata[GraphMetadataKeys.layoutSubset] = state.selected
             graph.addNode(n)
@@ -273,7 +344,7 @@ struct GeometrySnapshot: Sendable {
         let algorithm = OrganicLayoutAlgorithm(quality: configuration.quality)
         algorithm.preparedPositions = configuration.preparedPositions
         algorithm.initialization = configuration.initialization; algorithm.nodeSeparation = configuration.nodeSeparation
-        algorithm.scope = configuration.scope; algorithm.iterations = Double(configuration.iterations)
+        algorithm.scope = configuration.scope; algorithm.iterations = configuration.quality == .quality ? Double(configuration.iterations) : configuration.iterationBudget
         algorithm.initialTemperature = configuration.initialTemperature
         algorithm.repulsionForce = configuration.repulsionForce; algorithm.attractionForce = configuration.attractionForce
         try algorithm.applyLayout(graph)
@@ -341,7 +412,7 @@ struct GraphCheckpoint {
     }
     private static func state(_ n: LayoutNode) -> GeometrySnapshot.Node {
         .init(bounds: n.bounds, fixed: n.metadata[GraphMetadataKeys.fixed] as? Bool == true,
-              selected: n.metadata[GraphMetadataKeys.layoutSubset] as? Bool == true)
+              selected: n.metadata[GraphMetadataKeys.layoutSubset] as? Bool == true, isGroup: n.isGroup)
     }
     func matches(_ graph: LayoutGraph) -> Bool {
         graph.nodes == nodes && graph.edges == edges && graph.root.children == rootChildren &&

@@ -104,7 +104,9 @@ extension LayoutExecutor {
         let elapsed = start.duration(to: .now).seconds
         return BundlingResult(paths: paths, metrics: LayoutExecutionMetrics(requestedBackend: backend, backend: chosen,
             fallbackReason: reason, nodeCount: snapshot.nodes.count, iterations: configuration.iterations,
-            computeSeconds: elapsed, totalSeconds: elapsed, gpuSeconds: gpuTime, deviceName: device))
+            computeSeconds: elapsed, totalSeconds: elapsed, gpuSeconds: gpuTime, deviceName: device,
+            cpuStages: chosen == .metal ? ["compatibility construction", "control point initialization", "exact endpoint reconstruction"] : ["edge bundling"],
+            metalStages: chosen == .metal ? ["bundling iterations"] : (gpuTime == nil ? [] : ["discarded bundling iterations before CPU fallback"])))
     }
 }
 
@@ -128,7 +130,9 @@ extension GeometrySnapshot {
         let minY = all.map(\.y).min()!, maxY = all.map(\.y).max()!
         let origin = Point(x: minX + (maxX - minX) / 2, y: minY + (maxY - minY) / 2)
         let directions = zip(starts, ends).map { $1 - $0 }, lengths = directions.map(\.length)
-        let centers = zip(starts, ends).map { $0 + ($1 - $0) / 2 }
+        // Keep compatibility decisions identical to the synchronous router, including
+        // Double midpoint rounding at a bundling-distance threshold.
+        let centers = zip(starts, ends).map { ($0 + $1) / 2 }
         let extent = max(maxX - minX, maxY - minY)
         let movement = Double(configuration.iterations) * (Double(edges.count) + configuration.k * max(1, extent) * 40) * 0.1
         let bound = extent + movement

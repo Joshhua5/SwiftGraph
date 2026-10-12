@@ -54,7 +54,7 @@ Every `LayoutAlgorithm` also offers `try await algorithm.applyLayoutAsync(graph)
 
 ## Metal backend
 
-Organic layout and edge bundling support explicit `.cpu`, `.metal`, and opt-in `.automatic` execution. Existing builder methods without a backend argument retain their CPU behavior.
+Built-in layouts, routing, geometry utilities and analysis have async overloads for explicit `.cpu`, `.metal`, and opt-in `.automatic` execution. All 17 presets forward the backend. Existing builder methods without a backend argument retain their CPU behavior. See the [coverage tracker](docs/METAL-PARITY-TRACKER.md) for validation status and the [API guide](docs/METAL-EXECUTION.md) for the operation map.
 
 ```swift
 let executor = LayoutExecutor() // Reuse across layouts; .shared is also available.
@@ -75,7 +75,7 @@ try await LayoutBuilder.create(graph)
 
 Metal execution uses completion handlers, cached pipelines and pooled buffers. Graph objects remain on their owning task/actor; only Sendable geometry snapshots cross to the executor. Cancellation and edits made during a suspended operation discard its result. Fixed and unselected organic nodes preserve their exact coordinates, and bundling preserves endpoint coordinates and self-loop paths.
 
-`.metal` reports missing hardware or unsuitable Float precision. `.automatic` uses configurable size/iteration heuristics and can fall back to CPU; unexpected GPU errors still propagate. To inspect the selected backend and timing, use `OrganicLayoutOperation` or `EdgeBundlingOperation` directly and read `lastMetrics`. `LayoutExecutor.statistics()` reports resource reuse. Metal results use Float and can differ from CPU Double results.
+`.metal` reports missing hardware or unsuitable Float precision. `.automatic` uses configurable size/iteration heuristics and can fall back to CPU; unexpected GPU errors still propagate. Inspect `LayoutBuilder.lastExecutionMetrics` or an operation’s `lastMetrics` for the selected backend, CPU/Metal stages and timings. `LayoutExecutor.statistics()` reports resource reuse. Metal arithmetic uses Float or split Float components with exact CPU refinement where required; numerical results can differ from CPU Double results.
 
 See [Metal usage, guarantees and limits](docs/METAL.md). The older `AcceleratedOrganicLayoutAlgorithm` remains a synchronous benchmark API; use the integrated operations above in applications.
 
@@ -147,18 +147,14 @@ The routing algorithms follow their distinct Waring contracts:
 
 - **Channel:** `gridSize` sets the actual lattice pitch. Non-group nodes block cells; source/target cells remain accessible. Direction-aware A* charges bend and cell congestion costs, reset per call. Explicit ports sit one unit outside the selected side; candidates are selected greedily by distance. Endpoint doglegs join the lattice.
 - **Grouped:** channels come from both endpoint ancestor chains. Shared corridors can nudge leaf nodes when the destination is free, then reroute incident edges. Canonical shared segments receive lane offsets in both traversal directions, followed by boundary trimming. Group nodes stay fixed.
-- **BSP:** routes follow bounded partition segments split at their intersections. Nested wrapper cuts extend to the appropriate parent partition, without extending through sibling bodies. By default the outer frame sits `margin` (20) outside the outermost nodes, routes attach through orthogonal side ports (side middles and positions aligned with the other node), A* charges `bendPenalty` (40) per turn, and `EdgeSeparator` spreads shared channels (`edgeSpacing`, 6). `legacy = true` restores the reference: a tight frame, endpoints projected from centre-line boundary intersections, bend-free costs and merged channels.
-- **Polyline:** shortest path over padded obstacle corners, clear of every node body. `avoidAllObstacles = false` restores the reference's local heuristic: a quadtree selects the first intersected obstacle, then two corner waypoints detour around it.
+- **BSP:** routes follow bounded partition segments split at their intersections. Nested wrapper cuts extend to the appropriate parent partition, without extending through sibling bodies. By default the outer frame sits `margin` (20) outside the outermost nodes, routes attach through orthogonal side ports (side middles and positions aligned with the other node), A* charges `bendPenalty` (40) per turn, and `EdgeSeparator` spreads shared channels (`edgeSpacing`, 6). An edge with no route through the partition keeps a straight centre-to-centre line and appears in `unroutableEdges`.
+- **Polyline:** a straight line when it is clear, otherwise the shortest path over padded obstacle corners, clear of every node body; finished with `EdgeSeparator`.
 
-Only the channel router interprets port constraints and candidates. Channel, BSP and grouped searches retain the reference's direct-line fallback when no route is found; `unroutableEdges` identifies those fallbacks, whose paths remain populated. Polyline likewise never returns an empty path. Legacy routers do not silently change clearance or try alternative ports after their initial selection.
+Only the channel router interprets port constraints and candidates. When no route is found, every router keeps a direct line and lists the edge in `unroutableEdges`; no router returns an empty path. Channel and grouped routing follow the C# reference and do not change clearance or try alternative ports after their initial selection.
 
-`PolylineEdgeRouter.avoidAllObstacles` defaults to `true`: deterministic multi-obstacle
-search that retains valid heuristic routes and repairs blocked ones using padded
-obstacle corners. Padding guides detours; nearby endpoints can limit the extra
-clearance beyond node bodies. If no route is available, the edge keeps the legacy detour
-and appears in `unroutableEdges`. Set it to `false` for the C# reference geometry; the
-routing parity tests pin that mode. This mode finishes with `EdgeSeparator`
-(`edgeSpacing`, default 6; 0 disables it).
+`PolylineEdgeRouter` search is deterministic. Padding guides detours; nearby endpoints
+can limit the extra clearance beyond node bodies. Its final `EdgeSeparator` pass uses
+`edgeSpacing` (default 6; 0 disables it).
 
 `EdgeSeparator` spreads edges that share a collinear stretch, such as duplicates,
 reciprocal pairs and shared corridors, into parallel lanes. Lanes keep a consistent side along
@@ -168,7 +164,7 @@ it to any pipeline. Presets use it before curve fitting and self-loops; bundling
 presets intentionally keep merged tracks. The mode retains the polyline router's endpoint/group exclusions and does not
 interpret ports. Clipping remains explicit.
 
-General routers preserve self-loops; route them last with `SelfLoopRouter`. `EdgeEndpointClipper.clipToNodeBounds` trims endpoints along the actual boundary-crossing segments, making it safe to run repeatedly. Most positioning algorithms emit center-to-center paths; clipping is an explicit rendering preparation step.
+General routers preserve self-loops; route them last with `SelfLoopRouter`, which draws compact orthogonal corner loops (`loopSize`, default 16) on the corner that is clear of other nodes, crosses the fewest routes and is furthest from attached edges; extra loops on a node take other corners, then nest outward. `EdgeEndpointClipper.clipToNodeBounds` trims endpoints along the actual boundary-crossing segments, making it safe to run repeatedly. Most positioning algorithms emit center-to-center paths; clipping is an explicit rendering preparation step.
 
 Bus, octilinear, parallel, bundling and smoothing routers provide visual styles, not obstacle-clearance guarantees. Smoothing and bundling can change a previously obstacle-free route. The hierarchical algorithm already emits bend points for long edges; avoid replacing those paths unless another routing style is intended.
 
