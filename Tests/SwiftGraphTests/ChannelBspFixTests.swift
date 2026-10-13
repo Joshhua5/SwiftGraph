@@ -92,6 +92,77 @@ struct RouteAudit {
         #expect(crossings <= 270, "\(crossings) crossings") // 299 with five nearest lines and no crossing term, 259 now
     }
 
+    @Test func channelLongDetoursAreNotReportedAsUnroutable() {
+        // A wide scene with a long divider leaves a perfectly routable corridor, but its broad equal-cost
+        // frontier exceeds a fixed 100,000-pop budget. This must exhaust the finite graph, not a search quota.
+        let g = LayoutGraph()
+        let a = node(g, "source", 0, 0, 120, 40), b = node(g, "target", 5000, 3000, 120, 40)
+        _ = node(g, "divider", 2500, -1000, 80, 6000)
+        let edge = LayoutEdge(source: a, target: b); edge.sourcePort = .right; edge.targetPort = .left; g.addEdge(edge)
+        let bounds = g.nodes.map(\.bounds)
+        let router = ChannelEdgeRouter(); router.gridSize = 8; router.routeEdges(g)
+        let audit = RouteAudit(g, router)
+        #expect(audit.fallbacks.isEmpty && audit.leafHits.isEmpty && audit.diagonal.isEmpty && audit.offBoundary.isEmpty)
+        #expect(g.nodes.map(\.bounds) == bounds)
+        let first = edge.path; router.routeEdges(g); #expect(edge.path == first)
+    }
+
+    @Test func channelSparseScenesKeepBoundedSearchStorage() {
+        // There are millions of possible cells, but only two tiny nodes. Dense arrays must not scale with empty area.
+        let g = LayoutGraph(), a = node(g, "a", 0, 0, 40, 40), b = node(g, "b", 100000, 100000, 40, 40)
+        let edge = LayoutEdge(source: a, target: b); g.addEdge(edge)
+        let router = ChannelEdgeRouter(); router.gridSize = 20; router.routeEdges(g)
+        #expect(router.unroutableEdges.isEmpty)
+        #expect(edge.path.count >= 2 && edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+        #expect(RouteAudit(g, router).diagonal.isEmpty)
+    }
+
+    @Test(arguments: [0, 2]) func channelExtremeSpansDoNotMaterializeEveryTraversedCell(_ congestion: Int) {
+        let g = LayoutGraph(), a = node(g, "a", 0, 0, 40, 40), b = node(g, "b", 1e10, 0, 40, 40)
+        let edge = LayoutEdge(source: a, target: b); g.addEdge(edge)
+        let bounds = g.nodes.map(\.bounds), router = ChannelEdgeRouter(); router.congestionPenalty = congestion
+        router.routeEdges(g)
+        if congestion == 0 { #expect(router.unroutableEdges.isEmpty) }
+        else { #expect(router.unroutableEdges.count == 1 && router.unroutableEdges.first === edge) }
+        #expect(edge.path.count >= 2 && edge.path.count <= 8)
+        #expect(edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+        #expect(g.nodes.map(\.bounds) == bounds)
+        #expect(!zip(edge.path, edge.path.dropFirst()).contains { abs($0.x - $1.x) > 1e-6 && abs($0.y - $1.y) > 1e-6 })
+        let first = edge.path; router.routeEdges(g); #expect(edge.path == first)
+    }
+
+    @Test func channelHugeObstacleDoesNotRasterizeItsInterior() {
+        let g = LayoutGraph(), a = node(g, "a", 0, 0, 40, 40), b = node(g, "b", 400, 0, 40, 40)
+        _ = node(g, "huge", 1000, 1000, 1000000, 1000000)
+        let edge = LayoutEdge(source: a, target: b); g.addEdge(edge)
+        let router = ChannelEdgeRouter(); router.routeEdges(g)
+        #expect(router.unroutableEdges.isEmpty && RouteAudit(g, router).leafHits.isEmpty)
+    }
+
+    @Test func channelZeroCongestionRoutesAroundGroupsDeterministically() {
+        let g = LayoutGraph()
+        let a = node(g, "a", 0, 0, 80, 40), b = node(g, "b", 800, 0, 80, 40)
+        let wall = node(g, "foreign-group", 300, -100, 180, 200); wall.isGroup = true
+        for _ in 0..<12 { g.addEdge(LayoutEdge(source: a, target: b)) }
+        let bounds = g.nodes.map(\.bounds), router = ChannelEdgeRouter(); router.congestionPenalty = 0; router.gridSize = 8
+        router.routeEdges(g)
+        #expect(router.unroutableEdges.isEmpty)
+        let audit = RouteAudit(g, router)
+        #expect(audit.diagonal.isEmpty && audit.offBoundary.isEmpty)
+        #expect(g.edges.allSatisfy { edge in !zip(edge.path, edge.path.dropFirst()).contains { wall.bounds.inflated(by: -1e-6).intersectsLine($0, $1) } })
+        #expect(g.nodes.map(\.bounds) == bounds)
+        let first = g.edges.map(\.path); router.routeEdges(g); #expect(g.edges.map(\.path) == first)
+    }
+
+    @Test func channelCancelledSearchLeavesExistingRoutesUntouched() {
+        let g = LayoutGraph(), a = node(g, "a", 0, 0, 40, 40), b = node(g, "b", 400, 0, 40, 40)
+        let edge = LayoutEdge(source: a, target: b); edge.path = [a.center, b.center]; g.addEdge(edge)
+        let path = edge.path, cancellation = RoutingCancellation(); cancellation.cancel()
+        let router = ChannelEdgeRouter()
+        RoutingCompute.$cancellation.withValue(cancellation) { router.routeEdges(g) }
+        #expect(edge.path == path && router.unroutableEdges.isEmpty)
+    }
+
     @Test func edgeSpacingDefaultsAgree() {
         #expect(BspEdgeRouter().edgeSpacing == 10)
         for kind in [RoutingKind.bsp, .channel, .orthogonalGrouped, .polyline, .edgeSeparation] { #expect(RoutingConfiguration(kind).edgeSpacing == 10, "\(kind)") }
