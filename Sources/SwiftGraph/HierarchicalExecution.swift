@@ -4,6 +4,7 @@ public struct HierarchicalLayoutConfiguration: Sendable {
     public var layerSeparation: Double = 50
     public var nodeSeparation: Double = 50
     public var maxNodesPerRank: Int?
+    public var routesEdges = true
     public var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
     public init() {}
     func validate() throws {
@@ -41,7 +42,9 @@ public final class HierarchicalLayoutOperation: LayoutExecutionReporting {
         let result = try await executor.hierarchical(snapshot,
             configuration: configuration, transpose: transpose, backend: backend)
         for (node, bounds) in zip(transaction.working.nodes, result.bounds) { node.bounds = bounds }
-        for (edge, path) in zip(transaction.working.edges, result.paths) { edge.path = path }
+        if configuration.routesEdges {
+            for (edge, path) in zip(transaction.working.edges, result.paths) { edge.path = path }
+        }
         try transaction.commit(to: graph)
         var metrics = result.metrics; metrics.totalSeconds = start.duration(to: .now).seconds
         lastMetrics = metrics
@@ -116,6 +119,7 @@ extension LayoutExecutor {
             let algorithm = HierarchicalLayoutAlgorithm()
             algorithm.layerSeparation = configuration.layerSeparation; algorithm.nodeSeparation = configuration.nodeSeparation
             algorithm.maxNodesPerRank = configuration.maxNodesPerRank
+            algorithm.routesEdges = configuration.routesEdges
             try algorithm.applyLayout(graph)
         }
         if transpose {
@@ -156,6 +160,7 @@ struct HierarchyPlacementPlan: Sendable {
     var flows: [Int?]
     var nodeSeparation: Double
     var layerSeparation: Double
+    var routesEdges: Bool
     init(_ graph: LayoutGraph, configuration: HierarchicalLayoutConfiguration) throws {
         let adjacency = Adjacency(graph)
         originalCount = adjacency.nodes.count; widths = adjacency.nodes.map(\.width)
@@ -185,6 +190,7 @@ struct HierarchyPlacementPlan: Sendable {
         let count = adjacency.nodes.count
         heights = layers.map { layer in layer.map { $0 < count ? adjacency.nodes[$0].height : 0 }.max() ?? 0 }
         nodeSeparation = configuration.nodeSeparation; layerSeparation = configuration.layerSeparation
+        routesEdges = configuration.routesEdges
     }
     func validateMetal(tolerance: Double) throws {
         guard widths.count < 4_194_304,
@@ -269,6 +275,7 @@ struct HierarchyPlacementPlan: Sendable {
         }
         let ys = offsets(heights, gap: layerSeparation)
         for i in 0..<originalCount { graph.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
+        guard routesEdges else { return }
         let routed: [[Point]?] = chains.indices.map { i in
             flows[i] == nil ? nil : chains[i].map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
         }

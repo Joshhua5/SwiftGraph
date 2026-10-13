@@ -17,17 +17,40 @@ public final class ChannelEdgeRouter: EdgeRouter {
     private var attached: [ObjectIdentifier: [[Point]]] = [:]
 
     private struct Cell: Hashable { var x: Int; var y: Int }
-    private struct State: Hashable { var cell: Cell; var direction: Int }
     private struct GridRect {
         var minX: Int; var minY: Int; var maxX: Int; var maxY: Int
         func contains(_ p: Cell) -> Bool { p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY }
     }
     private struct Usage { var horizontal = 0, vertical = 0 }
+    /// Reused indexed search storage: a generation stamp avoids clearing the whole scene for every edge.
+    private final class SearchStorage {
+        var generation: UInt32 = 0
+        var seen: [UInt32], closed: [UInt32], costs: [Double], previous: [Int]
+        init(count: Int) {
+            seen = Array(repeating: 0, count: count); closed = seen
+            costs = Array(repeating: 0, count: count); previous = Array(repeating: -1, count: count)
+        }
+    }
+    private struct IndexedCells {
+        var bounds: GridRect, width: Int, blocked: [Bool], usage: [Usage], search: SearchStorage
+        func index(_ c: Cell) -> Int? {
+            guard bounds.contains(c) else { return nil }
+            return (c.y - bounds.minY) * width + c.x - bounds.minX
+        }
+        func cell(_ i: Int) -> Cell { Cell(x: bounds.minX + i % width, y: bounds.minY + i / width) }
+    }
     /// A node side as a search endpoint: the boundary point, and the first free cell straight out from it.
     private struct Port { var point: Point; var entry: Cell; var axis: Int; var cost: Double }
     private struct Lattice {
         var grid: Int, origin: Point
-        var blocked = Set<Cell>(), groups: [(node: LayoutNode, rect: GridRect)] = [], usage: [Cell: Usage] = [:]
+        var groups: [(node: LayoutNode, rect: GridRect)] = [], usage: [Cell: Usage] = [:]
+        var indexed: IndexedCells?
+        var rectangles: [GridRect] = []
+        func isBlocked(_ c: Cell) -> Bool {
+            if let indexed, let i = indexed.index(c) { return indexed.blocked[i] }
+            return rectangles.contains { $0.contains(c) }
+        }
+        func usageAt(_ c: Cell) -> Usage? { if let indexed, let i = indexed.index(c) { return indexed.usage[i] }; return usage[c] }
         /// Cells covered by any node: beyond it the lattice is empty, so the search only needs a few cells of slack.
         var extent = GridRect(minX: 0, minY: 0, maxX: 0, maxY: 0)
         func cell(_ p: Point) -> Cell { Cell(x: Int(floor((p.x - origin.x) / Double(grid))), y: Int(floor((p.y - origin.y) / Double(grid)))) }
@@ -66,13 +89,26 @@ public final class ChannelEdgeRouter: EdgeRouter {
     private func makeLattice(_ graph: LayoutGraph, grid: Int) -> Lattice {
         var lattice = Lattice(grid: grid, origin: Point(x: graph.nodes.map(\.x).min()! - 50, y: graph.nodes.map(\.y).min()! - 50))
         let rectangles = graph.nodes.filter { !$0.isGroup }.map { lattice.cover($0.bounds) }
-        let fits = rectangles.allSatisfy { r in [r.minX, r.minY, r.maxX, r.maxY].allSatisfy { Int32(exactly: $0) != nil } }
-        let occupied = fits ? RoutingCompute.current?.occupiedCells(rectangles.map { SIMD4(Int32($0.minX), Int32($0.minY), Int32($0.maxX), Int32($0.maxY)) }) : nil
-        if let occupied { lattice.blocked = Set(occupied.map { Cell(x: Int($0.x), y: Int($0.y)) }) }
-        else { for r in rectangles { for x in r.minX...r.maxX { for y in r.minY...r.maxY { lattice.blocked.insert(Cell(x: x, y: y)) } } } }
+        lattice.rectangles = rectangles
         let covers = graph.nodes.map { lattice.cover($0.bounds) }
         lattice.extent = GridRect(minX: covers.map(\.minX).min()!, minY: covers.map(\.minY).min()!, maxX: covers.map(\.maxX).max()!, maxY: covers.map(\.maxY).max()!)
         lattice.groups = graph.nodes.filter { $0.isGroup && $0.width > 0 && $0.height > 0 }.map { ($0, lattice.cover($0.bounds)) }
+        // The common case fits comfortably in indexed storage. Extremely sparse/large scenes retain the hash search.
+        let r = lattice.extent, width = r.maxX - r.minX + 41, height = r.maxY - r.minY + 41
+        if width > 0, height > 0, width <= 1_000_000 / height {
+            let fits = rectangles.allSatisfy { r in [r.minX, r.minY, r.maxX, r.maxY].allSatisfy { Int32(exactly: $0) != nil } }
+            let occupied = fits ? RoutingCompute.current?.occupiedCells(rectangles.map { SIMD4(Int32($0.minX), Int32($0.minY), Int32($0.maxX), Int32($0.maxY)) }) : nil
+            let bounds = GridRect(minX: r.minX - 20, minY: r.minY - 20, maxX: r.maxX + 20, maxY: r.maxY + 20)
+            var indexed = IndexedCells(bounds: bounds, width: width, blocked: Array(repeating: false, count: width * height), usage: Array(repeating: Usage(), count: width * height), search: SearchStorage(count: width * height * 3))
+            if let occupied {
+                for cell in occupied { indexed.blocked[indexed.index(Cell(x: Int(cell.x), y: Int(cell.y)))!] = true }
+            } else {
+                for rect in rectangles {
+                    for y in rect.minY...rect.maxY { for x in rect.minX...rect.maxX { indexed.blocked[indexed.index(Cell(x: x, y: y))!] = true } }
+                }
+            }
+            lattice.indexed = indexed
+        }
         return lattice
     }
     private func route(_ edge: LayoutEdge, _ lattice: inout Lattice, _ scene: Scene, relaxed: Bool) -> [Point]? {
@@ -82,9 +118,12 @@ public final class ChannelEdgeRouter: EdgeRouter {
         let walls = lattice.groups.filter { $0.node === s || $0.node === t || !(isAncestor($0.node, of: s) || isAncestor($0.node, of: t)) }.map(\.rect)
         let starts = ports(s, t, edge.sourcePort, edge.sourcePortCandidates, lattice, walls, scene)
         let ends = ports(t, s, edge.targetPort, edge.targetPortCandidates, lattice, walls, scene)
-        guard !starts.isEmpty, !ends.isEmpty, let found = search(starts, ends, lattice, walls, relaxed: relaxed) else { return nil }
+        guard !starts.isEmpty, !ends.isEmpty else { return nil }
+        guard let found = search(starts, ends, lattice, walls, relaxed: relaxed) else { return nil }
         for (cell, axis) in found.cells where congestionPenalty > 0 {
-            if axis == 1 { lattice.usage[cell, default: Usage()].horizontal += 1 } else { lattice.usage[cell, default: Usage()].vertical += 1 }
+            if let index = lattice.indexed?.index(cell) {
+                if axis == 1 { lattice.indexed!.usage[index].horizontal += 1 } else { lattice.indexed!.usage[index].vertical += 1 }
+            } else if axis == 1 { lattice.usage[cell, default: Usage()].horizontal += 1 } else { lattice.usage[cell, default: Usage()].vertical += 1 }
         }
         return assemble(found.cells.map { lattice.centre($0.0) }, found.start, found.end)
     }
@@ -115,7 +154,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                 case .left: entry.x = cover.minX - 1
                 default: entry.x = cover.maxX + 1
                 }
-                if lattice.blocked.contains(entry) || walls.contains(where: { $0.contains(entry) }) { continue }
+                if lattice.isBlocked(entry) || walls.contains(where: { $0.contains(entry) }) { continue }
                 let centre = lattice.centre(entry), tip = vertical ? Point(x: p.x, y: centre.y) : Point(x: centre.x, y: p.y)
                 let hit = scene.leaves.query(Rect(x: min(p.x, tip.x), y: min(p.y, tip.y), width: abs(p.x - tip.x), height: abs(p.y - tip.y)).inflated(by: 0.5)).contains { $0 !== node && $0.bounds.intersectsLine(p, tip) }
                 if hit || (other.isGroup && other.bounds.intersectsLine(p, tip)) { continue }
@@ -123,7 +162,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                 // Each crossing of a route already at this node costs a quarter bend, like a side rank: more drives routes round the long way.
                 // It is judged on the likely route: out along the stub, level with the other node, then in.
                 let guess = [p, tip, vertical ? Point(x: other.center.x, y: tip.y) : Point(x: tip.x, y: other.center.y), other.center]
-                let cost = Double(rank * bendPenalty) / 4 + 0.25 * Double(abs((k ?? preferred) - preferred)) + congestion(lattice.usage[entry], vertical ? 2 : 1)
+                let cost = Double(rank * bendPenalty) / 4 + 0.25 * Double(abs((k ?? preferred) - preferred)) + congestion(lattice.usageAt(entry), vertical ? 2 : 1)
                     + Double(bendPenalty) / 4 * Double(Self.crossings(guess, attached[ObjectIdentifier(node)] ?? []))
                 result.append(Port(point: p, entry: entry, axis: vertical ? 2 : 1, cost: cost)); accepted += 1
             }
@@ -148,47 +187,159 @@ public final class ChannelEdgeRouter: EdgeRouter {
         return Double(along * congestionPenalty + across * max(1, congestionPenalty / 2))
     }
     private func search(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ walls: [GridRect], relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
-        var goals: [Cell: Port] = [:]
-        for e in ends where goals[e.entry].map({ e.cost < $0.cost }) ?? true { goals[e.entry] = e }
-        var startStates: [State: Port] = [:]
-        for s in starts { startStates[State(cell: s.entry, direction: s.axis)] = s }
-        let entries = starts.map(\.entry) + ends.map(\.entry)
-        let distance = starts.flatMap { s in ends.map { abs(s.entry.x - $0.entry.x) + abs(s.entry.y - $0.entry.y) } }.min()!
-        let slack = relaxed ? 20 : 4, maxIterations = relaxed ? max(100_000, distance * 40) : max(10_000, distance * 10)
-        let low = Cell(x: min(lattice.extent.minX, entries.map(\.x).min()!) - slack, y: min(lattice.extent.minY, entries.map(\.y).min()!) - slack)
-        let high = Cell(x: max(lattice.extent.maxX, entries.map(\.x).max()!) + slack, y: max(lattice.extent.maxY, entries.map(\.y).max()!) + slack)
-        let goalLow = Cell(x: ends.map(\.entry.x).min()!, y: ends.map(\.entry.y).min()!), goalHigh = Cell(x: ends.map(\.entry.x).max()!, y: ends.map(\.entry.y).max()!)
-        // Distance to the box round the goal entries: cheap, and never more than the distance to any one of them.
-        func heuristic(_ c: Cell) -> Double { Double(max(goalLow.x - c.x, 0, c.x - goalHigh.x) + max(goalLow.y - c.y, 0, c.y - goalHigh.y)) }
-        // Direction 3 marks reaching the port: the last leg must run inward, so arriving along the side costs a bend.
-        var queue = RoutingPriorityQueue<State>(), closed = Set<State>(), costs: [State: Double] = [:], previous: [State: State] = [:]
-        // Seed in port order, never in dictionary order, so equal-cost ties resolve the same way on every run.
-        for port in starts {
-            let state = State(cell: port.entry, direction: port.axis)
-            if startStates[state]!.cost == port.cost && port.cost < costs[state, default: .infinity] { costs[state] = port.cost; queue.push(state, priority: port.cost + heuristic(state.cell)) }
-        }
-        var iterations = 0, finish: State?
-        while let current = queue.pop() {
-            if iterations >= maxIterations || RoutingCompute.isCancelled { break }; iterations += 1
-            if !closed.insert(current).inserted { continue }
-            if current.direction == 3 { finish = current; break }
-            if let goal = goals[current.cell] {
-                let done = State(cell: current.cell, direction: 3), cost = costs[current]! + goal.cost + Double(current.direction != goal.axis ? bendPenalty : 0)
-                if cost < costs[done, default: .infinity] { costs[done] = cost; previous[done] = current; queue.push(done, priority: cost) }
-            }
-            for (dx, dy, dir) in [(0, 1, 2), (0, -1, 2), (1, 0, 1), (-1, 0, 1)] {
-                let c = Cell(x: current.cell.x + dx, y: current.cell.y + dy), next = State(cell: c, direction: dir)
-                guard c.x >= low.x, c.x <= high.x, c.y >= low.y, c.y <= high.y, !closed.contains(next), !lattice.blocked.contains(c), !walls.contains(where: { $0.contains(c) }) else { continue }
-                let cost = costs[current]! + 1 + Double(current.direction != dir ? bendPenalty : 0) + congestion(lattice.usage[c], dir)
-                if cost < costs[next, default: .infinity] { costs[next] = cost; previous[next] = current; queue.push(next, priority: cost + heuristic(c)) }
-            }
-        }
-        guard let end = finish, var current = previous[end] else { return nil }
-        var cells = [(current.cell, current.direction)], goal = goals[current.cell]!
-        while let p = previous[current] { current = p; cells.append((p.cell, p.direction)) }
-        cells.reverse()
-        return (cells, startStates[current]!, goal)
+        if congestionPenalty == 0, let compressed = compressedSearch(starts, ends, lattice, walls) { return compressed }
+        if let indexed = lattice.indexed { return indexedSearch(starts, ends, lattice, indexed, walls, relaxed: relaxed) }
+        return compressedSearch(starts, ends, lattice, walls)
     }
+    /// Large sparse scenes use the same lattice, retaining port lines and both sides of every obstacle boundary.
+    /// Adjacent retained lines form unobstructed jumps, so empty area does not consume a unit-cell search budget.
+    /// Jump costs still charge every traversed cell. Zero-congestion routes retain jump endpoints; positive-congestion
+    /// routes restore at most one million cells for usage accounting, otherwise taking the reported fallback.
+    private func compressedSearch(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ walls: [GridRect]) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
+        let obstacles = lattice.rectangles + walls
+        var xs = Set(starts.map(\.entry.x) + ends.map(\.entry.x)), ys = Set(starts.map(\.entry.y) + ends.map(\.entry.y))
+        for r in obstacles {
+            xs.formUnion([r.minX - 1, r.minX, r.maxX, r.maxX + 1]); ys.formUnion([r.minY - 1, r.minY, r.maxY, r.maxY + 1])
+        }
+        xs.formUnion([lattice.extent.minX - 20, lattice.extent.maxX + 20]); ys.formUnion([lattice.extent.minY - 20, lattice.extent.maxY + 20])
+        let x = xs.sorted(), y = ys.sorted(), width = x.count
+        // Oversized topologies are reported through the ordinary fallback instead of allocating unbounded memory.
+        guard width <= 1_000_000 / max(1, y.count) else { return nil }
+        let xi = Dictionary(uniqueKeysWithValues: x.enumerated().map { ($0.element, $0.offset) }), yi = Dictionary(uniqueKeysWithValues: y.enumerated().map { ($0.element, $0.offset) })
+        var blocked = Array(repeating: false, count: width * y.count)
+        for r in obstacles {
+            for row in yi[r.minY]!...yi[r.maxY]! { for column in xi[r.minX]!...xi[r.maxX]! { blocked[row * width + column] = true } }
+        }
+        func vertex(_ c: Cell) -> Int { yi[c.y]! * width + xi[c.x]! }
+        func cell(_ i: Int) -> Cell { Cell(x: x[i % width], y: y[i / width]) }
+        var goals: [Int: Port] = [:], sources: [Int: Port] = [:]
+        for e in ends { let i = vertex(e.entry); if goals[i].map({ e.cost < $0.cost }) ?? true { goals[i] = e } }
+        for s in starts { sources[vertex(s.entry) * 3 + s.axis - 1] = s }
+        var heuristicCache = Array(repeating: -1.0, count: blocked.count)
+        func heuristic(_ i: Int) -> Double {
+            if heuristicCache[i] >= 0 { return heuristicCache[i] }
+            let c = cell(i)
+            var value = Double.infinity
+            for end in ends { value = min(value, Double(abs(end.entry.x - c.x) + abs(end.entry.y - c.y)) + end.cost) }
+            heuristicCache[i] = value; return value
+        }
+        var costs = Array(repeating: Double.infinity, count: blocked.count * 3), previous = Array(repeating: -1, count: blocked.count * 3), closed = Array(repeating: false, count: blocked.count * 3), queue = RoutingPriorityQueue<Int>()
+        for port in starts {
+            let state = vertex(port.entry) * 3 + port.axis - 1
+            if sources[state]!.cost == port.cost && port.cost < costs[state] { costs[state] = port.cost; queue.push(state, priority: port.cost + heuristic(state / 3)) }
+        }
+        var finish: Int?
+        while let current = queue.pop() {
+            if RoutingCompute.isCancelled { return nil }
+            if closed[current] { continue }; closed[current] = true
+            let index = current / 3, axis = current % 3 + 1
+            if axis == 3 { finish = current; break }
+            let row = index / width, column = index % width, from = cell(index)
+            if let goal = goals[index] {
+                let done = index * 3 + 2, cost = costs[current] + goal.cost + Double(axis != goal.axis ? bendPenalty : 0)
+                if cost < costs[done] { costs[done] = cost; previous[done] = current; queue.push(done, priority: cost) }
+            }
+            for (dx, dy, direction) in [(0, 1, 2), (0, -1, 2), (1, 0, 1), (-1, 0, 1)] {
+                let cx = column + dx, cy = row + dy
+                guard cx >= 0, cx < width, cy >= 0, cy < y.count else { continue }
+                let i = cy * width + cx, next = i * 3 + direction - 1
+                if blocked[i] || closed[next] { continue }
+                let to = cell(i), length = abs(to.x - from.x) + abs(to.y - from.y)
+                // Positive congestion requires materialized per-cell usage. Reject oversized jumps before either
+                // scanning their usage or expanding them; callers receive the normal explicit fallback diagnostic.
+                if congestionPenalty > 0 && length > 1_000_000 { continue }
+                var cost = costs[current] + Double(length) + Double(axis != direction ? bendPenalty : 0)
+                if congestionPenalty > 0 && !lattice.usage.isEmpty {
+                    for step in 1...length { cost += congestion(lattice.usage[Cell(x: from.x + dx * step, y: from.y + dy * step)], direction) }
+                }
+                if cost < costs[next] { costs[next] = cost; previous[next] = current; queue.push(next, priority: cost + heuristic(i)) }
+            }
+        }
+        guard let finish else { return nil }
+        var current = previous[finish], states: [Int] = []
+        let goal = goals[current / 3]!
+        while current >= 0 { states.append(current); let p = previous[current]; if p < 0 { break }; current = p }
+        states.reverse()
+        // With no congestion field, only jump endpoints are needed by assembly: expanding an enormous empty
+        // span back into unit cells would defeat coordinate compression and can exhaust memory.
+        if congestionPenalty == 0 { return (states.map { (cell($0 / 3), $0 % 3 + 1) }, sources[current]!, goal) }
+        var cells: [(Cell, Int)] = [(cell(states[0] / 3), states[0] % 3 + 1)]
+        for state in states.dropFirst() {
+            let from = cells.last!.0, to = cell(state / 3), axis = state % 3 + 1
+            let dx = to.x == from.x ? 0 : (to.x > from.x ? 1 : -1), dy = to.y == from.y ? 0 : (to.y > from.y ? 1 : -1)
+            let length = abs(to.x - from.x) + abs(to.y - from.y)
+            guard length <= 1_000_000 - cells.count else { return nil }
+            for step in 1...length { cells.append((Cell(x: from.x + dx * step, y: from.y + dy * step), axis)) }
+        }
+        return (cells, sources[current]!, goal)
+    }
+
+    private func indexedSearch(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ indexed: IndexedCells, _ walls: [GridRect], relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
+        let storage = indexed.search
+        storage.generation &+= 1
+        if storage.generation == 0 { storage.seen = Array(repeating: 0, count: storage.seen.count); storage.closed = storage.seen; storage.generation = 1 }
+        let generation = storage.generation
+        return storage.seen.withUnsafeMutableBufferPointer { seen in
+            storage.closed.withUnsafeMutableBufferPointer { closed in
+                storage.costs.withUnsafeMutableBufferPointer { costs in
+                    storage.previous.withUnsafeMutableBufferPointer { previous in
+                        var goals: [Int: Port] = [:], sources: [Int: Port] = [:]
+                        for e in ends { if let i = indexed.index(e.entry), goals[i].map({ e.cost < $0.cost }) ?? true { goals[i] = e } }
+                        for s in starts { if let i = indexed.index(s.entry) { sources[i * 3 + s.axis - 1] = s } }
+                        let entries = starts.map(\.entry) + ends.map(\.entry)
+                        let slack = relaxed ? 20 : 4
+                        let low = Cell(x: min(lattice.extent.minX, entries.map(\.x).min()!) - slack, y: min(lattice.extent.minY, entries.map(\.y).min()!) - slack)
+                        let high = Cell(x: max(lattice.extent.maxX, entries.map(\.x).max()!) + slack, y: max(lattice.extent.maxY, entries.map(\.y).max()!) + slack)
+                        let goalLow = Cell(x: ends.map(\.entry.x).min()!, y: ends.map(\.entry.y).min()!), goalHigh = Cell(x: ends.map(\.entry.x).max()!, y: ends.map(\.entry.y).max()!)
+                        func heuristic(_ c: Cell) -> Double { Double(max(goalLow.x - c.x, 0, c.x - goalHigh.x) + max(goalLow.y - c.y, 0, c.y - goalHigh.y)) }
+                        var queue = RoutingPriorityQueue<Int>()
+                        for port in starts {
+                            guard let i = indexed.index(port.entry) else { continue }
+                            let state = i * 3 + port.axis - 1
+                            if sources[state]!.cost == port.cost && (seen[state] != generation || port.cost < costs[state]) {
+                                seen[state] = generation; costs[state] = port.cost; previous[state] = -1
+                                queue.push(state, priority: port.cost + heuristic(port.entry))
+                            }
+                        }
+                        var finish: Int?
+                        let offsets = [(0, 1, 2), (0, -1, 2), (1, 0, 1), (-1, 0, 1)]
+                        while let current = queue.pop() {
+                            if RoutingCompute.isCancelled { return nil }
+                            if closed[current] == generation { continue }; closed[current] = generation
+                            let index = current / 3, direction = current % 3 + 1
+                            if direction == 3 { finish = current; break }
+                            let cell = indexed.cell(index), currentCost = costs[current]
+                            if let goal = goals[index] {
+                                let done = index * 3 + 2, cost = currentCost + goal.cost + Double(direction != goal.axis ? bendPenalty : 0)
+                                if seen[done] != generation || cost < costs[done] {
+                                    seen[done] = generation; costs[done] = cost; previous[done] = current; queue.push(done, priority: cost)
+                                }
+                            }
+                            for (dx, dy, axis) in offsets {
+                                let c = Cell(x: cell.x + dx, y: cell.y + dy)
+                                guard c.x >= low.x, c.x <= high.x, c.y >= low.y, c.y <= high.y, let i = indexed.index(c), !indexed.blocked[i], !walls.contains(where: { $0.contains(c) }) else { continue }
+                                let next = i * 3 + axis - 1
+                                if closed[next] == generation { continue }
+                                let cost = currentCost + 1 + Double(direction != axis ? bendPenalty : 0) + congestion(indexed.usage[i], axis)
+                                if seen[next] != generation || cost < costs[next] {
+                                    seen[next] = generation; costs[next] = cost; previous[next] = current
+                                    queue.push(next, priority: cost + heuristic(c))
+                                }
+                            }
+                        }
+                        guard let finish else { return nil }
+                        var current = previous[finish]
+                        let goal = goals[current / 3]!
+                        var cells: [(Cell, Int)] = []
+                        while current >= 0 { cells.append((indexed.cell(current / 3), current % 3 + 1)); let previous = previous[current]; if previous < 0 { break }; current = previous }
+                        cells.reverse()
+                        return (cells, sources[current]!, goal)
+                    }
+                }
+            }
+        }
+    }
+
     /// Joins the boundary ports to the cell-centre chain, sliding each end run onto its port's line so no stair-step is needed.
     private func assemble(_ centres: [Point], _ start: Port, _ end: Port) -> [Point] {
         var pts = centres

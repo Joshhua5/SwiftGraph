@@ -6,6 +6,8 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
     public var nodeSeparation: Double = 50
     public var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
     public var maxNodesPerRank: Int?
+    /// Disable provisional routing when another router runs after packing or group placement.
+    public var routesEdges = true
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -84,6 +86,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             }
         }
         for i in a.nodes.indices { a.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
+        guard routesEdges else { return }
         var routed: [[Point]?] = [], flows: [Int?] = []
         for e in graph.edges {
             guard let chain = chains[e], let s = a.index[e.source], let t = a.index[e.target] else { routed.append(nil); flows.append(nil); continue }
