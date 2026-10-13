@@ -13,6 +13,11 @@ public final class LayoutNode: Hashable {
     public var bounds: Rect
     public var data: Any?
     public var isGroup = false
+    /// Nil uses the recursive wrapper's legacy `groupPadding`.
+    public var groupFrame: GroupFrameOptions?
+    /// Computed world-coordinate rectangles after recursive layout.
+    public internal(set) var groupContentBounds: Rect?
+    public internal(set) var groupHeaderBounds: Rect?
     public var children: [LayoutNode] = []
     public weak var parent: LayoutNode?
     public var tags: Set<String> = []
@@ -87,7 +92,11 @@ func straightEdges(_ graph: LayoutGraph) {
     for e in graph.edges where e.source !== e.target { e.path = [e.source.center, e.target.center] }
 }
 func translate(_ graph: LayoutGraph, by offset: Point) {
-    for n in graph.nodes { n.center = n.center + offset }
+    for n in graph.nodes {
+        n.center = n.center + offset
+        n.groupContentBounds = n.groupContentBounds?.translated(by: offset)
+        n.groupHeaderBounds = n.groupHeaderBounds?.translated(by: offset)
+    }
     for e in graph.edges {
         e.path = e.path.map { $0 + offset }
         e.labelBounds = e.labelBounds.translated(by: offset)

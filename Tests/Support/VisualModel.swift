@@ -9,6 +9,7 @@ struct VisualContracts: Codable, Equatable, Sendable {
     var orthogonalSelfLoops = true
     var expectMissingRoutes = false
     var noLabelOverlaps = false
+    var framedGroups = false
 }
 
 extension VisualContracts {
@@ -21,7 +22,8 @@ extension VisualContracts {
                   orthogonal: try c.decode(Bool.self, forKey: .orthogonal),
                   orthogonalSelfLoops: try c.decodeIfPresent(Bool.self, forKey: .orthogonalSelfLoops) ?? true,
                   expectMissingRoutes: try c.decode(Bool.self, forKey: .expectMissingRoutes),
-                  noLabelOverlaps: try c.decodeIfPresent(Bool.self, forKey: .noLabelOverlaps) ?? false)
+                  noLabelOverlaps: try c.decodeIfPresent(Bool.self, forKey: .noLabelOverlaps) ?? false,
+                  framedGroups: try c.decodeIfPresent(Bool.self, forKey: .framedGroups) ?? false)
     }
 }
 
@@ -36,6 +38,8 @@ struct VisualNode: Codable, Equatable, Sendable {
     var bounds: Rect
     var parent: String?
     var group: Bool
+    var contentBounds: Rect? = nil
+    var headerBounds: Rect? = nil
 }
 
 struct VisualEdge: Codable, Equatable, Sendable {
@@ -69,7 +73,8 @@ struct VisualSnapshot: Codable, Equatable, Sendable {
         configuration = item.configuration; contracts = item.contracts
         nodes = drawing.graph.nodes.map {
             VisualNode(id: $0.id, name: $0.name, bounds: $0.bounds,
-                       parent: $0.parent === drawing.graph.root ? nil : $0.parent?.id, group: $0.isGroup)
+                       parent: $0.parent === drawing.graph.root ? nil : $0.parent?.id, group: $0.isGroup,
+                       contentBounds: $0.groupContentBounds, headerBounds: $0.groupHeaderBounds)
         }
         edges = drawing.graph.edges.enumerated().map { index, edge in
             VisualEdge(id: "e\(index)", source: edge.source.id, target: edge.target.id,
@@ -82,7 +87,7 @@ struct VisualSnapshot: Codable, Equatable, Sendable {
     }
 
     var isFinite: Bool {
-        nodes.allSatisfy { valid($0.bounds) } && edges.allSatisfy {
+        nodes.allSatisfy { valid($0.bounds) && $0.contentBounds.map(valid) != false && $0.headerBounds.map(valid) != false } && edges.allSatisfy {
             valid($0.labelBounds) && $0.width.isFinite && $0.width > 0 && $0.path.allSatisfy { $0.x.isFinite && $0.y.isFinite }
         } && previousBounds.values.allSatisfy(valid) && fixedCenters.values.allSatisfy { $0.x.isFinite && $0.y.isFinite }
     }
@@ -250,6 +255,38 @@ enum VisualGeometry {
                     if nearParallel(a, b, c, d) { findings.append(.init(kind: "near-parallel-run", elements: [edge.id, edges[j].id])) }
                 } }
             }
+        }
+        if snapshot.contracts.framedGroups {
+            func contains(_ outer: Rect, _ inner: Rect) -> Bool {
+                inner.left >= outer.left - epsilon && inner.right <= outer.right + epsilon &&
+                inner.top >= outer.top - epsilon && inner.bottom <= outer.bottom + epsilon
+            }
+            for node in nodes {
+                if let parent = node.parent.flatMap({ byID[$0] }), let content = parent.contentBounds,
+                   !contains(content, node.bounds) {
+                    failures.append(.init(kind: "frame-content-overflow", elements: [parent.id, node.id]))
+                }
+            }
+            for (i, edge) in edges.enumerated() {
+                guard let source = byID[edge.source], let target = byID[edge.target] else { continue }
+                for frame in nodes where frame.group {
+                    if frame.id != source.id && frame.id != target.id && !ancestor(frame.id, of: source) && !ancestor(frame.id, of: target),
+                       paths[i].contains(where: { frame.bounds.inflated(by: -epsilon).intersectsLine($0.0, $0.1) }) {
+                        failures.append(.init(kind: "edge-frame-intersection", elements: [edge.id, frame.id]))
+                    }
+                    if let header = frame.headerBounds, header.height > 0,
+                       paths[i].contains(where: { header.inflated(by: -epsilon).intersectsLine($0.0, $0.1) }) {
+                        failures.append(.init(kind: "edge-header-intersection", elements: [edge.id, frame.id]))
+                    }
+                    if ancestor(frame.id, of: source) && ancestor(frame.id, of: target), let content = frame.contentBounds {
+                        if !edge.path.allSatisfy({ content.inflated(by: epsilon).contains($0) }) ||
+                           (edge.labelBounds.width > 0 && edge.labelBounds.height > 0 && !contains(content, edge.labelBounds)) {
+                            failures.append(.init(kind: "frame-route-overflow", elements: [edge.id, frame.id]))
+                        }
+                    }
+                }
+            }
+            findings += failures.filter { $0.kind.hasPrefix("frame-") || $0.kind == "edge-frame-intersection" || $0.kind == "edge-header-intersection" }
         }
         func count(_ kind: String) -> Double { Double(findings.filter { $0.kind == kind }.count) }
         for finding in findings {

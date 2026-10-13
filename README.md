@@ -85,9 +85,86 @@ See [Metal usage, guarantees and limits](docs/METAL.md). The older `AcceleratedO
 - `LayoutNode`, `LayoutEdge`, and `LayoutGraph` have reference semantics. Node equality and hashing use object identity, independent of the string ID.
 - `x` and `y` are the **top-left** corner. Setting `center` preserves the node's size.
 - `data: Any?` belongs to the caller. Algorithms never replace it. Analysis results and flags use `metadata: [String: Any]` and `GraphMetadataKeys`.
-- `addNode` attaches a parentless node to the invisible root. To create groups, set a child's `parent` and append it to `parent.children` before adding it to the graph. Register both groups and leaves in `graph.nodes`.
+- `addNode` attaches a parentless node to the invisible root. Use `addGroup(id:parent:frame:)`, `addNode(_:to:)`, and `moveNode(_:to:)` to maintain group ownership and registration together. Manual `parent`/`children` construction remains supported; register both groups and leaves in `graph.nodes`.
 - `addNodeDetached` gives temporary subgraphs membership without changing the original hierarchy. Parents are weak references to avoid ownership cycles.
 - Use finite coordinates, nonnegative dimensions and unique node references. String IDs should be unique when using ID-based selection, lane or cell assignments.
+
+### Framed groups and nested layouts
+
+Use recursive composition to give each group an independent layout. Frames grow
+around their children, internal routes, and measured edge labels. Parent layouts
+use the complete frame dimensions and connections between their descendants.
+
+```swift
+let graph = LayoutGraph()
+let service = try graph.addGroup(id: "Service", frame: GroupFrameOptions(
+    headerSize: Size(width: 180, height: 24))) // Measured by your renderer.
+let workers = try graph.addGroup(id: "Workers", parent: service, frame: GroupFrameOptions(
+    padding: LayoutInsets(top: 16, left: 24, bottom: 24, right: 24),
+    headerSize: Size(width: 120, height: 24),
+    minimumSize: Size(width: 200, height: 120)))
+let first = LayoutNode(id: "first", width: 80, height: 36)
+let second = LayoutNode(id: "second", width: 80, height: 36)
+try graph.addNode(first, to: workers)
+try graph.addNode(second, to: workers)
+graph.addEdge(LayoutEdge(source: first, target: second))
+
+try await LayoutBuilder.create(graph)
+    .wrapWithRecursiveGroups(HierarchicalLayoutAlgorithm()) { groups in
+        groups.groupLayoutSelector = { group in
+            if group === workers { return CircularLayoutAlgorithm() }
+            return HierarchicalLayoutAlgorithm()
+        }
+    }
+    .clipEdgeEndpoints()
+    .applyAsync()
+
+// Draw service.bounds and workers.bounds behind the nodes.
+// Draw titles in groupHeaderBounds; groupContentBounds is the usable content area.
+```
+
+`GroupFrameOptions` defaults to 20 units of padding on every side, no header,
+and zero minimum dimensions. Headers occupy a strip above content; their measured
+width can widen the frame. Minimum size includes padding and the header. Empty
+groups use the same sizing rules. Groups without explicit options use the
+wrapper's `groupPadding`. All output rectangles use world coordinates.
+
+`groupLayoutSelector` runs on the caller's group objects, including the invisible
+root, before execution. The core layout is the default when no selector is set.
+Child frames appear to layout cores as ordinary sized node proxies. Cores must
+preserve topology and may enlarge frames, but shrinking a frame below its measured
+size throws an input error. Overlapping sibling frames are separated before their
+contents move as rigid units. Ordinary layout calls do not recurse automatically.
+
+Cross-group connections use obstacle-avoiding polylines. They can cross their
+containing frames, but avoid unrelated frames and reserved title rectangles.
+Usable internal layout paths are retained. The wrappers expose `unroutableEdges`
+using original edge identities; failed routes remain visible as direct lines.
+Polyline routing does not interpret port constraints. Self-loops supplied by a
+core or earlier pipeline step are included when fitting frames.
+
+By default, `optimizeIncomingEdges` refines placement using incoming cross-group
+connections and their actual target positions. It tries lateral shifts of frames
+and nodes within available content space, preserving frame sizes and sibling
+spacing. A move must shorten incoming routes without increasing the total length
+of affected routes, escaping a frame, or obstructing another route or title.
+Fixed nodes and their containing subtrees are not moved by this refinement.
+Set `optimizeIncomingEdges = false` to retain the core placement after frame fitting.
+This is a bounded heuristic, not a global minimum-length guarantee.
+
+For async or Metal cores, use `RecursiveGroupLayoutOperation`, or the async/backend
+overloads of `wrapWithRecursiveGroups` and `wrapWithFullComposition`; they have the
+same configuration closure. Recursive composition commits only when every child
+succeeds. Cancellation, invalid output, or frame/hierarchy edits during a suspended
+operation discard the result. Hierarchy processing and frame measurement stay on
+CPU, as does incoming-edge refinement; selected child layouts and initial routing
+retain their backend and metrics.
+
+Rendering and text measurement belong to the caller. This API provides growing
+frames, without fixed-size clipping or collapsed groups. If later pipeline steps
+move nodes, change labels, or add routes, run recursive layout again to refresh
+containment. See the `frames-mixed-layouts`, `frames-large-headers`, and
+`frames-obstacle-detour` cases in the visual gallery.
 
 ## Included algorithms
 

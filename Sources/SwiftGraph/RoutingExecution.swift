@@ -178,7 +178,11 @@ struct RoutingCheckpoint {
     private let relatedStates: [NodeState]
     private struct NodeState: Equatable {
         var bounds: Rect; var isGroup: Bool; var parent: LayoutNode?; var children: [LayoutNode]
-        init(_ node: LayoutNode) { bounds = node.bounds; isGroup = node.isGroup; parent = node.parent; children = node.children }
+        var frame: GroupFrameOptions?; var content: Rect?; var header: Rect?
+        init(_ node: LayoutNode) {
+            bounds = node.bounds; isGroup = node.isGroup; parent = node.parent; children = node.children
+            frame = node.groupFrame; content = node.groupContentBounds; header = node.groupHeaderBounds
+        }
     }
     init(_ input: LayoutGraph, labels: [String?]) throws {
         graph = try GraphCheckpoint(input)

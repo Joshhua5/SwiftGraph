@@ -101,10 +101,14 @@ public extension LayoutBuilder {
         let layout = ComponentLayout(core); layout.componentSpacing = componentSpacing; layout.preferredAspectRatio = preferredAspectRatio
         return useAlgorithm(layout)
     }
-    @discardableResult func wrapWithRecursiveGroups(_ core: any LayoutAlgorithm) -> Self { useAlgorithm(RecursiveGroupLayout(core)) }
-    @discardableResult func wrapWithFullComposition(_ core: any LayoutAlgorithm, componentSpacing: Double = 20) -> Self {
+    @discardableResult func wrapWithRecursiveGroups(_ core: any LayoutAlgorithm,
+        configure: (RecursiveGroupLayout) -> Void = { _ in }) -> Self {
+        let layout = RecursiveGroupLayout(core); configure(layout); return useAlgorithm(layout)
+    }
+    @discardableResult func wrapWithFullComposition(_ core: any LayoutAlgorithm, componentSpacing: Double = 20,
+        configure: (RecursiveGroupLayout) -> Void = { _ in }) -> Self {
         let components = ComponentLayout(core); components.componentSpacing = componentSpacing
-        return useAlgorithm(RecursiveGroupLayout(components))
+        let groups = RecursiveGroupLayout(components); configure(groups); return useAlgorithm(groups)
     }
     @discardableResult func applyImportanceBased(_ layout: any LayoutAlgorithm) -> Self {
         analyzePageRank().transform { graph in

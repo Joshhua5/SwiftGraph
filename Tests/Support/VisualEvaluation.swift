@@ -22,13 +22,17 @@ enum VisualComparison {
     static func equal(_ a: Double, _ b: Double) -> Bool { abs(a - b) <= 1e-6 }
     static func equal(_ a: Point, _ b: Point) -> Bool { equal(a.x, b.x) && equal(a.y, b.y) }
     static func equal(_ a: Rect, _ b: Rect) -> Bool { equal(a.x, b.x) && equal(a.y, b.y) && equal(a.width, b.width) && equal(a.height, b.height) }
+    static func equal(_ a: Rect?, _ b: Rect?) -> Bool {
+        switch (a, b) { case let (a?, b?): equal(a, b); case (nil, nil): true; default: false }
+    }
     static func compare(_ before: VisualSnapshot, _ after: VisualSnapshot) -> VisualDifference {
         var diff = VisualDifference()
         let aNodes = Dictionary(uniqueKeysWithValues: before.nodes.map { ($0.id, $0) })
         let bNodes = Dictionary(uniqueKeysWithValues: after.nodes.map { ($0.id, $0) })
         for id in Set(aNodes.keys).union(bNodes.keys).sorted() {
             guard let a = aNodes[id], let b = bNodes[id] else { diff.changedNodes.append(id); continue }
-            if !equal(a.bounds, b.bounds) || a.name != b.name || a.parent != b.parent || a.group != b.group { diff.changedNodes.append(id) }
+            if !equal(a.bounds, b.bounds) || !equal(a.contentBounds, b.contentBounds) || !equal(a.headerBounds, b.headerBounds)
+                || a.name != b.name || a.parent != b.parent || a.group != b.group { diff.changedNodes.append(id) }
         }
         let aEdges = Dictionary(uniqueKeysWithValues: before.edges.map { ($0.id, $0) })
         let bEdges = Dictionary(uniqueKeysWithValues: after.edges.map { ($0.id, $0) })

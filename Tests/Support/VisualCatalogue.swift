@@ -265,6 +265,7 @@ enum VisualCatalogue {
                 return VisualDrawing(graph: g, notes: ["Metal Float output is reviewed visually; it is not required to equal CPU geometry."])
             })
         }
+        cases += framedGroupCases()
         cases += MetalVisualCatalogue.all()
         return cases.sorted { $0.id < $1.id }
     }

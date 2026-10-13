@@ -8,3 +8,8 @@ DerivedData/
 .netrc
 
 Tests/Fixtures/VisualBaselines/
+
+.claude/worktrees/
+
+docs/
+*.profraw

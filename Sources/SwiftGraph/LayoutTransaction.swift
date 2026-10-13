@@ -22,6 +22,9 @@ struct LayoutTransaction {
     private struct NodeState: Equatable {
         let bounds: Rect
         let topology: Topology
+        let frame: GroupFrameOptions?
+        let content: Rect?
+        let header: Rect?
         let name: String
         let tags: Set<String>
         let fixed: Bool?
@@ -30,6 +33,7 @@ struct LayoutTransaction {
         let cluster: Int?
         init(_ node: LayoutNode) {
             bounds = node.bounds; topology = Topology(node); name = node.name; tags = node.tags
+            frame = node.groupFrame; content = node.groupContentBounds; header = node.groupHeaderBounds
             fixed = node.metadata[GraphMetadataKeys.fixed] as? Bool
             selected = node.metadata[GraphMetadataKeys.layoutSubset] as? Bool
             rank = node.metadata[GraphMetadataKeys.pageRank] as? Double
@@ -84,6 +88,7 @@ struct LayoutTransaction {
             let copy = node === graph.root ? detached.root : LayoutNode(id: node.id, width: node.width, height: node.height)
             copy.bounds = node.bounds; copy.name = node.name; copy.data = node.data
             copy.tags = node.tags; copy.metadata = node.metadata; copy.isGroup = node.isGroup
+            copy.groupFrame = node.groupFrame; copy.groupContentBounds = node.groupContentBounds; copy.groupHeaderBounds = node.groupHeaderBounds
             return copy
         }
         let mapping = Dictionary(uniqueKeysWithValues: zip(originals, copies))
@@ -110,13 +115,17 @@ struct LayoutTransaction {
             throw LayoutExecutionError.invalidInput("Composite layout cores must preserve graph topology.")
         }
         _ = try GraphCheckpoint(working)
-        guard copies.allSatisfy({ [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) && $0.width >= 0 && $0.height >= 0 }),
+        func valid(_ rect: Rect) -> Bool {
+            [rect.x, rect.y, rect.right, rect.bottom].allSatisfy(\.isFinite) && rect.width >= 0 && rect.height >= 0
+        }
+        guard copies.allSatisfy({ valid($0.bounds) && $0.groupContentBounds.map(valid) != false && $0.groupHeaderBounds.map(valid) != false }),
               working.edges.allSatisfy({ edge in
                   edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite } &&
                   [edge.labelBounds.x, edge.labelBounds.y, edge.labelBounds.width, edge.labelBounds.height].allSatisfy(\.isFinite)
               }) else { throw LayoutExecutionError.invalidInput("Composite layout produced non-finite geometry.") }
         for (original, copy) in zip(originals, copies) {
             original.bounds = copy.bounds
+            original.groupContentBounds = copy.groupContentBounds; original.groupHeaderBounds = copy.groupHeaderBounds
             for key in [GraphMetadataKeys.fixed, GraphMetadataKeys.layoutSubset, GraphMetadataKeys.pageRank, GraphMetadataKeys.cluster] {
                 original.metadata[key] = copy.metadata[key]
             }

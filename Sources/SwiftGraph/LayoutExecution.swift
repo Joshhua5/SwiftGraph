@@ -393,6 +393,9 @@ struct GraphCheckpoint {
     let children: [[LayoutNode]]
     let groups: [Bool]
     let rootChildren: [LayoutNode]
+    let frames: [GroupFrameOptions?]
+    let contentBounds: [Rect?]
+    let headerBounds: [Rect?]
     let snapshot: GeometrySnapshot
     init(_ graph: LayoutGraph) throws {
         nodes = graph.nodes; edges = graph.edges
@@ -403,6 +406,7 @@ struct GraphCheckpoint {
             throw LayoutExecutionError.invalidInput("Finite geometry and nonnegative dimensions are required.")
         }
         parents = nodes.map(\.parent); children = nodes.map(\.children); groups = nodes.map(\.isGroup)
+        frames = nodes.map(\.groupFrame); contentBounds = nodes.map(\.groupContentBounds); headerBounds = nodes.map(\.groupHeaderBounds)
         rootChildren = graph.root.children
         let index = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element, $0.offset) })
         snapshot = GeometrySnapshot(nodes: nodes.map(Self.state), edges: edges.enumerated().compactMap { i, e in
@@ -417,6 +421,7 @@ struct GraphCheckpoint {
     func matches(_ graph: LayoutGraph) -> Bool {
         graph.nodes == nodes && graph.edges == edges && graph.root.children == rootChildren &&
         nodes.map(Self.state) == snapshot.nodes && nodes.map(\.parent) == parents &&
-        nodes.map(\.children) == children && nodes.map(\.isGroup) == groups
+        nodes.map(\.children) == children && nodes.map(\.isGroup) == groups &&
+        nodes.map(\.groupFrame) == frames && nodes.map(\.groupContentBounds) == contentBounds && nodes.map(\.groupHeaderBounds) == headerBounds
     }
 }

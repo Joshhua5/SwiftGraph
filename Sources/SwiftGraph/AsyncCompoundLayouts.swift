@@ -186,8 +186,11 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
 /// Cores must preserve topology and treat caller payloads/custom metadata as read-only.
 public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
     public private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
+    public private(set) var unroutableEdges: [LayoutEdge] = []
     public var coreLayout: any AsyncLayoutAlgorithm
     public var groupPadding: Double = 20
+    /// Refine framed placement using incoming boundary connections after fitting the frames.
+    public var optimizeIncomingEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any AsyncLayoutAlgorithm)?
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
@@ -195,65 +198,56 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
         self.coreLayout = coreLayout; self.backend = backend; self.executor = executor
     }
     public func applyLayoutAsync(_ graph: LayoutGraph) async throws {
-        lastExecutionMetrics = []
+        lastExecutionMetrics = []; unroutableEdges = []
         try Task.checkCancellation()
         let transaction = try LayoutTransaction(graph)
-        let operation = RecursiveGroupLayoutOperation(coreLayout, backend: backend, executor: executor)
-        operation.groupPadding = groupPadding
-        operation.groupLayoutSelector = groupLayoutSelector
-        try await operation.applyWorking(transaction.working)
-        try transaction.commit(to: graph)
-        lastExecutionMetrics = operation.lastExecutionMetrics
-    }
-    private func applyWorking(_ graph: LayoutGraph) async throws {
-        try Task.checkCancellation()
-        // Postorder makes each child group's size available before laying out its parent.
-        var stack = [(graph.root, false)], active = Set<LayoutNode>(), visited = Set<LayoutNode>(), postorder: [LayoutNode] = []
-        while let (group, post) = stack.popLast() {
-            if post { active.remove(group); visited.insert(group); postorder.append(group); continue }
-            if active.contains(group) { throw GraphError.cyclicGroupHierarchy }
-            if visited.contains(group) { continue }
-            active.insert(group); stack.append((group, true))
-            for child in group.children.reversed() where child.isGroup { stack.append((child, false)) }
-        }
-        for group in postorder where !group.children.isEmpty {
+        let original = try GroupLayoutEngine(graph, padding: groupPadding)
+        // Resolve against caller identities before suspending, then use only detached geometry.
+        let layouts = original.groups.map { groupLayoutSelector?($0) ?? coreLayout }
+        let refineIncoming = optimizeIncomingEdges
+        let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
+        var records: [LayoutExecutionMetrics] = [], failures = Set<LayoutEdge>()
+        for (group, layout) in zip(engine.groups, layouts) {
             try Task.checkCancellation()
-            let g = subgraph(graph, nodes: group.children)
-            let layout = groupLayoutSelector?(group) ?? coreLayout
-            let coreStart = ContinuousClock.now
-            try await layout.applyLayoutAsync(g)
-            lastExecutionMetrics += compositionCoreRecords(layout, requested: backend, graph: g, start: coreStart)
-            if group !== graph.root {
-                let b = g.bounds
-                group.bounds = Rect(width: b.width + groupPadding * 2, height: b.height + groupPadding * 2)
-                translate(g, by: Point(x: groupPadding - b.x, y: groupPadding - b.y))
+            let projectionStart = ContinuousClock.now
+            let projection = engine.projection(for: group)
+            if backend != .cpu { records.append(compositionCPURecord(backend, count: projection.graph.nodes.count,
+                start: projectionStart, stages: ["group edge projection"])) }
+            if !group.children.isEmpty {
+                let coreStart = ContinuousClock.now
+                try await layout.applyLayoutAsync(projection.graph)
+                records += compositionCoreRecords(layout, requested: backend, graph: projection.graph, start: coreStart)
+                let placementStart = ContinuousClock.now
+                try engine.accept(projection, in: group)
+                if backend != .cpu { records.append(compositionCPURecord(backend, count: projection.graph.nodes.count,
+                    start: placementStart, stages: ["frame overlap repair and rigid subtree placement"])) }
             }
-        }
-        let containmentStart = ContinuousClock.now
-        var groups = [graph.root], seen = Set<LayoutNode>()
-        while let group = groups.popLast() {
-            guard seen.insert(group).inserted else { continue }
-            for child in group.children {
-                child.x += group.x; child.y += group.y
-                if child.isGroup { groups.append(child) }
-            }
-        }
-        if backend != .cpu { lastExecutionMetrics.append(compositionCPURecord(backend, count: graph.nodes.count, start: containmentStart, stages: ["group containment and global placement"])) }
-        let routing = subgraph(graph, nodes: graph.nodes); routing.edges = []
-        for e in graph.edges {
-            if let parent = e.source.parent, parent === e.target.parent {
-                if parent !== graph.root {
-                    let delta = Point(x: parent.x, y: parent.y)
-                    e.path = e.path.map { $0 + delta }; e.labelBounds = e.labelBounds.translated(by: delta)
+            let routing = engine.routingGraph(for: group)
+            if !routing.edges.isEmpty {
+                if backend == .cpu {
+                    let router = PolylineEdgeRouter(); router.routeEdges(routing)
+                    failures.formUnion(router.unroutableEdges)
+                } else {
+                    let router = RoutingLayoutOperation(.polyline, backend: backend, executor: executor)
+                    try await router.applyLayoutAsync(routing)
+                    failures.formUnion(router.unroutableEdgeIndices.map { routing.edges[$0] })
+                    records += router.lastExecutionMetrics
                 }
-            } else { routing.edges.append(e) }
+            }
+            let fitStart = ContinuousClock.now
+            try engine.finish(group, routed: routing.edges)
+            if backend != .cpu { records.append(compositionCPURecord(backend, count: group.children.count,
+                start: fitStart, stages: ["group frame measurement and translation"])) }
         }
-        if backend == .cpu { ChannelEdgeRouter().routeEdges(routing) }
-        else {
-            let router = RoutingLayoutOperation(.channel, backend: backend, executor: executor)
-            try await router.applyLayoutAsync(routing)
-            lastExecutionMetrics += router.lastExecutionMetrics
+        if refineIncoming {
+            let start = ContinuousClock.now
+            try engine.refineIncomingEdges(excluding: failures)
+            if backend != .cpu { records.append(compositionCPURecord(backend, count: transaction.working.nodes.count,
+                start: start, stages: ["incoming group edge alignment and route validation"])) }
         }
+        try transaction.commit(to: graph)
+        lastExecutionMetrics = records
+        unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
     }
 }
 

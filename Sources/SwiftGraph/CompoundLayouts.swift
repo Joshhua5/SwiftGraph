@@ -103,50 +103,40 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
 
 public enum GraphError: Error, Equatable { case cyclicGroupHierarchy }
 
+/// Fits nested frames bottom-up. Cores see sized ordinary-node proxies and must preserve topology.
 public final class RecursiveGroupLayout: LayoutAlgorithm {
     public var coreLayout: any LayoutAlgorithm
     public var groupPadding: Double = 20
+    /// Refine framed placement using incoming boundary connections after fitting the frames.
+    public var optimizeIncomingEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any LayoutAlgorithm)?
+    public private(set) var unroutableEdges: [LayoutEdge] = []
     public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
     public func applyLayout(_ graph: LayoutGraph) throws {
+        unroutableEdges = []
         try Task.checkCancellation()
-        // Postorder makes each child group's size available before laying out its parent.
-        var stack = [(graph.root, false)], active = Set<LayoutNode>(), visited = Set<LayoutNode>(), postorder: [LayoutNode] = []
-        while let (group, post) = stack.popLast() {
-            if post { active.remove(group); visited.insert(group); postorder.append(group); continue }
-            if active.contains(group) { throw GraphError.cyclicGroupHierarchy }
-            if visited.contains(group) { continue }
-            active.insert(group); stack.append((group, true))
-            for child in group.children.reversed() where child.isGroup { stack.append((child, false)) }
-        }
-        for group in postorder where !group.children.isEmpty {
+        let transaction = try LayoutTransaction(graph)
+        let original = try GroupLayoutEngine(graph, padding: groupPadding)
+        let layouts = original.groups.map { groupLayoutSelector?($0) ?? coreLayout }
+        let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
+        var failures = Set<LayoutEdge>()
+        for (group, layout) in zip(engine.groups, layouts) {
             try Task.checkCancellation()
-            let g = subgraph(graph, nodes: group.children)
-            try (groupLayoutSelector?(group) ?? coreLayout).applyLayout(g)
-            if group !== graph.root {
-                let b = g.bounds
-                group.bounds = Rect(width: b.width + groupPadding * 2, height: b.height + groupPadding * 2)
-                translate(g, by: Point(x: groupPadding - b.x, y: groupPadding - b.y))
+            if !group.children.isEmpty {
+                let projection = engine.projection(for: group)
+                try layout.applyLayout(projection.graph)
+                try engine.accept(projection, in: group)
             }
-        }
-        var groups = [graph.root], seen = Set<LayoutNode>()
-        while let group = groups.popLast() {
-            guard seen.insert(group).inserted else { continue }
-            for child in group.children {
-                child.x += group.x; child.y += group.y
-                if child.isGroup { groups.append(child) }
+            let routing = engine.routingGraph(for: group)
+            if !routing.edges.isEmpty {
+                let router = PolylineEdgeRouter(); router.routeEdges(routing)
+                failures.formUnion(router.unroutableEdges)
             }
+            try engine.finish(group, routed: routing.edges)
         }
-        let routing = subgraph(graph, nodes: graph.nodes); routing.edges = []
-        for e in graph.edges {
-            if let parent = e.source.parent, parent === e.target.parent {
-                if parent !== graph.root {
-                    let delta = Point(x: parent.x, y: parent.y)
-                    e.path = e.path.map { $0 + delta }; e.labelBounds = e.labelBounds.translated(by: delta)
-                }
-            } else { routing.edges.append(e) }
-        }
-        ChannelEdgeRouter().routeEdges(routing)
+        if optimizeIncomingEdges { try engine.refineIncomingEdges(excluding: failures) }
+        try transaction.commit(to: graph)
+        unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
     }
 }
 

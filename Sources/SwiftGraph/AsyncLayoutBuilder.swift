@@ -13,12 +13,16 @@ public extension LayoutBuilder {
         operation.componentSpacing = componentSpacing; operation.preferredAspectRatio = preferredAspectRatio
         return useAsyncAlgorithm(operation)
     }
-    @discardableResult func wrapWithRecursiveGroups(_ core: any AsyncLayoutAlgorithm) -> Self {
-        useAsyncAlgorithm(RecursiveGroupLayoutOperation(core))
+    @_disfavoredOverload
+    @discardableResult func wrapWithRecursiveGroups(_ core: any AsyncLayoutAlgorithm,
+        configure: (RecursiveGroupLayoutOperation) -> Void = { _ in }) -> Self {
+        let operation = RecursiveGroupLayoutOperation(core); configure(operation); return useAsyncAlgorithm(operation)
     }
-    @discardableResult func wrapWithFullComposition(_ core: any AsyncLayoutAlgorithm, componentSpacing: Double = 20) -> Self {
+    @_disfavoredOverload
+    @discardableResult func wrapWithFullComposition(_ core: any AsyncLayoutAlgorithm, componentSpacing: Double = 20,
+        configure: (RecursiveGroupLayoutOperation) -> Void = { _ in }) -> Self {
         let operation = ComponentLayoutOperation(core); operation.componentSpacing = componentSpacing
-        return useAsyncAlgorithm(RecursiveGroupLayoutOperation(operation))
+        let groups = RecursiveGroupLayoutOperation(operation); configure(groups); return useAsyncAlgorithm(groups)
     }
     @discardableResult func useMultiPage(coreLayout: any AsyncLayoutAlgorithm,
                                         configure: (MultiPageLayoutOperation) -> Void = { _ in }) -> Self {
@@ -60,13 +64,16 @@ public extension LayoutBuilder {
         configure(operation); return useAsyncAlgorithm(operation)
     }
     @discardableResult func wrapWithRecursiveGroups(_ core: any AsyncLayoutAlgorithm, backend: LayoutBackend,
-        executor: LayoutExecutor = .shared) -> Self {
-        useAsyncAlgorithm(RecursiveGroupLayoutOperation(core, backend: backend, executor: executor))
+        executor: LayoutExecutor = .shared, configure: (RecursiveGroupLayoutOperation) -> Void = { _ in }) -> Self {
+        let operation = RecursiveGroupLayoutOperation(core, backend: backend, executor: executor)
+        configure(operation); return useAsyncAlgorithm(operation)
     }
     @discardableResult func wrapWithFullComposition(_ core: any AsyncLayoutAlgorithm, backend: LayoutBackend,
-        executor: LayoutExecutor = .shared, componentSpacing: Double = 20) -> Self {
+        executor: LayoutExecutor = .shared, componentSpacing: Double = 20,
+        configure: (RecursiveGroupLayoutOperation) -> Void = { _ in }) -> Self {
         let operation = ComponentLayoutOperation(core, backend: backend, executor: executor); operation.componentSpacing = componentSpacing
-        return useAsyncAlgorithm(RecursiveGroupLayoutOperation(operation, backend: backend, executor: executor))
+        let groups = RecursiveGroupLayoutOperation(operation, backend: backend, executor: executor)
+        configure(groups); return useAsyncAlgorithm(groups)
     }
     @discardableResult func applyImportanceBased(_ core: any AsyncLayoutAlgorithm, backend: LayoutBackend,
         executor: LayoutExecutor = .shared) -> Self {
