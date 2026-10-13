@@ -22,6 +22,8 @@ import ImageIO
         #expect(cases.filter { $0.family == "routing" }.count == 10)
         #expect(cases.filter { $0.id.hasPrefix("layout-") }.count == 28)
         #expect(Set(cases.filter { $0.family == "directed" }.map(\.id)).isSuperset(of: ["directed-fresh", "directed-incremental", "directed-routes-only"]))
+        #expect(cases.filter { $0.family == "engineering" }.count == 21)
+        #expect(try VisualEvaluation.selected(cases, suite: "engineering", ids: []).count == 21)
         #expect(try VisualEvaluation.selected(cases, suite: "metal", ids: []).allSatisfy(\.metal))
         #expect(throws: EvaluationError.self) { try VisualEvaluation.selected(cases, suite: "full", ids: ["typo"]) }
     }

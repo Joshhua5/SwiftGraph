@@ -266,6 +266,7 @@ enum VisualCatalogue {
             })
         }
         cases += framedGroupCases()
+        cases += softwareEngineeringCases()
         cases += MetalVisualCatalogue.all()
         return cases.sorted { $0.id < $1.id }
     }

@@ -107,6 +107,7 @@ enum VisualStorage {
             throw EvaluationError.message("Output directory is not empty: \(url.path). Use a new run directory to preserve prior evidence.")
         }
         try FileManager.default.createDirectory(at: url.appendingPathComponent("cases"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: url.appendingPathComponent("png"), withIntermediateDirectories: true)
     }
     static func caseDirectory(_ output: URL, _ id: String) throws -> URL {
         guard safeID(id) else { throw EvaluationError.message("Invalid case ID: \(id)") }
@@ -180,12 +181,13 @@ enum VisualStorage {
 
 enum VisualEvaluation {
     static func selected(_ cases: [VisualCase], suite: String, ids: [String]) throws -> [VisualCase] {
-        guard ["smoke", "full", "metal", "performance"].contains(suite) else { throw EvaluationError.message("Unknown suite: \(suite)") }
+        guard ["smoke", "full", "engineering", "metal", "performance"].contains(suite) else { throw EvaluationError.message("Unknown suite: \(suite)") }
         if !ids.isEmpty {
             let unknown = Set(ids).subtracting(cases.map(\.id))
             guard unknown.isEmpty else { throw EvaluationError.message("Unknown cases: \(unknown.sorted().joined(separator: ", "))") }
             return cases.filter { ids.contains($0.id) }
         }
+        if suite == "engineering" { return cases.filter { $0.family == "engineering" } }
         return cases.filter { suite == "performance" ? $0.family == "performance" : (suite == "metal" ? $0.metal : (!$0.metal && $0.family != "performance" && (suite == "full" || $0.smoke))) }
     }
     static func render(_ cases: [VisualCase], output: URL, baselines: [String: VisualSnapshot], command: [String], environment: [String: String]? = nil) async throws -> VisualManifest {
@@ -218,7 +220,9 @@ enum VisualEvaluation {
                     try VisualRenderer.write(VisualScene.overlay(baseline, snapshot), to: dir.appendingPathComponent("overlay")); row.hasBefore = true
                 }
                 if !metrics.failures.isEmpty { row.status = "contract-failure" }
-                try VisualRenderer.write(scene, to: dir.appendingPathComponent("current")); snapshots.append(snapshot)
+                try VisualRenderer.write(scene, to: dir.appendingPathComponent("current"))
+                try? FileManager.default.copyItem(at: dir.appendingPathComponent("current.png"), to: output.appendingPathComponent("png/\(item.id).png"))
+                snapshots.append(snapshot)
             } catch {
                 row.status = "error"; row.error = String(describing: error)
             }
@@ -269,6 +273,7 @@ enum VisualEvaluation {
             }
             if !(row.metrics?.failures.isEmpty ?? true) && row.status != "error" { row.status = "contract-failure" }
             try VisualRenderer.write(scene, to: dir.appendingPathComponent("current"))
+            try? FileManager.default.copyItem(at: dir.appendingPathComponent("current.png"), to: output.appendingPathComponent("png/\(id).png"))
             snapshots.append(current)
             } catch { row.status = "error"; row.error = String(describing: error) }
             manifest.cases.append(row)
@@ -430,8 +435,8 @@ struct VisualOptions {
         guard let path = values[flag] else { throw EvaluationError.message("Missing \(flag)") }; return URL(fileURLWithPath: path)
     }
     static let help = """
-    graph-layout-visual list [--suite full|smoke|metal|performance] [--case ID ...]
-    graph-layout-visual render [--suite full|smoke|metal|performance] [--case ID ...] [--output DIR] [--baseline DIR]
+    graph-layout-visual list [--suite full|smoke|engineering|metal|performance] [--case ID ...]
+    graph-layout-visual render [--suite full|smoke|engineering|metal|performance] [--case ID ...] [--output DIR] [--baseline DIR]
     graph-layout-visual compare --before DIR --after DIR --output DIR [--case ID ...]
     graph-layout-visual baseline --from RUN --case ID [--case ID ...] [--output DIR]
 
