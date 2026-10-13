@@ -143,6 +143,9 @@ public extension LayoutBuilder {
     @discardableResult func routeSelfLoops(_ configure: (SelfLoopRouter) -> Void = { _ in }) -> Self {
         let value = SelfLoopRouter(); configure(value); return routeEdges(value)
     }
+    @discardableResult func distributePorts(_ configure: (PortDistributor) -> Void = { _ in }) -> Self {
+        let value = PortDistributor(); configure(value); return routeEdges(value)
+    }
     @discardableResult func routeCurveFitting(_ configure: (CurveFittingEdgeRouter) -> Void = { _ in }) -> Self {
         let value = CurveFittingEdgeRouter(); configure(value); return routeEdges(value)
     }
@@ -169,8 +172,8 @@ public extension LayoutBuilder {
         transform { g in value.selectedNodeIds = Set(g.nodes.filter(nodeFilter).map(\.id)) }
         configure(value); return useAlgorithm(value)
     }
-    @discardableResult func useStandardHierarchical(_ configure: (HierarchicalLayoutAlgorithm) -> Void = { _ in }) -> Self { useHierarchical(configure).routeSelfLoops() }
-    @discardableResult func useStandardOrganic(_ configure: (OrganicLayoutAlgorithm) -> Void = { _ in }) -> Self { useOrganic(configure).routePolyline().routeSelfLoops() }
+    @discardableResult func useStandardHierarchical(_ configure: (HierarchicalLayoutAlgorithm) -> Void = { _ in }) -> Self { useHierarchical(configure).routeSelfLoops().clipEdgeEndpoints() }
+    @discardableResult func useStandardOrganic(_ configure: (OrganicLayoutAlgorithm) -> Void = { _ in }) -> Self { useOrganic(configure).routePolyline().routeSelfLoops().clipEdgeEndpoints() }
     @discardableResult func useEdgeBundlingPattern() -> Self { routePolyline().routeWithBundling() }
     @discardableResult func clipEdgeEndpoints() -> Self { transform(EdgeEndpointClipper.clipToNodeBounds) }
     @discardableResult func placeLabels(_ configure: (LabelPlacementAlgorithm) -> Void = { _ in }) -> Self {

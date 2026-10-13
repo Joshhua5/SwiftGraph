@@ -84,10 +84,67 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             }
         }
         for i in a.nodes.indices { a.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
+        var routed: [[Point]?] = [], flows: [Int?] = []
         for e in graph.edges {
-            let bends = (chains[e] ?? []).map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
-            e.path = [e.source.center] + bends + [e.target.center]
+            guard let chain = chains[e], let s = a.index[e.source], let t = a.index[e.target] else { routed.append(nil); flows.append(nil); continue }
+            routed.append(chain.map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }); flows.append((ranks[t] - ranks[s]).signum())
         }
+        try routeLayeredEdges(graph, chains: routed, flows: flows)
+    }
+}
+
+/// Routes edges between ranks: paths leave and enter on node faces facing the layer direction, ends sharing a face are
+/// spread evenly in neighbour order (so reciprocal and duplicate edges never coincide), and a segment that would cross
+/// a node (including edges spanning more ranks than get virtual nodes) is detoured. `chains[i]` are the virtual-node
+/// points of `graph.edges[i]` and `flows[i]` the sign of its rank change; nil entries are drawn centre to centre.
+func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) throws {
+    struct End { var edge: Int; var isSource: Bool; var key: Double }
+    struct Face: Hashable { var node: LayoutNode; var side: PortConstraint }
+    var faces: [Face: [End]] = [:]
+    for (i, e) in graph.edges.enumerated() {
+        guard let chain = chains[i], let flow = flows[i] else { e.path = [e.source.center, e.target.center]; continue }
+        let s = e.source, t = e.target
+        let sides: (PortConstraint, PortConstraint) = flow > 0 ? (.bottom, .top) : flow < 0 ? (.top, .bottom) : (t.center.x >= s.center.x ? (.right, .left) : (.left, .right))
+        for (node, side, toward, isSource) in [(s, sides.0, chain.first ?? t.center, true), (t, sides.1, chain.last ?? s.center, false)] {
+            faces[Face(node: node, side: side), default: []].append(End(edge: i, isSource: isSource, key: side == .top || side == .bottom ? toward.x : toward.y))
+        }
+    }
+    var ports = Array(repeating: [Point.zero, Point.zero], count: graph.edges.count)
+    for (face, ends) in faces {
+        let r = face.node.bounds, sorted = ends.sorted { ($0.key, $0.edge, $0.isSource ? 0 : 1) < ($1.key, $1.edge, $1.isSource ? 0 : 1) }
+        for (k, end) in sorted.enumerated() {
+            let f = Double(k + 1) / Double(sorted.count + 1)
+            let p: Point
+            switch face.side {
+            case .top: p = Point(x: r.left + r.width * f, y: r.top)
+            case .bottom: p = Point(x: r.left + r.width * f, y: r.bottom)
+            case .left: p = Point(x: r.left, y: r.top + r.height * f)
+            default: p = Point(x: r.right, y: r.top + r.height * f)
+            }
+            ports[end.edge][end.isSource ? 0 : 1] = p
+        }
+    }
+    let solid = graph.nodes.filter { $0.width > 0 && $0.height > 0 }
+    let tree = QuadTree<LayoutNode>(bounds: enclosingBounds(solid).inflated(by: 1))
+    for node in solid { tree.insert(bounds: node.bounds, item: node) }
+    for (i, e) in graph.edges.enumerated() {
+        if i % 64 == 0 { try Task.checkCancellation() }
+        guard let chain = chains[i] else { continue }
+        func near(_ area: Rect) -> [LayoutNode] {
+            tree.query(area).filter { $0 !== e.source && $0 !== e.target && !($0.isGroup && (isAncestor($0, of: e.source) || isAncestor($0, of: e.target))) }
+        }
+        var path = [ports[i][0]] + chain + [ports[i][1]], k = 0
+        while k + 1 < path.count {
+            let a = path[k], b = path[k + 1], box = RoutingCompute.bounds(a, b)
+            if near(box.inflated(by: 0.5)).contains(where: { $0.bounds.intersectsLine(a, b) }) {
+                let window = max(40, max(box.width, box.height) / 2)
+                if let detour = ObstaclePolyline.search(a, b, near(box.inflated(by: window)).map(\.bounds), padding: 8), detour.count > 2 {
+                    path.replaceSubrange(k...(k + 1), with: detour); k += detour.count - 1; continue
+                }
+            }
+            k += 1
+        }
+        e.path = compactPath(path)
     }
 }
 private func isotonic(_ values: [Double], weights: [Double]) -> [Double] {

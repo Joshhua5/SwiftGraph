@@ -8,6 +8,10 @@ private func sample(_ count: Int = 4) -> LayoutGraph {
     if count > 1 { for i in 1..<count { g.addEdge(LayoutEdge(source: g.nodes[i - 1], target: g.nodes[i])) } }
     return g
 }
+/// True when `p` lies on the outline of `r`, where layered routes now start and end.
+private func onOutline(_ p: Point, _ r: Rect) -> Bool {
+    r.inflated(by: 1e-6).contains(p) && !r.inflated(by: -1e-6).contains(p)
+}
 private func finite(_ g: LayoutGraph) -> Bool {
     g.nodes.allSatisfy { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) } && g.edges.allSatisfy { $0.path.allSatisfy { $0.x.isFinite && $0.y.isFinite } }
 }
@@ -58,12 +62,13 @@ private func finite(_ g: LayoutGraph) -> Bool {
     let e = LayoutEdge(source: a, target: b); e.sourcePort = .right; e.targetPort = .left; g.edges = [e]
     let router = ChannelEdgeRouter(); router.routeEdges(g)
     #expect(router.unroutableEdges.isEmpty); #expect(e.path.count >= 4)
-    #expect(e.path.first == Point(x: 41, y: 20)); #expect(e.path.last == Point(x: 259, y: 20))
+    // Ports sit on the boundary, and the first and last legs run perpendicular to the side.
+    #expect(e.path.first == Point(x: 40, y: 20)); #expect(e.path.last == Point(x: 260, y: 20))
+    #expect(e.path[0].y == e.path[1].y); #expect(e.path[e.path.count - 1].y == e.path[e.path.count - 2].y)
     for (p, q) in zip(e.path, e.path.dropFirst()) {
         #expect(p.x == q.x || p.y == q.y)
         #expect(!obstacle.bounds.intersectsLine(p, q))
     }
-    // Ports are one unit outside the selected side; lattice doglegs need not leave normally.
     let first = e.path; router.routeEdges(g); #expect(e.path == first)
 }
 
@@ -143,7 +148,9 @@ private func finite(_ g: LayoutGraph) -> Bool {
 
 @Test func hierarchicalLimitsVirtualChainsAndRankWidth() throws {
     let g = sample(70), e = LayoutEdge(source: g.nodes[0], target: g.nodes[69]); g.addEdge(e)
-    try HierarchicalLayoutAlgorithm().applyLayout(g); #expect(e.path.count == 2)
+    try HierarchicalLayoutAlgorithm().applyLayout(g)
+    // Too long for virtual nodes, so the route detours around the nodes it would otherwise cross.
+    #expect(e.path.count > 2); #expect(ObstaclePolyline.clear(e.path, ObstaclePolyline.obstacles(e, g)))
     let flat = sample(12); flat.edges = []
     let layout = HierarchicalLayoutAlgorithm(); layout.maxNodesPerRank = 3
     try layout.applyLayout(flat)
@@ -187,7 +194,7 @@ private func finite(_ g: LayoutGraph) -> Bool {
     g.edges = [internalEdge, boundary]
     try RecursiveGroupLayout(HierarchicalLayoutAlgorithm()).applyLayout(g)
     #expect(inner.bounds.contains(a.center)); #expect(inner.bounds.contains(b.center)); #expect(outer.bounds.contains(inner.center))
-    #expect(internalEdge.path.first == a.center); #expect(internalEdge.path.last == b.center)
+    #expect(onOutline(internalEdge.path.first!, a.bounds)); #expect(onOutline(internalEdge.path.last!, b.bounds))
     #expect(boundary.path.count >= 2); #expect(a.parent === inner); #expect(inner.parent === outer)
 }
 
@@ -199,7 +206,7 @@ private func finite(_ g: LayoutGraph) -> Bool {
     let layout = SubgraphLayoutAlgorithm(HierarchicalLayoutAlgorithm()); layout.selectedNodeIds = ["n0", "n1"]
     try layout.applyLayout(g)
     #expect(((g.nodes[0].center + g.nodes[1].center) / 2 - centroid).length < 1e-8)
-    #expect(g.edges[0].path.first == g.nodes[0].center); #expect(g.edges[0].path.last == g.nodes[1].center)
+    #expect(onOutline(g.edges[0].path.first!, g.nodes[0].bounds)); #expect(onOutline(g.edges[0].path.last!, g.nodes[1].bounds))
     #expect(g.nodes[2].bounds == fixed); #expect(g.edges[2].path == unrelated)
 }
 
@@ -260,8 +267,12 @@ private func finite(_ g: LayoutGraph) -> Bool {
     let g = sample(2), e = g.edges[0]
     e.path = [Point(x: 0, y: 0), Point(x: 100, y: 0), Point(x: 100, y: 100)]
     let router = CurveFittingEdgeRouter(); router.iterations = 100; router.routeEdges(g)
-    #expect(e.path.count == 34)
+    #expect(e.path.count > 4 && e.path.count <= 2 + 33)
     #expect(e.path.first == Point(x: 0, y: 0)); #expect(e.path.last == Point(x: 100, y: 100))
+    // Corners round within the radius; the first and last legs keep their direction.
+    #expect(e.path[1].y == 0 && e.path[e.path.count - 2].x == 100)
+    #expect(e.path.dropFirst().dropLast().allSatisfy { abs($0.x - 100) <= router.radius + 1e-9 || abs($0.y) <= 1e-9 })
+    #expect(e.path.allSatisfy { $0.x <= 100 + 1e-9 && $0.y >= -1e-9 })
 }
 
 @Test func labelPlacementAcceptsSwiftPayloadAndKeepsMeasuredSize() {
@@ -283,7 +294,7 @@ private func finite(_ g: LayoutGraph) -> Bool {
     try ComponentLayout(HierarchicalLayoutAlgorithm()).applyLayout(g)
     let first = enclosingBounds(Array(g.nodes.prefix(3))), second = enclosingBounds(Array(g.nodes.suffix(3)))
     #expect(!first.intersects(second)); #expect(g.nodes.map(\.parent) == parents)
-    for e in g.edges { #expect(e.path.first == e.source.center); #expect(e.path.last == e.target.center) }
+    for e in g.edges { #expect(onOutline(e.path.first!, e.source.bounds)); #expect(onOutline(e.path.last!, e.target.bounds)) }
 }
 
 @Test func recursiveGroupCyclesThrowInsteadOfRecursingForever() throws {
@@ -301,16 +312,45 @@ private func finite(_ g: LayoutGraph) -> Bool {
     #expect([g.nodes[0].bounds, g.nodes[2].bounds] == anchors)
 }
 
-@Test func channelAllowsEndpointCellsAndSelectsCandidatePorts() {
+@Test func channelChoosesFacingSidesAndSelectsCandidatePorts() {
     let g = sample(3), e = LayoutEdge(source: g.nodes[0], target: g.nodes[1]); g.edges = [e]
     g.nodes[0].bounds = Rect(width: 20, height: 20); g.nodes[1].bounds = Rect(x: 300, y: 0, width: 20, height: 20)
-    g.nodes[2].bounds = Rect(x: -10, y: -10, width: 40, height: 40)
+    g.nodes[2].bounds = Rect(x: 100, y: 400, width: 40, height: 40)
     let router = ChannelEdgeRouter(); router.routeEdges(g)
-    #expect(router.unroutableEdges.isEmpty); #expect(e.path == [e.source.center, e.target.center])
-    g.nodes[2].y = 400; e.sourcePortCandidates = [.top]; e.targetPortCandidates = [.bottom]
+    // Without constraints the edge leaves the side facing its target, on the boundary.
+    #expect(router.unroutableEdges.isEmpty); #expect(e.path == [Point(x: 20, y: 10), Point(x: 300, y: 10)])
+    e.sourcePortCandidates = [.top]; e.targetPortCandidates = [.bottom]
     router.routeEdges(g)
     #expect(router.unroutableEdges.isEmpty)
-    #expect(e.path.first == Point(x: 10, y: -1)); #expect(e.path.last == Point(x: 310, y: 21))
+    #expect(e.path.first == Point(x: 15, y: 0)); #expect(e.path.last == Point(x: 305, y: 20))
+    #expect(e.path[0].x == e.path[1].x); #expect(e.path[e.path.count - 1].x == e.path[e.path.count - 2].x)
+}
+
+@Test func channelNeverCrossesEndpointInteriorsOrUnrelatedGroups() {
+    let g = LayoutGraph()
+    func node(_ id: String, _ r: Rect, group: Bool = false) -> LayoutNode { let n = LayoutNode(id: id, width: r.width, height: r.height); n.bounds = r; n.isGroup = group; return n }
+    let a = node("a", Rect(width: 40, height: 40)), b = node("b", Rect(x: 400, y: 0, width: 40, height: 40))
+    let wall = node("wall", Rect(x: 180, y: -100, width: 60, height: 240), group: true), inner = node("inner", Rect(x: 190, y: 40, width: 40, height: 40))
+    wall.children = [inner]; inner.parent = wall
+    for n in [a, b, wall, inner] { g.addNode(n) }
+    let e = LayoutEdge(source: a, target: b); g.addEdge(e)
+    let router = ChannelEdgeRouter(); router.routeEdges(g)
+    #expect(router.unroutableEdges.isEmpty)
+    for (p, q) in zip(e.path, e.path.dropFirst()) {
+        #expect(!wall.bounds.inflated(by: -1).intersectsLine(p, q))
+        #expect(!a.bounds.inflated(by: -1).intersectsLine(p, q) && !b.bounds.inflated(by: -1).intersectsLine(p, q))
+    }
+}
+
+@Test func channelFallbackIsReportedAndStartsOnTheBoundary() {
+    let g = sample(2), e = g.edges[0]
+    // The target is walled in by overlapping rectangles, so no lattice route exists.
+    g.nodes[0].bounds = Rect(width: 40, height: 40); g.nodes[1].bounds = Rect(x: 300, y: 0, width: 40, height: 40)
+    let ring = [Rect(x: 280, y: -20, width: 80, height: 20), Rect(x: 280, y: 40, width: 80, height: 20), Rect(x: 280, y: -20, width: 20, height: 80), Rect(x: 340, y: -20, width: 20, height: 80)]
+    for (i, r) in ring.enumerated() { let n = LayoutNode(id: "ring\(i)", width: r.width, height: r.height); n.bounds = r; g.addNode(n) }
+    let router = ChannelEdgeRouter(); router.routeEdges(g)
+    #expect(router.unroutableEdges == [e]); #expect(e.path.count >= 2)
+    #expect(!g.nodes[0].bounds.inflated(by: -1).contains(e.path[0]) && !g.nodes[1].bounds.inflated(by: -1).contains(e.path[e.path.count - 1]))
 }
 
 @Test func channelCutsDoNotSplitAnEarlierWideRectangle() {
@@ -331,9 +371,11 @@ private func finite(_ g: LayoutGraph) -> Bool {
     for (node, point) in zip(g.nodes, [Point(x: 0, y: 0), Point(x: 300, y: 0), Point(x: 300, y: 20), Point(x: 0, y: 20)]) { node.center = point }
     g.addEdge(LayoutEdge(source: g.nodes[0], target: g.nodes[1])); g.addEdge(LayoutEdge(source: g.nodes[2], target: g.nodes[3]))
     let router = EdgeBundlingRouter(); router.routeEdges(g)
-    #expect(g.edges[0].path[5].y > 0); #expect(g.edges[1].path[5].y < 20)
+    #expect(g.edges[0].path.contains { $0.y > 1 }); #expect(g.edges[1].path.contains { $0.y < 19 })
     for e in g.edges { #expect(e.path.first == e.source.center); #expect(e.path.last == e.target.center) }
-    router.segments = 0; router.routeEdges(g); #expect(g.edges.allSatisfy { $0.path.count == 2 })
+    // Without subdivision there is nothing to bundle: edges keep the routes they have.
+    let bundled = g.edges.map(\.path)
+    router.segments = 0; router.routeEdges(g); #expect(g.edges.map(\.path) == bundled)
 }
 
 @Test func noOpAlignmentPreservesLongEdgeBends() throws {
@@ -342,15 +384,28 @@ private func finite(_ g: LayoutGraph) -> Bool {
     try AlignmentLayoutAlgorithm().applyLayout(g); #expect(e.path == path)
 }
 
-@Test func onlyChannelRouterInterpretsCandidatePorts() {
-    for router in [PolylineEdgeRouter() as any EdgeRouter, BspEdgeRouter(), OrthogonalGroupedEdgeRouter()] {
-        let g = sample(2); g.nodes[0].bounds = Rect(width: 40, height: 40); g.nodes[1].bounds = Rect(x: 200, y: 0, width: 40, height: 40)
-        let e = g.edges[0]
-        router.routeEdges(g); let unconstrained = e.path
+@Test func orthogonalRoutersHonourPortConstraintsAndCandidates() {
+    func fixture() -> LayoutGraph {
+        let g = sample(2); g.nodes[0].bounds = Rect(width: 40, height: 40); g.nodes[1].bounds = Rect(x: 200, y: 0, width: 40, height: 40); return g
+    }
+    for router in [ChannelEdgeRouter() as any EdgeRouter, BspEdgeRouter(), OrthogonalGroupedEdgeRouter()] {
+        let g = fixture(), e = g.edges[0]
         e.sourcePortCandidates = [.top]; e.targetPortCandidates = [.bottom]
         router.routeEdges(g)
-        #expect(e.path == unconstrained)
+        // Leaves through the top of the source and arrives through the bottom of the target, perpendicular to each.
+        #expect(e.path.first?.y == 0 && e.path[1].x == e.path[0].x, "\(type(of: router)): \(e.path)")
+        #expect(e.path.last?.y == 40 && e.path[e.path.count - 2].x == e.path[e.path.count - 1].x, "\(type(of: router)): \(e.path)")
+        let h = fixture(), f = h.edges[0]
+        f.sourcePort = .bottom; f.targetPort = .right
+        router.routeEdges(h)
+        #expect(f.path.first?.y == 40, "\(type(of: router)): \(f.path)"); #expect(f.path.last?.x == 240, "\(type(of: router)): \(f.path)")
     }
+    // The polyline router does not interpret ports.
+    let g = fixture(), e = g.edges[0], router = PolylineEdgeRouter()
+    router.routeEdges(g); let unconstrained = e.path
+    e.sourcePortCandidates = [.top]; e.targetPortCandidates = [.bottom]
+    router.routeEdges(g)
+    #expect(e.path == unconstrained)
 }
 
 @Test func barnesHutOpensCellsStraddlingRepulsionCutoff() {

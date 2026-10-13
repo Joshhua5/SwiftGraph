@@ -48,6 +48,8 @@ public extension LayoutBuilder {
     @discardableResult func clipEdgeEndpoints(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self {
         routeEdges(.endpointClipping, backend: backend, executor: executor)
     }
+    /// Port distribution is exact CPU geometry; the backend arguments keep the preset signatures uniform.
+    @discardableResult func distributePorts(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self { distributePorts() }
     @discardableResult func placeLabels(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         labelProvider: ((LayoutEdge) -> String?)? = nil) -> Self {
         let operation = RoutingLayoutOperation(.labelPlacement, backend: backend, executor: executor)

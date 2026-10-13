@@ -180,10 +180,10 @@ enum VisualCatalogue {
         }
         for pattern in LayoutPatternType.allCases {
             cases.append(VisualCase(id: "preset-\(pattern.rawValue)", family: "preset", title: pattern.rawValue,
-                                    configuration: ["pattern": pattern.rawValue, "input": "12 cyclic, mixed sizes", "pipeline": "preset → clip"],
+                                    configuration: ["pattern": pattern.rawValue, "input": "12 cyclic, mixed sizes", "pipeline": "preset (library output; no extra clip)"],
                                     contracts: VisualContracts(noNodeOverlaps: [.mindMap, .standardOrganic, .largeGraphPreset, .denseGraphPreset, .socialNetwork, .networkTopology, .progressiveRefinement].contains(pattern), noObstacleIntersections: [.standardTree, .organizationChart, .hybridLayout, .mindMap, .standardOrganic, .largeGraphPreset, .progressiveRefinement].contains(pattern))) {
                 let g = VisualGraphs.graph(shape: "cyclic")
-                try await LayoutBuilder.create(g).applyPattern(pattern).clipEdgeEndpoints().applyAsync()
+                try await LayoutBuilder.create(g).applyPattern(pattern).applyAsync()
                 return VisualDrawing(graph: g)
             })
         }

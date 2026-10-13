@@ -164,4 +164,116 @@ struct DirectedOperationTests {
         #expect(changed.nodes[0].width == 600)
         #expect(rebuilt.unroutableEdges.isEmpty)
     }
+
+    private func layers(_ widths: [Int], seed: Int = 7) -> LayoutGraph {
+        // Deterministic layered graph with forward, long and feedback links.
+        let g = LayoutGraph(); var state = seed
+        func next(_ n: Int) -> Int { state = (state &* 1103515245 &+ 12345) & 0x7fffffff; return state % n }
+        var rows: [[Int]] = []
+        for (r, w) in widths.enumerated() { rows.append((0..<w).map { _ in g.addNode(LayoutNode(id: "r\(r)-\(g.nodes.count)", width: 60 + Double(next(4)) * 20, height: 30)); return g.nodes.count - 1 }) }
+        for r in 0..<(rows.count - 1) { for a in rows[r] {
+            g.addEdge(LayoutEdge(source: g.nodes[a], target: g.nodes[rows[r + 1][next(rows[r + 1].count)]]))
+            if next(3) == 0, r + 2 < rows.count { g.addEdge(LayoutEdge(source: g.nodes[a], target: g.nodes[rows[r + 2][next(rows[r + 2].count)]])) }
+        } }
+        for _ in 0..<(widths.count / 2) { g.addEdge(LayoutEdge(source: g.nodes[rows.last![0]], target: g.nodes[rows[0][next(rows[0].count)]])) }
+        return g
+    }
+
+    @Test func edgeSpacingKeepsParallelRunsApartAndIsReported() throws {
+        let g = layers([3, 4, 4, 3, 2])
+        var config = DirectedLayoutConfiguration(); config.edgeSpacing = 12
+        let report = try DirectedLayoutOperation(configuration: config).apply(g)
+        #expect(report.unroutableEdges.isEmpty && report.sharedRuns == 0 && report.overlappingNodeIDs.isEmpty)
+        #expect(report.proximateRuns == 0)
+        #expect(try DirectedGeometry.measure(nodes: g.nodes, edges: g.edges, spacing: config.edgeSpacing).proximity == report.proximateRuns)
+    }
+
+    @Test func proximityRanksAfterSharingAndAlongsideCrossings() throws {
+        let g = LayoutGraph()
+        for i in 0..<2 { g.addNode(LayoutNode(id: "\(i)", width: 10, height: 10)) }
+        let a = LayoutEdge(source: g.nodes[0], target: g.nodes[1]), b = LayoutEdge(source: g.nodes[0], target: g.nodes[1])
+        g.addEdge(a); g.addEdge(b)
+        a.path = [Point(x: 0, y: 0), Point(x: 100, y: 0)]
+        b.path = [Point(x: 0, y: 4), Point(x: 100, y: 4)]
+        var near = try DirectedGeometry.measure(nodes: [], edges: g.edges, spacing: 10)
+        #expect(near.proximity == 1 && near.shared == 0)
+        b.path = [Point(x: 0, y: 40), Point(x: 100, y: 40)]
+        let apart = try DirectedGeometry.measure(nodes: [], edges: g.edges, spacing: 10)
+        #expect(apart.proximity == 0)
+        // One proximate pair weighs several crossings, but never outweighs sharing.
+        var few = apart, many = apart
+        few.crossings = 3
+        many.crossings = 5
+        #expect(few.precedes(near) && near.precedes(many))
+        near.shared = 0; var sharing = apart; sharing.shared = 1; sharing.proximity = 0
+        #expect(near.precedes(sharing))
+    }
+
+    @Test func feedbackPortsNestArcsWithoutCrossings() throws {
+        // Two right-going arcs leave one node: the farther arc is outer, its port nearer the centre.
+        let g = graph(3, [(0, 1), (0, 2)])
+        g.nodes[0].center = .zero; g.nodes[1].center = Point(x: 300, y: 0); g.nodes[2].center = Point(x: 700, y: 0)
+        var config = DirectedLayoutConfiguration(); config.mode = .routesOnly; config.feedbackEdges = [0, 1]
+        let report = try DirectedLayoutOperation(configuration: config).apply(g)
+        #expect(report.unroutableEdges.isEmpty && report.crossings == 0 && report.sharedRuns == 0)
+        let near = try #require(g.edges[0].path.first), far = try #require(g.edges[1].path.first)
+        #expect(far.x < near.x && near.y == g.nodes[0].bounds.top && far.y == near.y)
+        // Loops on one node nest and stay clear of arcs that leave beside them.
+        let h = graph(2, [(0, 0), (0, 0), (0, 1)])
+        h.nodes[0].center = .zero; h.nodes[1].center = Point(x: 400, y: 0)
+        config.feedbackEdges = [2]
+        let loops = try DirectedLayoutOperation(configuration: config).apply(h)
+        #expect(loops.unroutableEdges.isEmpty && loops.crossings == 0 && loops.sharedRuns == 0)
+    }
+
+    @Test func blockedSidesFallBackToAnotherSideInsteadOfAnEmptyPath() throws {
+        let g = graph(3, [(0, 1)])
+        g.nodes[0].center = .zero; g.nodes[1].center = Point(x: 400, y: 0)
+        // The neighbour hugs the source's right side, leaving no escape on the assigned side.
+        g.nodes[2].center = Point(x: g.nodes[0].bounds.right + 4 + g.nodes[2].width / 2, y: 0)
+        var config = DirectedLayoutConfiguration(); config.mode = .routesOnly
+        let report = try DirectedLayoutOperation(configuration: config).apply(g)
+        #expect(report.unroutableEdges.isEmpty)
+        let path = try #require(g.edges[0].path.first)
+        #expect(path.x != g.nodes[0].bounds.right)
+        for edge in g.edges { #expect(zip(edge.path, edge.path.dropFirst()).allSatisfy { DirectedGeometry.clear($0, $1, bodies: g.nodes.map(\.bounds)) }) }
+    }
+
+    @Test func incrementalKeepsPriorPortsAndRoutesAndSlotsNewEdgesIntoGaps() throws {
+        let g = layers([2, 3, 3, 2])
+        try DirectedLayoutOperation().apply(g)
+        let before = g.edges.map(\.path)
+        var config = DirectedLayoutConfiguration(); config.mode = .incremental
+        config.previousBounds = Dictionary(uniqueKeysWithValues: g.nodes.map { ($0.id, $0.bounds) })
+        config.previousPaths = Dictionary(uniqueKeysWithValues: g.edges.enumerated().map { ($0.offset, $0.element.path) })
+        let added = LayoutEdge(source: g.nodes[0], target: g.nodes[g.nodes.count - 1]); g.addEdge(added)
+        let report = try DirectedLayoutOperation(configuration: config).apply(g)
+        #expect(report.unroutableEdges.isEmpty && report.displacement == 0)
+        let moved = zip(before, g.edges).filter { $0.count != $1.path.count || zip($0, $1.path).contains { ($0 - $1).length > 1e-6 } }.count
+        #expect(moved <= 2)
+        #expect(added.path.first.map { p in g.edges.dropLast().allSatisfy { $0.source !== g.nodes[0] || ($0.path[0] - p).length >= 10 } } == true)
+    }
+
+    @Test func routesOnlyFeedbackLanesFollowOccupancyNotEdgeIndex() throws {
+        let g = layers([2, 3, 3, 3, 2], seed: 3)
+        for i in 0..<30 { g.addEdge(LayoutEdge(source: g.nodes[g.nodes.count - 1 - i % 3], target: g.nodes[i % 2])) }
+        try DirectedLayoutOperation().apply(g)
+        let drawing = DirectedGeometry.bounds(nodes: g.nodes, edges: [])
+        var config = DirectedLayoutConfiguration(); config.mode = .routesOnly
+        config.feedbackEdges = Set(g.edges.indices.filter { g.edges[$0].source.center.x > g.edges[$0].target.center.x })
+        let report = try DirectedLayoutOperation(configuration: config).apply(g)
+        #expect(report.unroutableEdges.isEmpty)
+        let reach = DirectedGeometry.bounds(nodes: g.nodes, edges: g.edges)
+        // Lanes stack outward by spacing, not by edge index times the port pitch.
+        #expect(reach.height < drawing.height + Double(g.edges.count) * config.edgeSpacing)
+    }
+
+    @Test func denseLayeredGraphStaysRoutableAndFast() throws {
+        let g = layers([8, 10, 10, 10, 8, 6], seed: 11)
+        let start = ContinuousClock.now
+        let report = try DirectedLayoutOperation().apply(g)
+        #expect(report.unroutableEdges.isEmpty && report.sharedRuns == 0 && report.overlappingNodeIDs.isEmpty)
+        #expect(start.duration(to: .now) < .seconds(30))
+        for edge in g.edges { #expect(zip(edge.path, edge.path.dropFirst()).allSatisfy { DirectedGeometry.clear($0, $1, bodies: g.nodes.map(\.bounds)) }) }
+    }
 }

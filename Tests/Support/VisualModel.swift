@@ -141,6 +141,32 @@ enum VisualGeometry {
         let s = ((d.x - a.x) * u.x + (d.y - a.y) * u.y) / length
         return min(length, max(t, s)) - max(0, min(t, s)) > epsilon
     }
+    // Advisory thresholds (world units / radians) for the routing-quality metrics.
+    static let bendTolerance = 2.0 * Double.pi / 180
+    static let parallelAngle = 3.0 * Double.pi / 180
+    static let parallelSpacing = 8.0, parallelOverlap = 12.0
+    static let endpointInset = 0.5, cornerRadius = 3.0, microLength = 4.0, tightClearance = 2.0
+    static func turn(_ a: Point, _ b: Point) -> Double { atan2(abs(cross(a, b)), a.x * b.x + a.y * b.y) }
+    // Near-parallel, closer than `parallelSpacing`, with projected overlap beyond `parallelOverlap` (includes exact overlap).
+    static func nearParallel(_ a: Point, _ b: Point, _ c: Point, _ d: Point) -> Bool {
+        let u = b - a, v = d - c, lu = u.length, lv = v.length
+        guard lu > epsilon, lv > epsilon, abs(cross(u, v)) / (lu * lv) < sin(parallelAngle) else { return false }
+        guard max(abs(cross(u, c - a)), abs(cross(u, d - a))) / lu < parallelSpacing else { return false }
+        let t = ((c.x - a.x) * u.x + (c.y - a.y) * u.y) / lu, s = ((d.x - a.x) * u.x + (d.y - a.y) * u.y) / lu
+        return min(lu, max(t, s)) - max(0, min(t, s)) > parallelOverlap
+    }
+    static func distance(_ p: Point, toSegment a: Point, _ b: Point) -> Double {
+        let u = b - a, l2 = u.lengthSquared
+        let t = l2 > epsilon ? min(1, max(0, ((p.x - a.x) * u.x + (p.y - a.y) * u.y) / l2)) : 0
+        return (p - (a + u * t)).length
+    }
+    static func distance(_ p: Point, to r: Rect) -> Double { hypot(max(r.left - p.x, 0, p.x - r.right), max(r.top - p.y, 0, p.y - r.bottom)) }
+    static func corners(_ r: Rect) -> [Point] { [Point(x: r.left, y: r.top), Point(x: r.right, y: r.top), Point(x: r.right, y: r.bottom), Point(x: r.left, y: r.bottom)] }
+    // Disjoint convex shapes: the minimum is attained at a segment endpoint or a rectangle corner.
+    static func distance(_ a: Point, _ b: Point, to r: Rect) -> Double {
+        if r.intersectsLine(a, b) { return 0 }
+        return min(distance(a, to: r), distance(b, to: r), corners(r).map { distance($0, toSegment: a, b) }.min()!)
+    }
     static func measure(_ snapshot: VisualSnapshot) -> VisualMetrics {
         guard snapshot.isFinite else {
             return VisualMetrics(values: [:], findings: [], failures: [.init(kind: "nonfinite-or-negative-geometry", elements: [])])
@@ -160,7 +186,7 @@ enum VisualGeometry {
                 if a.bounds.intersects(b.bounds) { findings.append(.init(kind: "node-overlap", elements: [a.id, b.id])) }
             }
         }
-        var length = 0.0, bends = 0, displacement = 0.0
+        var length = 0.0, bends = 0, displacement = 0.0, clearance: Double?
         for node in nodes {
             if let previous = snapshot.previousBounds[node.id] { displacement += (previous.center - node.bounds.center).length }
             if let center = snapshot.fixedCenters[node.id], (center - node.bounds.center).length > epsilon {
@@ -180,8 +206,27 @@ enum VisualGeometry {
                 }
             }
             for (first, second) in zip(segments, segments.dropFirst()) {
-                let a = first.1 - first.0, b = second.1 - second.0
-                if abs(cross(a, b)) / max(epsilon, a.length * b.length) > epsilon || a.x * b.x + a.y * b.y < 0 { bends += 1 }
+                if turn(first.1 - first.0, second.1 - second.0) > bendTolerance { bends += 1 }
+            }
+            if segments.count > 1 {
+                for _ in segments.filter({ ($0.1 - $0.0).length < microLength }) { findings.append(.init(kind: "micro-segment", elements: [edge.id])) }
+            }
+            if edge.path.count > 1, let source = byID[edge.source], let target = byID[edge.target] {
+                for (point, node) in [(edge.path[0], source), (edge.path[edge.path.count - 1], target)] {
+                    if node.bounds.inflated(by: -endpointInset).contains(point) && node.bounds.width > 2 * endpointInset && node.bounds.height > 2 * endpointInset {
+                        findings.append(.init(kind: "endpoint-inside-node", elements: [edge.id, node.id]))
+                    }
+                    if corners(node.bounds).contains(where: { ($0 - point).length <= cornerRadius }) {
+                        findings.append(.init(kind: "endpoint-at-corner", elements: [edge.id, node.id]))
+                    }
+                }
+            }
+            // Leaf nodes only, excluding the endpoints and anything inside an endpoint group.
+            for node in nodes where !node.group && node.id != edge.source && node.id != edge.target
+                && !ancestor(edge.source, of: node) && !ancestor(edge.target, of: node) {
+                guard let d = segments.map({ distance($0.0, $0.1, to: node.bounds) }).min() else { continue }
+                clearance = min(clearance ?? d, d)
+                if d < tightClearance { findings.append(.init(kind: "edge-node-clearance", elements: [edge.id, node.id])) }
             }
             for node in nodes where !node.group && node.id != edge.source && node.id != edge.target {
                 let inner = node.bounds.inflated(by: -epsilon)
@@ -202,6 +247,7 @@ enum VisualGeometry {
                 for (a, b) in segments { for (c, d) in paths[j] {
                     if crossing(a, b, c, d) { findings.append(.init(kind: "crossing", elements: [edge.id, edges[j].id])) }
                     if shared(a, b, c, d) { findings.append(.init(kind: "shared-segment", elements: [edge.id, edges[j].id])) }
+                    if nearParallel(a, b, c, d) { findings.append(.init(kind: "near-parallel-run", elements: [edge.id, edges[j].id])) }
                 } }
             }
         }
@@ -221,6 +267,8 @@ enum VisualGeometry {
             "crossings": count("crossing"), "sharedSegments": count("shared-segment"),
             "missingRoutes": count("missing-route"), "fallbackRoutes": count("fallback-route"),
             "labelNodeOverlaps": count("label-node-overlap"), "labelLabelOverlaps": count("label-label-overlap"), "bends": Double(bends), "routeLength": length,
+            "nearParallelRuns": count("near-parallel-run"), "endpointsInsideNodes": count("endpoint-inside-node"),
+            "endpointsAtCorners": count("endpoint-at-corner"), "microSegments": count("micro-segment"),
             "displacement": displacement, "drawingWidth": bounds.width, "drawingHeight": bounds.height]
         let leafRects = nodes.filter { !$0.group }.map(\.bounds)
         let nodeBounds = leafRects.first.map { first in leafRects.dropFirst().reduce(first) { $0.union($1) } } ?? Rect()
@@ -232,6 +280,7 @@ enum VisualGeometry {
         }
         values["nodeAreaUtilization"] = nodeBounds.width * nodeBounds.height > 0 ? nodeArea / (nodeBounds.width * nodeBounds.height) : 0
         values["medianEdgeLength"] = percentile(0.5); values["p95EdgeLength"] = percentile(0.95)
+        if let clearance { values["minEdgeNodeClearance"] = clearance } // absent when no edge/node pair exists
         for (key, value) in snapshot.reportedMetrics { values["reported.\(key)"] = value }
         return VisualMetrics(values: values, findings: findings, failures: failures)
     }

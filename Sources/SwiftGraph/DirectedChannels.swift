@@ -14,12 +14,14 @@ struct DirectedChannelAllocation {
     var slots: [Int: Int]
     var count: Int
 
-    /// Clearance is a hard separation constraint. Crossing preferences are soft:
-    /// insert the strongest preferences first and reverse any that close a cycle.
+    /// Clearance is a hard separation constraint. Crossing preferences are soft: insert the
+    /// strongest preferences first and reverse any that close a cycle. Pairs without a
+    /// preference only need distinct slots, so they stay unoriented until the weighted order
+    /// is known and are then oriented to add the least depth.
     static func solve(_ input: [DirectedChannelSegment], clearance: Double) throws -> Self {
         let segments = input.filter { abs($0.source - $0.target) > DirectedGeometry.epsilon }.sorted { $0.id < $1.id }
         struct Preference { var from: Int; var to: Int; var weight: Int }
-        var preferences: [Preference] = []
+        var preferences: [Preference] = [], neutral: [Preference] = []
         func cost(_ a: DirectedChannelSegment, _ b: DirectedChannelSegment) -> Int {
             // A lies left of B. Only A's exit and B's entrance can cross the other run.
             let crossings = (a.target > b.low && a.target < b.high ? 1 : 0)
@@ -28,27 +30,33 @@ struct DirectedChannelAllocation {
             let conflict = abs(a.target - b.source) < clearance ? 1 : 0
             return crossings * 16 + conflict * 32
         }
-        for i in segments.indices {
-            try Task.checkCancellation()
-            for j in segments.indices where j > i {
-                let a = segments[i], b = segments[j]
-                guard a.low < b.high + clearance && b.low < a.high + clearance else { continue }
-                let ab = cost(a, b), ba = cost(b, a)
-                let aDown = a.target >= a.source, bDown = b.target >= b.source
-                let aFirst = ab == ba
-                    ? (aDown != bDown ? aDown : (a.source + a.target == b.source + b.target
-                        ? a.id < b.id : (aDown ? a.source + a.target > b.source + b.target : a.source + a.target < b.source + b.target)))
-                    : ab < ba
-                preferences.append(Preference(from: aFirst ? i : j, to: aFirst ? j : i, weight: abs(ab - ba)))
-            }
+        func consider(_ i: Int, _ j: Int) {
+            let a = segments[i], b = segments[j]
+            let ab = cost(a, b), ba = cost(b, a)
+            let aDown = a.target >= a.source, bDown = b.target >= b.source
+            let aFirst = ab == ba
+                ? (aDown != bDown ? aDown : (a.source + a.target == b.source + b.target
+                    ? a.id < b.id : (aDown ? a.source + a.target > b.source + b.target : a.source + a.target < b.source + b.target)))
+                : ab < ba
+            let preference = Preference(from: aFirst ? i : j, to: aFirst ? j : i, weight: abs(ab - ba))
+            if preference.weight == 0 { neutral.append(preference) } else { preferences.append(preference) }
         }
-        preferences.sort {
+        // Sweep by lower bound: only segments within clearance of each other form a pair.
+        var active: [Int] = []
+        for i in segments.indices.sorted(by: { segments[$0].low == segments[$1].low ? $0 < $1 : segments[$0].low < segments[$1].low }) {
+            try Task.checkCancellation()
+            active.removeAll { segments[$0].high + clearance <= segments[i].low }
+            for j in active { consider(min(i, j), max(i, j)) }
+            active.append(i)
+        }
+        let order: (Preference, Preference) -> Bool = {
             if $0.weight != $1.weight { return $0.weight > $1.weight }
             if $0.from != $1.from { return $0.from < $1.from }
             return $0.to < $1.to
         }
+        preferences.sort(by: order); neutral.sort(by: order)
         var outgoing = Array(repeating: [Int](), count: segments.count)
-        var incoming = Array(repeating: 0, count: segments.count)
+        var incoming = Array(repeating: [Int](), count: segments.count)
         func reaches(_ source: Int, _ target: Int) -> Bool {
             var stack = [source], seen = Set<Int>()
             while let node = stack.popLast() {
@@ -61,20 +69,42 @@ struct DirectedChannelAllocation {
             if i % 128 == 0 { try Task.checkCancellation() }
             var a = preference.from, b = preference.to
             if reaches(b, a) { swap(&a, &b) }
-            outgoing[a].append(b); incoming[b] += 1
+            outgoing[a].append(b); incoming[b].append(a)
         }
-        var slots = Array(repeating: 0, count: segments.count)
-        var ready = segments.indices.filter { incoming[$0] == 0 }, next = 0
+        // Longest paths from the sources (the slot) and to the sinks bound the depth.
+        var level = Array(repeating: 0, count: segments.count), tail = level
+        var pending = incoming.map(\.count), ready = segments.indices.filter { pending[$0] == 0 }, next = 0
         while next < ready.count {
             let node = ready[next]; next += 1
             for target in outgoing[node] {
-                slots[target] = max(slots[target], slots[node] + 1)
-                incoming[target] -= 1
-                if incoming[target] == 0 { ready.append(target) }
+                level[target] = max(level[target], level[node] + 1)
+                pending[target] -= 1
+                if pending[target] == 0 { ready.append(target) }
             }
         }
-        return Self(slots: Dictionary(uniqueKeysWithValues: segments.indices.map { (segments[$0].id, slots[$0]) }),
-                    count: slots.max().map { $0 + 1 } ?? 0)
+        for node in ready.reversed() { for target in outgoing[node] { tail[node] = max(tail[node], tail[target] + 1) } }
+        func connect(_ a: Int, _ b: Int) {
+            outgoing[a].append(b); incoming[b].append(a)
+            var stack = [(b, level[a] + 1)]
+            while let (node, value) = stack.popLast() {
+                guard level[node] < value else { continue }
+                level[node] = value; stack.append(contentsOf: outgoing[node].map { ($0, value + 1) })
+            }
+            stack = [(a, tail[b] + 1)]
+            while let (node, value) = stack.popLast() {
+                guard tail[node] < value else { continue }
+                tail[node] = value; stack.append(contentsOf: incoming[node].map { ($0, value + 1) })
+            }
+        }
+        for (i, pair) in neutral.enumerated() {
+            if i % 128 == 0 { try Task.checkCancellation() }
+            let a = pair.from, b = pair.to
+            if reaches(a, b) || reaches(b, a) { continue }
+            // Depth after each orientation is the longest chain through the new link.
+            if level[b] + 1 + tail[a] < level[a] + 1 + tail[b] { connect(b, a) } else { connect(a, b) }
+        }
+        return Self(slots: Dictionary(uniqueKeysWithValues: segments.indices.map { (segments[$0].id, level[$0]) }),
+                    count: level.max().map { $0 + 1 } ?? 0)
     }
 }
 
@@ -101,11 +131,13 @@ final class DirectedChannelPlan {
         nodeRanks = Dictionary(uniqueKeysWithValues: nodes.map { ($0, byCoordinate[$0.center.x]!) })
         chains = []
         for edge in edges.sorted(by: { edgeIndices[$0]! < edgeIndices[$1]! }) where !feedback.contains(edge) {
-            let first = nodeRanks[edge.source]!, last = nodeRanks[edge.target]!
+            let from = nodeRanks[edge.source]!, to = nodeRanks[edge.target]!
+            // A backward edge is planned as the forward chain between the same ranks, then reversed.
+            let backward = from > to, first = min(from, to), last = max(from, to)
             guard first < last, edge.path.count == last - first + 1, let (start, end, sd, td) = ports[edge],
-                  sd.x > 0, td.x < 0 else { continue }
-            chains.append(Chain(edge: edge, firstRank: first,
-                points: [start + sd * clearance] + edge.path.dropFirst().dropLast() + [end + td * clearance]))
+                  backward ? (sd.x < 0 && td.x > 0) : (sd.x > 0 && td.x < 0) else { continue }
+            let points = [start + sd * clearance] + edge.path.dropFirst().dropLast() + [end + td * clearance]
+            chains.append(Chain(edge: edge, firstRank: first, points: backward ? Array(points.reversed()) : points))
         }
     }
 
@@ -195,9 +227,11 @@ final class DirectedChannelPlan {
             let allocation = allocations[rank]
             let low = coordinates[rank] + widths[rank] / 2 + clearance
             let high = coordinates[rank + 1] - widths[rank + 1] / 2 - clearance
-            let origin = (low + high - Double(max(0, allocation.count - 1)) * spacing) / 2
+            // The gap formula leaves room for every slot at `spacing`; spread the tracks across
+            // the channel rather than packing them around its centre.
+            let step = (high - low) / Double(allocation.count + 1)
             for transition in corridors[rank] {
-                tracks[transition.chain, default: [:]][transition.part] = origin + Double(allocation.slots[transition.segment.id] ?? 0) * spacing
+                tracks[transition.chain, default: [:]][transition.part] = low + Double((allocation.slots[transition.segment.id] ?? 0) + 1) * step
             }
         }
         var result: [LayoutEdge: [Point]] = [:]
@@ -209,7 +243,8 @@ final class DirectedChannelPlan {
                 if abs(a.y - b.y) > DirectedGeometry.epsilon { path += [Point(x: x, y: a.y), Point(x: x, y: b.y)] }
                 path.append(b)
             }
-            result[chains[i].edge] = DirectedGeometry.compact(path)
+            let edge = chains[i].edge
+            result[edge] = DirectedGeometry.compact(nodeRanks[edge.source]! > nodeRanks[edge.target]! ? path.reversed() : path)
         }
         return result
     }

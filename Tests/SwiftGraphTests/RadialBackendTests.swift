@@ -226,7 +226,7 @@ struct RadialBackendTests {
         try await builder.applyAsync()
         #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds))
         #expect(a.edges.map(\.path) == b.edges.map(\.path))
-        #expect(builder.lastExecutionMetrics.count == 3)
+        #expect(builder.lastExecutionMetrics.count == 4)
         #expect(builder.lastExecutionMetrics.allSatisfy { $0.requestedBackend == .cpu })
         let component = ComponentLayoutOperation(RadialLayoutOperation(style: .tree, backend: .cpu))
         try await component.applyLayoutAsync(graph(21, kind: "forest"))

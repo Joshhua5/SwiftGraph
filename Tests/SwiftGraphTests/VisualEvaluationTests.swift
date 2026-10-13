@@ -73,6 +73,31 @@ import ImageIO
         #expect(VisualGeometry.measure(snapshot(g)).failures.isEmpty) // style-only routing is advisory
     }
 
+    @Test func routingQualityMetricsMeasureBendsEndpointsParallelRunsAndClearance() {
+        let g = LayoutGraph()
+        // Three 20x20 nodes: a (0,0), b (200,0), c (100,60) — c sits well below the a-b routes.
+        for (id, x, y) in [("a", 0.0, 0.0), ("b", 200.0, 0.0), ("c", 100.0, 60.0)] {
+            let n = LayoutNode(id: id, width: 20, height: 20); n.bounds.x = x; n.bounds.y = y; g.addNode(n)
+        }
+        func edge(_ s: Int, _ t: Int, _ path: [Point]) { let e = LayoutEdge(source: g.nodes[s], target: g.nodes[t]); e.path = path; g.addEdge(e) }
+        // e0: clipped, sampled near-straight (sub-degree kinks).
+        edge(0, 1, [Point(x: 20, y: 10), Point(x: 60, y: 10.1), Point(x: 100, y: 10), Point(x: 140, y: 10.1), Point(x: 200, y: 10)])
+        // e1: runs 2-3 units from e0, starts at a's centre (unclipped) and has a 1-unit Z-jog.
+        edge(0, 1, [Point(x: 10, y: 10), Point(x: 100, y: 12), Point(x: 100, y: 13), Point(x: 195, y: 13)])
+        // e2: ends exactly on c's top-right corner.
+        edge(1, 2, [Point(x: 200, y: 10), Point(x: 120, y: 60)])
+        let m = VisualGeometry.measure(snapshot(g))
+        #expect(m.values["bends"] == 2) // e1's two Z-jog turns; e0's 0.14 degree kinks are below tolerance
+        #expect(m.values["endpointsInsideNodes"] == 1) // only e1's start at a's centre; the other endpoints lie on or outside their boundaries
+        #expect(m.values["endpointsAtCorners"] == 1) // e2 ends at c's top-right corner (120,60)
+        #expect(m.values["microSegments"] == 1)
+        #expect((m.values["nearParallelRuns"] ?? 0) >= 1 && m.values["sharedSegments"] == 0)
+        #expect(m.findings.contains { $0.kind == "near-parallel-run" && $0.elements == ["e0", "e1"] })
+        #expect((m.values["minEdgeNodeClearance"] ?? 0) > 40)
+        #expect(!m.findings.contains { $0.kind == "edge-node-clearance" })
+        #expect(m.failures.isEmpty)
+    }
+
     @Test func missingRoutesPinsAndInvalidGeometryAreExplicit() {
         let g = VisualGraphs.graph(2)
         var s = snapshot(g)
@@ -179,7 +204,8 @@ import ImageIO
         #expect(!drawing.fallbackEdges.isEmpty)
         let reference = try #require(baselines[item.id])
         let diff = VisualComparison.compare(reference, current)
-        #expect(!diff.changed && diff.qualityFlags.isEmpty)
+        // The channel router now draws this walled-in edge between boundary ports instead of centres, so its length differs from the C# line; nothing else may read as a regression.
+        #expect(Set(diff.qualityFlags).isSubset(of: ["routeLength"]))
         var earlier = current; earlier.edges = earlier.edges.map { var e = $0; e.fallback = false; return e }
         #expect(VisualComparison.compare(earlier, current).qualityFlags.contains("fallbackRoutes"))
     }

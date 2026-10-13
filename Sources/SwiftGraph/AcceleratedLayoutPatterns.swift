@@ -28,18 +28,18 @@ public extension LayoutBuilder {
     @discardableResult func applyStandardOrganic(backend: LayoutBackend, executor: LayoutExecutor = .shared, iterations: Int = 600, repulsionForce: Double = 100, attractionForce: Double = 0.05) -> Self {
         var configuration = OrganicLayoutConfiguration(); configuration.iterations = iterations; configuration.repulsionForce = repulsionForce; configuration.attractionForce = attractionForce
         let layout = OrganicLayoutOperation(backend: backend, executor: executor, configuration: configuration)
-        return useAsyncAlgorithm(RecursiveGroupLayoutOperation(layout, backend: backend, executor: executor)).routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        return useAsyncAlgorithm(RecursiveGroupLayoutOperation(layout, backend: backend, executor: executor)).routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyProgressiveRefinement(backend: LayoutBackend, executor: LayoutExecutor = .shared, organicIterations: Int = 600, barycenterIterations: Int = 10) -> Self {
-        useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.initialization = .current }.useBarycenter(backend: backend, executor: executor) { $0.iterations = barycenterIterations }.useRemoveOverlaps(backend: backend, executor: executor).routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.initialization = .current }.useBarycenter(backend: backend, executor: executor) { $0.iterations = barycenterIterations }.useRemoveOverlaps(backend: backend, executor: executor).routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyHybridLayout(backend: LayoutBackend, executor: LayoutExecutor = .shared, organicIterations: Int = 20) -> Self {
         useHierarchical(backend: backend, executor: executor).transform { graph in
             let a = Adjacency(graph)
             for i in a.nodes.indices { a.nodes[i].metadata[GraphMetadataKeys.layoutSubset] = a.neighbors[i].count <= 1 }
-        }.useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.scope = .subset; $0.initialization = .current }.routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        }.useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.scope = .subset; $0.initialization = .current }.routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
-    @discardableResult func applyWithEdgeBundling(backend: LayoutBackend, executor: LayoutExecutor = .shared, k: Double = 0.1) -> Self { routePolyline(backend: backend, executor: executor).routeWithBundling(backend: backend, executor: executor) { $0.k = k }.routeSelfLoops(backend: backend, executor: executor) }
+    @discardableResult func applyWithEdgeBundling(backend: LayoutBackend, executor: LayoutExecutor = .shared, k: Double = 0.1) -> Self { routePolyline(backend: backend, executor: executor).routeWithBundling(backend: backend, executor: executor) { $0.k = k }.routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor) }
     @discardableResult func applyNetworkTopology(backend: LayoutBackend, executor: LayoutExecutor = .shared, hubCount: Int = 3, organicIterations: Int = 600) -> Self {
         analyzePageRank(backend: backend, executor: executor).transform { graph in
             let hubs = graph.nodes.enumerated().sorted { a, b in
@@ -54,13 +54,13 @@ public extension LayoutBuilder {
             }
             let fixed = Set(hubs)
             for node in graph.nodes { node.metadata[GraphMetadataKeys.layoutSubset] = !fixed.contains(node) }
-        }.useOrganic(backend: backend, executor: executor) { $0.scope = .subset; $0.iterations = organicIterations }.routeWithBundling(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        }.useOrganic(backend: backend, executor: executor) { $0.scope = .subset; $0.iterations = organicIterations }.routeWithBundling(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applySocialNetwork(backend: LayoutBackend, executor: LayoutExecutor = .shared, organicIterations: Int = 600, repulsionForce: Double = 100) -> Self {
-        analyzeClusters(backend: backend, executor: executor).useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.repulsionForce = repulsionForce }.routeWithBundling(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        analyzeClusters(backend: backend, executor: executor).useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.repulsionForce = repulsionForce }.routeWithBundling(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
-    @discardableResult func applyLargeGraphPreset(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self { useOrganic(backend: backend, executor: executor).routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor) }
-    @discardableResult func applyDenseGraphPreset(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self { useOrganic(backend: backend, executor: executor).routePolyline(backend: backend, executor: executor).routeWithBundling(backend: backend, executor: executor) { $0.k = 0.05 }.routeSelfLoops(backend: backend, executor: executor) }
+    @discardableResult func applyLargeGraphPreset(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self { useOrganic(backend: backend, executor: executor).routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor) }
+    @discardableResult func applyDenseGraphPreset(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self { useOrganic(backend: backend, executor: executor).routePolyline(backend: backend, executor: executor).routeWithBundling(backend: backend, executor: executor) { $0.k = 0.05 }.routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor) }
 }
 
 public extension LayoutBuilder {
@@ -70,7 +70,7 @@ public extension LayoutBuilder {
         configuration.nodeSeparation = nodeSeparation; configuration.layerSeparation = rankSeparation
         let core = HierarchicalLayoutOperation(backend: backend, executor: executor, configuration: configuration)
         return useAsyncAlgorithm(RecursiveGroupLayoutOperation(core, backend: backend, executor: executor))
-            .separateEdges(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .separateEdges(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyStandardTree(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         nodeSeparation: Double = 50, levelSeparation: Double = 50) -> Self {
@@ -78,14 +78,14 @@ public extension LayoutBuilder {
         configuration.nodeSeparation = nodeSeparation; configuration.levelSeparation = levelSeparation
         let core = TreeLayoutOperation(style: .tree, backend: backend, executor: executor, configuration: configuration)
         return useAsyncAlgorithm(RecursiveGroupLayoutOperation(core, backend: backend, executor: executor))
-            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyStandardCircular(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         radius: Double = 300) -> Self {
         var configuration = BasicLayoutConfiguration(); configuration.radius = radius
         let core = BasicLayoutOperation(style: .circular, backend: backend, executor: executor, configuration: configuration)
         return useAsyncAlgorithm(RecursiveGroupLayoutOperation(core, backend: backend, executor: executor))
-            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyEnterpriseArchitecture(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         nodeSeparation: Double = 80, layerSeparation: Double = 120, componentSpacing: Double = 50) -> Self {
@@ -96,47 +96,47 @@ public extension LayoutBuilder {
         components.componentSpacing = componentSpacing; components.preferredAspectRatio = 1.5
         return analyzePageRank(backend: backend, executor: executor)
             .useAsyncAlgorithm(RecursiveGroupLayoutOperation(components, backend: backend, executor: executor))
-            .routeBsp(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
-            .routeSelfLoops(backend: backend, executor: executor)
+            .routeBsp(backend: backend, executor: executor)
+            .routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyCallGraph(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         nodeSeparation: Double = 60, layerSeparation: Double = 150) -> Self {
         useHierarchical(backend: backend, executor: executor) {
             $0.nodeSeparation = nodeSeparation; $0.layerSeparation = layerSeparation
         }.useRemoveOverlaps(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
-            .routeCurveFitting(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor).routeCurveFitting(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor)
     }
     @discardableResult func applyOrganizationChart(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         siblingDistance: Double = 40, layerDistance: Double = 80) -> Self {
         useOrgChart(backend: backend, executor: executor) {
             $0.siblingDistance = siblingDistance; $0.layerDistance = layerDistance
-        }.routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        }.routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyDataFlow(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         nodeSeparation: Double = 100, layerSeparation: Double = 150) -> Self {
         useHierarchical(backend: backend, executor: executor) {
             $0.nodeSeparation = nodeSeparation; $0.layerSeparation = layerSeparation
         }.routeChannel(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
-            .routeSelfLoops(backend: backend, executor: executor)
+            .routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applySmallGraphPreset(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self {
         useHierarchical(backend: backend, executor: executor) { $0.nodeSeparation = 80; $0.layerSeparation = 120 }
             .useRemoveOverlaps(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
-            .routeCurveFitting(backend: backend, executor: executor) { $0.iterations = 3 }
-            .routeSelfLoops(backend: backend, executor: executor)
+            .clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor).routeCurveFitting(backend: backend, executor: executor) { $0.iterations = 3 }
+            .routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor)
     }
     @discardableResult func applyMediumGraphPreset(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self {
         useHierarchical(backend: backend, executor: executor) { $0.nodeSeparation = 60; $0.layerSeparation = 100 }
-            .separateEdges(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .separateEdges(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyWithSmoothCurves(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         curveFittingIterations: Int = 3) -> Self {
         routePolyline(backend: backend, executor: executor)
-            .routeCurveFitting(backend: backend, executor: executor) { $0.iterations = curveFittingIterations }
-            .routeSelfLoops(backend: backend, executor: executor)
+            .clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor).routeCurveFitting(backend: backend, executor: executor) { $0.iterations = curveFittingIterations }
+            .routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor)
     }
     @discardableResult func applyWithBspRouting(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self {
-        routeBsp(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+        routeBsp(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyGrainSwimlane(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         laneAssignment: [String: Int], laneWidth: Double = 200, laneSpacing: Double = 20,
@@ -145,6 +145,6 @@ public extension LayoutBuilder {
             $0.laneAssignment = laneAssignment; $0.laneWidth = laneWidth; $0.laneSpacing = laneSpacing
             $0.laneInternalPadding = laneInternalPadding; $0.nodeVerticalSpacing = nodeVerticalSpacing
         }.routeChannel(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
-            .routeCurveFitting(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor).routeCurveFitting(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor)
     }
 }

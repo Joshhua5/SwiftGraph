@@ -64,7 +64,7 @@ public extension LayoutBuilder {
     @discardableResult func applyMindMap(backend: LayoutBackend, executor: LayoutExecutor = .shared,
                                          layerDistance: Double = 100) -> Self {
         useRadialTree(backend: backend, executor: executor) { $0.spacing = layerDistance }
-            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
+            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
 }
 

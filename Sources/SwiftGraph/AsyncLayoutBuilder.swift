@@ -72,13 +72,13 @@ public extension LayoutBuilder {
         executor: LayoutExecutor = .shared) -> Self {
         let operation = ImportanceLayoutOperation(core, backend: backend, executor: executor)
         return useAsyncAlgorithm(operation).routePolyline(backend: backend, executor: executor)
-            .routeSelfLoops(backend: backend, executor: executor)
+            .routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
     @discardableResult func applyClusterBased(_ core: any AsyncLayoutAlgorithm, backend: LayoutBackend,
         executor: LayoutExecutor = .shared) -> Self {
         let operation = ClusterLayoutOperation(core, backend: backend, executor: executor)
         return useAsyncAlgorithm(operation).routePolyline(backend: backend, executor: executor)
-            .routeSelfLoops(backend: backend, executor: executor)
+            .routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
 }
 

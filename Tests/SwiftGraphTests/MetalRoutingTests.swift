@@ -84,7 +84,7 @@ struct MetalRoutingTests {
                 configuration.channelBendPenalty = Int(fixture.config["bendPenalty"] ?? 2)
                 configuration.congestionPenalty = Int(fixture.config["congestionPenalty"] ?? 2)
             case .orthogonalGrouped:
-                configuration.bundleSpacing = fixture.config["bundleSpacing"] ?? 4
+                configuration.bundleSpacing = fixture.config["bundleSpacing"] ?? 10
                 configuration.obstacleMargin = fixture.config["obstacleMargin"] ?? 10
                 configuration.bendPenalty = fixture.config["bendPenalty"] ?? 100
             case .polyline: configuration.padding = fixture.config["padding"] ?? 10
@@ -184,6 +184,8 @@ struct MetalRoutingTests {
         let explicit = configured(.parallelEdges, backend: .metal, executor: executor), before = a.edges.map(\.path)
         await #expect(throws: LayoutExecutionError.precisionLimit) { try await explicit.applyLayoutAsync(a) }
         #expect(a.edges.map(\.path) == before)
+        // Automatic only reaches Metal once a parallel group is large enough to repay the round trip.
+        for g in [a, b] { for _ in 0..<RoutingCompute.automaticElements { g.addEdge(LayoutEdge(source: g.nodes[0], target: g.nodes[1])) } }
         let automatic = configured(.parallelEdges, backend: .automatic, executor: executor)
         automatic.configuration.minimumMetalEdgeCount = 0
         try await automatic.applyLayoutAsync(a); try await configured(.parallelEdges, backend: .cpu).applyLayoutAsync(b)
@@ -225,5 +227,81 @@ struct MetalRoutingTests {
         #expect(stats.bufferReuses > 0 && stats.submittedBatches == stats.completedBatches)
         await executor.releaseCachedBuffers()
         #expect(await executor.statistics().cachedBufferBytes == 0)
+    }
+    /// A grid of obstacles with edges that must route around it; `chain` edges get dense zig-zag paths.
+    private func crowded(columns: Int, rows: Int, chain: Int = 0, segments: Int = 4) -> LayoutGraph {
+        let graph = LayoutGraph()
+        for r in 0..<rows { for c in 0..<columns {
+            let node = LayoutNode(id: "n\(r)-\(c)", width: 12, height: 12)
+            node.center = Point(x: Double(c) * 40, y: Double(r) * 40); graph.addNode(node)
+        } }
+        let last = graph.nodes.count - 1
+        graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[last]))
+        for i in 0..<chain {
+            let a = graph.nodes[(i * 7) % graph.nodes.count], b = graph.nodes[(i * 13 + 5) % graph.nodes.count]
+            guard a !== b else { continue }
+            let edge = LayoutEdge(source: a, target: b)
+            edge.path = (0...segments).map { k in Point(x: a.center.x + Double(k) * 20, y: a.center.y + Double(i % 17) * 3 + (k % 2 == 0 ? 0 : 9)) }
+            graph.addEdge(edge)
+        }
+        return graph
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [LayoutBackend.metal, .automatic])
+    func manyObstaclesRouteOnMetalBackendsInsteadOfFailingTheMatrixLimit(_ backend: LayoutBackend) async throws {
+        // A wall forces a detour; 1,100 distant nodes push the visibility vertices past 4,096 (V² > 64 MiB).
+        func walled() -> LayoutGraph {
+            let graph = LayoutGraph()
+            for (id, x, y, w, h) in [("s", 0.0, 0.0, 20.0, 20.0), ("t", 300, 0, 20, 20), ("wall", 150, -150, 20, 320)] {
+                let node = LayoutNode(id: id, width: w, height: h); node.x = x; node.y = y; graph.addNode(node)
+            }
+            for i in 0..<1_100 {
+                let node = LayoutNode(id: "far\(i)", width: 10, height: 10)
+                node.x = 5_000 + Double(i % 40) * 30; node.y = Double(i / 40) * 30; graph.addNode(node)
+            }
+            graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1]))
+            return graph
+        }
+        let a = walled(), b = walled()
+        let cpu = configured(.polyline, backend: .cpu), metal = configured(.polyline, backend: backend)
+        metal.configuration.minimumMetalEdgeCount = 0
+        try await cpu.applyLayoutAsync(a); try await metal.applyLayoutAsync(b)
+        #expect(a.edges[0].path.count > 2)
+        #expect(a.edges.map(\.path) == b.edges.map(\.path))
+        #expect(metal.unroutableEdgeIndices == cpu.unroutableEdgeIndices)
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [RoutingKind.edgeSeparation, .bsp])
+    func moreThan4096SegmentsFallBackToCPUMatrixAndRecordIt(_ kind: RoutingKind) async throws {
+        // BSP re-routes before separating, so its separator sees its own (shorter) routes: give it enough edges
+        // that those routes still exceed the 4,096-segment matrix limit.
+        let chain = kind == .bsp ? 2_400 : 1_100
+        let a = crowded(columns: 20, rows: 20, chain: chain), b = crowded(columns: 20, rows: 20, chain: chain)
+        #expect(a.edges.reduce(0) { $0 + max(0, $1.path.count - 1) } > 4_096)
+        let executor = LayoutExecutor(), cpu = configured(kind, backend: .cpu), metal = configured(kind, backend: .metal, executor: executor)
+        try await cpu.applyLayoutAsync(a); try await metal.applyLayoutAsync(b)
+        #expect(a.edges.map(\.path) == b.edges.map(\.path))
+        #expect(metal.lastMetrics?.cpuStages.contains { $0.hasPrefix("CPU fallback") } == true)
+        let stats = await executor.statistics()
+        #expect(stats.submittedBatches == stats.completedBatches)
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable))
+    func hitsChunkLongPathsAndAgreeWithTheCPUPredicate() throws {
+        let compute = RoutingCompute(solver: try MetalForceSolver(), tolerance: 1e-3, statisticsChanged: {})
+        let path = (0...5_000).map { Point(x: Double($0) * 3, y: $0 % 2 == 0 ? 0 : 10) }
+        let obstacles = (0..<4_200).map { Rect(x: Double($0) * 3.5, y: 4, width: 1, height: 2) }
+        let expected = Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0.0, $0.1) } })
+        #expect(path.count - 1 > 4_096 && !expected.isEmpty)
+        #expect(compute.hits(path, obstacles) == expected)
+        #expect(compute.candidates(Array(repeating: Rect(width: 1, height: 1), count: 4_200), Array(repeating: Rect(width: 1, height: 1), count: 4_200)) == nil)
+        #expect(compute.fallbacks.count == 1 && compute.failure == nil)
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable))
+    func automaticSkipsGPURoundTripsForTinyInputs() async throws {
+        let executor = LayoutExecutor(), a = graph(), b = graph()
+        let automatic = configured(.polyline, backend: .automatic, executor: executor)
+        automatic.configuration.minimumMetalEdgeCount = 0
+        try await automatic.applyLayoutAsync(a); try await configured(.polyline, backend: .cpu).applyLayoutAsync(b)
+        #expect(a.edges.map(\.path) == b.edges.map(\.path))
+        #expect(await executor.statistics().submittedBatches == 0)
+        #expect(automatic.lastMetrics?.backend == .cpu)
     }
 }

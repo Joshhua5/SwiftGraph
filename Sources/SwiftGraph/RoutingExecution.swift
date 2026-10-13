@@ -9,7 +9,7 @@ public enum RoutingKind: String, CaseIterable, Sendable {
 public struct RoutingConfiguration: Sendable {
     public var kind: RoutingKind
     public var padding: Double = 10
-    public var edgeSpacing: Double = 6
+    public var edgeSpacing: Double = 10
     public var gridSize: Int = 20
     public var channelBendPenalty: Int {
         get { Int(exactly: bendPenalty) ?? 0 }
@@ -19,7 +19,7 @@ public struct RoutingConfiguration: Sendable {
     public var busSpacing: Double = 20
     public var margin: Double = 20
     public var bendPenalty: Double = 40
-    public var bundleSpacing: Double = 4
+    public var bundleSpacing: Double = 10
     public var obstacleMargin: Double = 10
     public var parallelEdgeSpacing: Double {
         get { edgeSpacing }
@@ -299,6 +299,7 @@ private func routingTransaction(_ snapshot: RoutingSnapshot, configuration: Rout
         else { actual = .metal }
     }
     func run(_ compute: RoutingCompute?) throws -> RoutingResult {
+        if backend == .automatic { compute?.minimumPairs = RoutingCompute.automaticPairs; compute?.minimumElements = RoutingCompute.automaticElements }
         let (graph, relatedNodes) = snapshot.makeGraph()
         let initialSubmissions = compute?.solver.submittedBatches ?? 0
         var unroutable: [LayoutEdge] = []
@@ -339,7 +340,7 @@ private func routingTransaction(_ snapshot: RoutingSnapshot, configuration: Rout
         }
         let submitted = (compute?.solver.submittedBatches ?? 0) - initialSubmissions
         let elapsed = start.duration(to: .now).seconds
-        return RoutingResult(bounds: relatedNodes.map(\.bounds), rootBounds: graph.root.bounds, paths: graph.edges.map(\.path), labels: graph.edges.map(\.labelBounds), unroutable: unroutable.compactMap { graph.edges.firstIndex(of: $0) }, metrics: LayoutExecutionMetrics(requestedBackend: backend, backend: submitted == 0 ? .cpu : actual, fallbackReason: submitted == 0 && actual == .metal ? .noWork : reason, nodeCount: graph.nodes.count, iterations: configuration.kind == .labelLayout ? configuration.labelIterations : configuration.kind == .curveFitting ? min(5, configuration.curveIterations) : 1, computeSeconds: elapsed, totalSeconds: elapsed, gpuSeconds: submitted == 0 ? nil : compute?.gpuSeconds, deviceName: submitted == 0 ? nil : compute?.solver.deviceName, cpuStages: actual == .cpu ? ["CPU \(configuration.kind.rawValue) routing and finishing"] : routingCPUStages(configuration.kind), metalStages: submitted == 0 ? [] : compute?.stages ?? []))
+        return RoutingResult(bounds: relatedNodes.map(\.bounds), rootBounds: graph.root.bounds, paths: graph.edges.map(\.path), labels: graph.edges.map(\.labelBounds), unroutable: unroutable.compactMap { graph.edges.firstIndex(of: $0) }, metrics: LayoutExecutionMetrics(requestedBackend: backend, backend: submitted == 0 ? .cpu : actual, fallbackReason: submitted == 0 && actual == .metal ? .noWork : reason, nodeCount: graph.nodes.count, iterations: configuration.kind == .labelLayout ? configuration.labelIterations : configuration.kind == .curveFitting ? min(5, configuration.curveIterations) : 1, computeSeconds: elapsed, totalSeconds: elapsed, gpuSeconds: submitted == 0 ? nil : compute?.gpuSeconds, deviceName: submitted == 0 ? nil : compute?.solver.deviceName, cpuStages: (actual == .cpu ? ["CPU \(configuration.kind.rawValue) routing and finishing"] : routingCPUStages(configuration.kind)) + (compute?.fallbacks ?? []), metalStages: submitted == 0 ? [] : compute?.stages ?? []))
     }
     if actual != .metal { return try run(nil) }
     do {

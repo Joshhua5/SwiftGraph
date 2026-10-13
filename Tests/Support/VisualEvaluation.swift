@@ -40,14 +40,18 @@ enum VisualComparison {
         // Reference fixtures describe raw geometry, not the visual tool's recipe metadata.
         diff.configurationChanged = after.family != "reference" && (before.configuration != after.configuration || before.contracts != after.contracts)
         let a = VisualGeometry.measure(before).values, b = VisualGeometry.measure(after).values
-        let lowerIsUsuallyBetter: Set<String> = ["nodeOverlaps", "edgeNodeIntersections", "crossings", "sharedSegments", "missingRoutes", "fallbackRoutes", "labelNodeOverlaps", "labelLabelOverlaps", "bends", "routeLength", "displacement"]
+        let lowerIsUsuallyBetter: Set<String> = ["nodeOverlaps", "edgeNodeIntersections", "crossings", "sharedSegments", "missingRoutes", "fallbackRoutes", "labelNodeOverlaps", "labelLabelOverlaps", "bends", "routeLength", "displacement",
+                                                   "nearParallelRuns", "endpointsInsideNodes", "endpointsAtCorners", "microSegments"]
+        let higherIsUsuallyBetter: Set<String> = ["minEdgeNodeClearance"]
         for key in Set(a.keys).union(b.keys).sorted() {
             // The C# corpus stores paths and bounds, but no fallback classifications.
             if before.configuration["oracle"] == "csharp-paths-and-bounds" && key == "fallbackRoutes" { continue }
+            // Clearance is absent when a drawing has no edge/node pair, so it is only comparable when both sides report it.
+            if higherIsUsuallyBetter.contains(key) && (a[key] == nil || b[key] == nil) { continue }
             let delta = b[key, default: 0] - a[key, default: 0]
             if abs(delta) > 1e-6 {
                 diff.metricDeltas[key] = delta
-                if delta > 0 && lowerIsUsuallyBetter.contains(key) { diff.qualityFlags.append(key) }
+                if (delta > 0 && lowerIsUsuallyBetter.contains(key)) || (delta < 0 && higherIsUsuallyBetter.contains(key)) { diff.qualityFlags.append(key) }
             }
         }
         return diff

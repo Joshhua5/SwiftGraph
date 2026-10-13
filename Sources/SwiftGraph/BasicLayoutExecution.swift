@@ -112,13 +112,15 @@ public final class BasicLayoutOperation: LayoutExecutionReporting {
                     let a = e.source.center, b = e.target.center, x = (a.x + b.x) / 2
                     e.path = [a, Point(x: x, y: a.y), Point(x: x, y: b.y), b]
                 }
-            case .verticalStack, .removeOverlaps: break
+            case .verticalStack: break
+            case .removeOverlaps: followMovedNodes(transaction.working, from: previous)
             case .alignment: if previous != bounds { straightEdges(transaction.working) }
             default: straightEdges(transaction.working)
             }
             result.metrics.metalStages = [style == .removeOverlaps ? "force scan, pair separation and terminating sweep" : "node placement"]
             result.metrics.cpuStages = ["snapshot and ordering"]
-            if style != .verticalStack && style != .removeOverlaps { result.metrics.cpuStages.append("edge routing") }
+            if style == .removeOverlaps { result.metrics.cpuStages.append("edge path translation") }
+            else if style != .verticalStack { result.metrics.cpuStages.append("edge routing") }
         } else {
             try configuration.algorithm(style).applyLayout(transaction.working)
             result.metrics.cpuStages = ["node placement"]

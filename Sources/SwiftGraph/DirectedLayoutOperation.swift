@@ -11,8 +11,11 @@ public struct DirectedLayoutConfiguration: Hashable, Sendable {
     public var componentSpacing: Double = 60
     public var portSpacing: Double = 12
     public var clearance: Double = 10
+    /// Preferred separation between parallel edge runs. Strokes never touch below it, but parallel
+    /// runs closer than this are avoided, tracks keep this spacing, and compaction never goes below it.
+    public var edgeSpacing: Double = 10
     public var candidateCount: Int = 5
-    /// Indices into the original edge array. Feedback participates in connectivity, not ranking.
+    /// Indices into the original edge array. A fresh layout ranks and routes these as reversed edges between the ranks.
     public var feedbackEdges: Set<Int> = []
     public var edgeWidths: [Double] = []
     public var fixedNodeIDs: Set<String> = []
@@ -29,6 +32,8 @@ public struct DirectedLayoutDiagnostics: Sendable {
     public var fixedNodeConflicts: [[String]] = []
     public var crossings = 0
     public var sharedRuns = 0
+    /// Near-parallel route pairs closer than `edgeSpacing`.
+    public var proximateRuns = 0
     public var bends = 0
     public var routeLength = 0.0
     public var displacement = 0.0
@@ -50,19 +55,52 @@ public struct DirectedLayoutOperation {
 
     @discardableResult
     public func apply(_ original: LayoutGraph) throws -> DirectedLayoutDiagnostics {
-        if configuration.mode == .routesOnly && original.nodes.contains(where: { configuration.previousBounds[$0.id] == nil }) {
-            var constrained = configuration
-            for node in original.nodes where constrained.previousBounds[node.id] == nil { constrained.previousBounds[node.id] = node.bounds }
+        if let constrained = constrainedConfiguration(for: original) {
             return try DirectedLayoutOperation(configuration: constrained, cache: cache).apply(original)
         }
+        guard let plan = try prepare(original) else { return .init() }
+        for component in plan.components {
+            try Task.checkCancellation()
+            let run = DirectedComponentRun(self, plan, component)
+            for candidate in 0..<run.candidateCount {
+                try Task.checkCancellation()
+                if let placement = try run.place(candidate) { try placement.applyLayout(run.sub) }
+                run.placed()
+                try run.routeIncumbent()
+                let first = try run.measure()
+                let score = try run.routeCoordinated(after: first) ? try run.measure() : first
+                if run.settle(score) { break }
+            }
+            for candidate in run.refinementCandidates {
+                try run.refine(candidate)
+                run.keepRefined(try run.measure())
+            }
+            run.finishRefinement()
+            if try run.publish() { run.store(try run.measure()) }
+        }
+        pack(plan)
+        return try finish(plan, try DirectedGeometry.measure(nodes: plan.nodes, edges: plan.edges, spacing: configuration.edgeSpacing))
+    }
+
+    /// Requests that depend on supplied geometry are first expressed as the equivalent constrained request.
+    func constrainedConfiguration(for original: LayoutGraph) -> DirectedLayoutConfiguration? {
+        var constrained = configuration
+        if configuration.mode == .routesOnly && original.nodes.contains(where: { configuration.previousBounds[$0.id] == nil }) {
+            for node in original.nodes where constrained.previousBounds[node.id] == nil { constrained.previousBounds[node.id] = node.bounds }
+            return constrained
+        }
         if configuration.mode == .fresh && !configuration.fixedNodeIDs.isEmpty {
-            var constrained = configuration
             constrained.mode = .incremental
             for node in original.nodes where constrained.fixedNodeIDs.contains(node.id) && constrained.previousBounds[node.id] == nil {
                 constrained.previousBounds[node.id] = node.bounds
             }
-            return try DirectedLayoutOperation(configuration: constrained, cache: cache).apply(original)
+            return constrained
         }
+        return nil
+    }
+
+    /// Copies the caller's graph, classifies feedback, reserves port capacity and splits components.
+    func prepare(_ original: LayoutGraph) throws -> DirectedPlan? {
         let start = ContinuousClock.now
         let graph = LayoutGraph()
         let nodes = original.nodes.map { LayoutNode(id: $0.id, width: $0.width, height: $0.height) }
@@ -73,7 +111,7 @@ public struct DirectedLayoutOperation {
             copy.sourcePort = edge.sourcePort; copy.targetPort = edge.targetPort
             graph.addEdge(copy)
         }
-        guard !nodes.isEmpty else { return .init() }
+        guard !nodes.isEmpty else { return nil }
         let allEdges = graph.edges
         let sizingStart = ContinuousClock.now
         let edgeIndex = Dictionary(uniqueKeysWithValues: allEdges.enumerated().map { ($0.element, $0.offset) })
@@ -95,151 +133,63 @@ public struct DirectedLayoutOperation {
             colors[node] = 2
         }
         for node in nodes.sorted(by: { $0.id < $1.id }) where colors[node] == nil { try visit(node) }
-        // Reserve capacity before ranking. Directional feedback has independent top ports.
-        var sideCounts: [LayoutNode: [Int]] = [:]
-        for edge in allEdges {
-            if edge.source === edge.target || feedback.contains(edge) {
-                sideCounts[edge.source, default: [0, 0, 0]][2] += 1
-                sideCounts[edge.target, default: [0, 0, 0]][2] += 1
-            } else {
-                sideCounts[edge.source, default: [0, 0, 0]][1] += 1
-                sideCounts[edge.target, default: [0, 0, 0]][0] += 1
+        // A fresh layout ranks feedback edges as reversed edges and routes them between the ranks, from the
+        // source's near side to the target's, unless reversing one would close a cycle (a caller-supplied
+        // feedback set need not break every cycle). Every other mode keeps feedback in lanes above the drawing.
+        var reversed: Set<LayoutEdge> = []
+        if configuration.mode == .fresh {
+            var successors: [LayoutNode: [LayoutNode]] = [:]
+            for edge in allEdges where !feedback.contains(edge) && edge.source !== edge.target { successors[edge.source, default: []].append(edge.target) }
+            func reaches(_ from: LayoutNode, _ to: LayoutNode) -> Bool {
+                var stack = [from], seen: Set<LayoutNode> = [from]
+                while let node = stack.popLast() {
+                    if node === to { return true }
+                    for next in successors[node] ?? [] where seen.insert(next).inserted { stack.append(next) }
+                }
+                return false
             }
+            for edge in feedback.sorted(by: { edgeIndex[$0]! < edgeIndex[$1]! }) where edge.source !== edge.target && !reaches(edge.source, edge.target) {
+                reversed.insert(edge); successors[edge.target, default: []].append(edge.source)
+            }
+        }
+        // Reserve capacity on the sides each end will use (as `DirectedRouter` assigns them), before ranking.
+        // Lane feedback and loops use top ports; explicit port constraints rule an ordinary or reversed edge.
+        var sideCounts: [LayoutNode: [PortConstraint: Int]] = [:]
+        for edge in allEdges {
+            let sides: (PortConstraint, PortConstraint)
+            if edge.source === edge.target || (feedback.contains(edge) && !reversed.contains(edge)) { sides = (.top, .top) }
+            else if edge.sourcePort != .none && edge.targetPort != .none { sides = (edge.sourcePort, edge.targetPort) }
+            else { sides = reversed.contains(edge) ? (.left, .right) : (.right, .left) }
+            sideCounts[edge.source, default: [:]][sides.0, default: 0] += 1
+            sideCounts[edge.target, default: [:]][sides.1, default: 0] += 1
         }
         let widest = configuration.edgeWidths.max() ?? 1
         let pitch = max(configuration.portSpacing, widest * 2.5 + 6)
         for node in nodes {
-            let c = sideCounts[node] ?? [0, 0, 0]
+            let c = sideCounts[node] ?? [:]
             let center = configuration.previousBounds[node.id]?.center ?? node.center
-            node.height = max(node.height, Double(max(c[0], c[1]) - 1) * pitch + 24)
-            node.width = max(node.width, Double(c[2] - 1) * pitch + 24)
+            node.height = max(node.height, Double(max(c[.left] ?? 0, c[.right] ?? 0) - 1) * pitch + 24)
+            node.width = max(node.width, Double(max(c[.top] ?? 0, c[.bottom] ?? 0) - 1) * pitch + 24)
             node.center = center
         }
         var diagnostics = DirectedLayoutDiagnostics()
         diagnostics.feedbackEdgeIndices = feedback.compactMap { edgeIndex[$0] }.sorted()
-        let components = configuration.mode == .fresh ? Adjacency(graph).components() : [Array(nodes.indices)]
-        let canonicalIndex = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element, $0.offset) })
         diagnostics.stageMilliseconds["sizing"] = milliseconds(sizingStart.duration(to: .now))
-        var placementTime = 0.0, routingTime = 0.0
-        var drawings: [(nodes: [LayoutNode], edges: [LayoutEdge], bounds: Rect)] = []
-        for component in components {
-            try Task.checkCancellation()
-            let members = component.map { nodes[$0] }
-            let memberSet = Set(members)
-            let edges = allEdges.filter { memberSet.contains($0.source) }
-            let sub = LayoutGraph()
-            members.forEach(sub.addNodeDetached); sub.edges = edges
-            let kept = members.filter { configuration.previousBounds[$0.id] != nil }
-            let preserve = configuration.mode != .fresh && !kept.isEmpty
-            let trialBudget = edges.count > 180 || members.count > 180 ? 2 : 5
-            let trials = preserve ? 1 : max(1, min(trialBudget, configuration.candidateCount))
-            var keyConfig = configuration
-            // Geometry outside a component cannot influence a fresh component drawing.
-            if configuration.mode == .fresh { keyConfig.previousBounds = [:]; keyConfig.insertionOrigins = [:] }
-            let key = DirectedComponentKey(nodes: members.map { .init(id: $0.id, width: $0.width, height: $0.height) },
-                edges: edges.map { .init(source: $0.source.id, target: $0.target.id, sourcePort: $0.sourcePort, targetPort: $0.targetPort, index: edgeIndex[$0]!) },
-                configuration: keyConfig)
-            var best = cache?.drawing(for: key)
-            var legacyBest: DirectedComponentDrawing?
-            let cached = best != nil
-            if cached { diagnostics.cachedComponents += 1 }
-            // The ordering score excludes ports and obstacles. On ordinary components,
-            // also evaluate the terminal sweep so the final routed score breaks the tie.
-            // Large components retain the two-candidate responsiveness bound.
-            let variants = !preserve && trialBudget == 5 ? 2 : 1
-            for candidate in 0..<(cached ? 0 : trials * variants) {
-                let trial = candidate / variants
-                try Task.checkCancellation()
-                let placementStart = ContinuousClock.now
-                if preserve {
-                    placeIncrementally(members, edges: edges, pitch: pitch)
-                } else {
-                    sub.nodes = ordered(members, edges: edges, trial: trial)
-                    sub.edges = edges.filter { !feedback.contains($0) && $0.source !== $0.target }
-                    for n in members { let w = n.width; n.width = n.height; n.height = w }
-                    let hierarchy = DirectedHierarchy()
-                    hierarchy.retainBestSweep = candidate % variants == 0
-                    hierarchy.layerSeparation = max(configuration.layerSpacing, min(320, Double(edges.count) * 2.5))
-                    hierarchy.nodeSeparation = configuration.nodeSpacing
-                    try hierarchy.applyLayout(sub)
-                    for n in members { n.bounds = Rect(x: n.y, y: n.x, width: n.height, height: n.width) }
-                    for e in sub.edges { e.path = e.path.map { Point(x: $0.y, y: $0.x) } }
-                    // Break exact coordinate coincidences between unrelated ports deterministically.
-                    for n in members { n.y += Double(canonicalIndex[n]! % 97) * 0.125 }
-                    sub.edges = edges
-                    widenCorridors(members, edges: edges, feedback: feedback)
-                }
-                placementTime += milliseconds(placementStart.duration(to: .now))
-                let routingStart = ContinuousClock.now
-                // Preserve the previous strategy as an incumbent for each ordering.
-                // A more compact channel arrangement must earn its place using final
-                // geometry, rather than discarding a lower-crossing drawing.
-                let guides = edges.map(\.path)
-                let router = DirectedRouter(nodes: members, edges: edges, feedback: feedback,
-                                            edgeIndices: edgeIndex, configuration: configuration, pitch: pitch)
-                try router.route(coordinated: false)
-                let incumbent = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path),
-                    score: try DirectedGeometry.measure(nodes: members, edges: edges))
-                if configuration.mode == .fresh {
-                    if legacyBest == nil || incumbent.score.precedes(legacyBest!.score) { legacyBest = incumbent }
-                    for (edge, guide) in zip(edges, guides) { edge.path = guide }
-                    try DirectedRouter(nodes: members, edges: edges, feedback: feedback,
-                        edgeIndices: edgeIndex, configuration: configuration, pitch: pitch).route()
-                }
-                routingTime += milliseconds(routingStart.duration(to: .now))
-                let score = try DirectedGeometry.measure(nodes: members, edges: edges)
-                let drawing = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path), score: score)
-                if best == nil || drawing.score.precedes(best!.score) { best = drawing }
-                // Feedback paths seed port order in the next trial. Do not let the
-                // compact trial alter the incumbent strategy's deterministic inputs.
-                for (node, rect) in zip(members, incumbent.bounds) { node.bounds = rect }
-                for (edge, path) in zip(edges, incumbent.paths) { edge.path = path }
-                if score.crossings == 0 && score.shared == 0 && score.missing == 0 { break }
-            }
-            if !cached, configuration.mode == .fresh {
-                // Refinement can change crossings: compare the two strategies only
-                // after both receive the same final-geometry optimization.
-                var refinedBest: DirectedComponentDrawing?
-                let refinementStart = ContinuousClock.now
-                for candidate in [legacyBest, best].compactMap({ $0 }) {
-                    for (node, rect) in zip(members, candidate.bounds) { node.bounds = rect }
-                    for (edge, path) in zip(edges, candidate.paths) { edge.path = path }
-                    var refinement = DirectedRouter(nodes: members, edges: edges, feedback: feedback,
-                        edgeIndices: edgeIndex, configuration: configuration, pitch: pitch)
-                    try refinement.refine()
-                    try DirectedDrawingCompaction.apply(nodes: members, edges: edges,
-                        clearance: refinement.clearance, spacing: max(6, refinement.trackClearance + 2))
-                    refinement = DirectedRouter(nodes: members, edges: edges, feedback: feedback,
-                        edgeIndices: edgeIndex, configuration: configuration, pitch: pitch)
-                    try refinement.refine()
-                    try refinement.improveWorstRoutes()
-                    let result = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path),
-                        score: try DirectedGeometry.measure(nodes: members, edges: edges))
-                    if refinedBest == nil || result.score.precedes(refinedBest!.score) { refinedBest = result }
-                }
-                best = refinedBest
-                routingTime += milliseconds(refinementStart.duration(to: .now))
-            }
-            if let best {
-                try Task.checkCancellation()
-                for (node, rect) in zip(members, best.bounds) { node.bounds = rect }
-                for (edge, path) in zip(edges, best.paths) { edge.path = path }
-                if !cached {
-                    let refined = DirectedComponentDrawing(bounds: members.map(\.bounds), paths: edges.map(\.path),
-                        score: try DirectedGeometry.measure(nodes: members, edges: edges))
-                    cache?.insert(refined, for: key)
-                }
-            }
-            drawings.append((members, edges, DirectedGeometry.bounds(nodes: members, edges: edges)))
-        }
-        diagnostics.stageMilliseconds["placement"] = placementTime
-        diagnostics.stageMilliseconds["routing"] = routingTime
-        if configuration.mode == .fresh { pack(&drawings) }
+        return DirectedPlan(graph: graph, nodes: nodes, edges: allEdges, edgeIndex: edgeIndex, feedback: feedback.subtracting(reversed), reversed: reversed, pitch: pitch,
+            components: configuration.mode == .fresh ? Adjacency(graph).components() : [Array(nodes.indices)],
+            diagnostics: diagnostics, start: start, original: original)
+    }
+
+    /// Fills the diagnostics and publishes geometry to the caller's graph.
+    func finish(_ plan: DirectedPlan, _ score: DirectedGeometry.Score) throws -> DirectedLayoutDiagnostics {
+        var diagnostics = plan.diagnostics
+        let nodes = plan.nodes, allEdges = plan.edges
+        diagnostics.stageMilliseconds["placement"] = plan.placementTime
+        diagnostics.stageMilliseconds["routing"] = plan.routingTime
         // Restore input order; ranking candidates never affect identity or edge order.
-        graph.nodes = nodes; graph.edges = allEdges
-        let score = try DirectedGeometry.measure(nodes: nodes, edges: allEdges)
+        plan.graph.nodes = nodes; plan.graph.edges = allEdges
         diagnostics.unroutableEdges = allEdges.indices.filter { allEdges[$0].path.count < 2 }
-        diagnostics.crossings = score.crossings; diagnostics.sharedRuns = score.shared
+        diagnostics.crossings = score.crossings; diagnostics.sharedRuns = score.shared; diagnostics.proximateRuns = score.proximity
         diagnostics.bends = score.bends; diagnostics.routeLength = score.length
         diagnostics.bounds = DirectedGeometry.bounds(nodes: nodes, edges: allEdges)
         for i in nodes.indices {
@@ -251,9 +201,9 @@ public struct DirectedLayoutOperation {
             }
         }
         try Task.checkCancellation()
-        for (target, source) in zip(original.nodes, nodes) { target.bounds = source.bounds }
-        for (target, source) in zip(original.edges, allEdges) { target.path = source.path }
-        let elapsed = start.duration(to: .now).components
+        for (target, source) in zip(plan.original.nodes, nodes) { target.bounds = source.bounds }
+        for (target, source) in zip(plan.original.edges, allEdges) { target.path = source.path }
+        let elapsed = plan.start.duration(to: .now).components
         diagnostics.stageMilliseconds["total"] = Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
         return diagnostics
     }
@@ -302,6 +252,64 @@ public struct DirectedLayoutOperation {
         }
     }
 
+    /// A direct edge runs straight when its endpoints' side ranges overlap (ports slide along the sides). Where they miss
+    /// by less than `nodeSpacing`, one endpoint slides within its rank's free interval, clear of other nodes and
+    /// virtual-node tracks, as long as that reduces the misses and their total distance.
+    func straightenDoglegs(_ nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>) {
+        var incident: [LayoutNode: [LayoutEdge]] = [:]
+        var tracks: [Double: [Double]] = [:]
+        for edge in edges where !feedback.contains(edge) && edge.source !== edge.target {
+            if edge.path.count == 2 && edge.source.center.x != edge.target.center.x {
+                incident[edge.source, default: []].append(edge); incident[edge.target, default: []].append(edge)
+            }
+            for p in edge.path.dropFirst().dropLast() { tracks[p.x, default: []].append(p.y) }
+        }
+        let ranks = Dictionary(grouping: nodes, by: { $0.center.x })
+        let reach = configuration.nodeSpacing, margin = 4.0
+        for _ in 0..<8 {
+            var moved = false
+            for node in nodes.sorted(by: { ($0.center.x, $0.center.y, $0.id) < ($1.center.x, $1.center.y, $1.id) }) {
+                guard let list = incident[node] else { continue }
+                func range(_ n: LayoutNode, _ shift: Double = 0) -> (lo: Double, hi: Double) {
+                    let r = DirectedRouter.sideRange(n.bounds); return (r.lo + shift, r.hi + shift)
+                }
+                // (edges that miss, total miss distance): a slide must improve this pair, so passes terminate.
+                func cost(_ shift: Double) -> (Int, Double) {
+                    list.reduce((0, 0.0)) { total, edge in
+                        let a = range(node, shift), b = range(edge.source === node ? edge.target : edge.source)
+                        let gap = max(a.lo, b.lo) - min(a.hi, b.hi)
+                        return gap > 0 ? (total.0 + 1, total.1 + gap) : total
+                    }
+                }
+                let current = cost(0)
+                guard current.0 > 0 else { continue }
+                var below = Double.infinity, above = -Double.infinity
+                for other in ranks[node.center.x] ?? [] where other !== node {
+                    if other.center.y < node.center.y { above = max(above, other.bounds.bottom + configuration.nodeSpacing) }
+                    else { below = min(below, other.bounds.top - configuration.nodeSpacing) }
+                }
+                for y in tracks[node.center.x] ?? [] {
+                    if y < node.center.y { above = max(above, y + 4 + configuration.nodeSpacing / 2) }
+                    else { below = min(below, y - 4 - configuration.nodeSpacing / 2) }
+                }
+                var best: (shift: Double, cost: (Int, Double))?
+                for edge in list {
+                    let a = range(node), b = range(edge.source === node ? edge.target : edge.source)
+                    guard max(a.lo, b.lo) > min(a.hi, b.hi) else { continue }
+                    let shift = a.hi < b.lo ? b.lo - a.hi + margin : b.hi - a.lo - margin
+                    guard abs(shift) <= reach, node.bounds.top + shift >= above, node.bounds.bottom + shift <= below else { continue }
+                    let next = cost(shift)
+                    if next < current, best == nil || next < best!.cost || (next == best!.cost && abs(shift) < abs(best!.shift)) { best = (shift, next) }
+                }
+                if let best { node.center = node.center + Point(x: 0, y: best.shift); moved = true }
+            }
+            if !moved { break }
+        }
+        for edge in edges where edge.path.count >= 2 && !feedback.contains(edge) && edge.source !== edge.target {
+            edge.path[0] = edge.source.center; edge.path[edge.path.count - 1] = edge.target.center
+        }
+    }
+
     func widenCorridors(_ nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>) {
         let ranks = Array(Set(nodes.map { $0.center.x })).sorted()
         guard ranks.count > 1 else { return }
@@ -309,7 +317,7 @@ public struct DirectedLayoutOperation {
         var traffic = Array(repeating: 0, count: ranks.count - 1)
         for edge in edges where !feedback.contains(edge) {
             let a = rankIndex[edge.source.center.x]!, b = rankIndex[edge.target.center.x]!
-            if a < b { for rank in a..<b { traffic[rank] += 1 } }
+            if a != b { for rank in min(a, b)..<max(a, b) { traffic[rank] += 1 } }
         }
         let widths = ranks.map { x in nodes.filter { $0.center.x == x }.map(\.width).max() ?? 0 }
         let trackPitch = max(6, (configuration.edgeWidths.max() ?? 1) + 3)
@@ -324,7 +332,9 @@ public struct DirectedLayoutOperation {
         }
     }
 
-    func pack(_ drawings: inout [(nodes: [LayoutNode], edges: [LayoutEdge], bounds: Rect)]) {
+    func pack(_ plan: DirectedPlan) {
+        guard configuration.mode == .fresh else { return }
+        let drawings = plan.drawings
         let gap = configuration.componentSpacing
         let area = drawings.reduce(0.0) { $0 + ($1.bounds.width + gap) * ($1.bounds.height + gap) }
         let target = max(drawings.map { $0.bounds.width }.max() ?? 0, sqrt(area * max(0.25, configuration.canvasAspectRatio)))

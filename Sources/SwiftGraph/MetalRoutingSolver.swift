@@ -15,6 +15,13 @@ final class RoutingCompute: @unchecked Sendable {
     var failure: (any Error)?
     var gpuSeconds = 0.0
     var stages: [String] = []
+    /// Calls that exceeded a Metal limit and took the CPU path instead; reported with the CPU stages.
+    private(set) var fallbacks: [String] = []
+    /// Largest matrix or grid one dispatch may allocate (64 MiB of UInt32 flags).
+    static let maximumElements = 16_777_216
+    /// Automatic runs skip the blocking GPU round trip for calls the CPU predicates finish sooner.
+    static let automaticPairs = 65_536, automaticElements = 8_192
+    var minimumPairs = 0, minimumElements = 0
     let statisticsChanged: () -> Void
     init(solver: MetalForceSolver, tolerance: Double, statisticsChanged: @escaping () -> Void) {
         self.tolerance = tolerance; self.solver = solver; self.statisticsChanged = statisticsChanged
@@ -27,28 +34,37 @@ final class RoutingCompute: @unchecked Sendable {
         guard values.allSatisfy(\.isFinite) else { throw LayoutExecutionError.precisionLimit }
         return SIMD4(values[0], values[1], values[2], values[3])
     }
+    private func fallback(_ note: String) { if !fallbacks.contains(note) { fallbacks.append(note) } }
+    /// Nil sends the caller to its exact CPU path: below the work threshold, or beyond the matrix limit.
     func candidates(_ left: [Rect], _ right: [Rect]) -> [UInt32]? {
         guard !left.isEmpty, !right.isEmpty else { return [] }
+        guard left.count * right.count >= minimumPairs else { return nil }
+        guard left.count <= Self.maximumElements / right.count else {
+            fallback("CPU fallback: geometry matrix exceeds the Metal 64 MiB limit"); return nil
+        }
         do {
             try Self.checkCancellation()
-            guard left.count <= 16_777_216 / right.count else {
-                throw LayoutExecutionError.invalidInput("Routing geometry matrix exceeds the 64 MiB limit.")
-            }
             return try dispatchBoxes(left.map(box), right.map(box))
         } catch { if failure == nil { failure = error }; return nil }
     }
     static func bounds(_ a: Point, _ b: Point) -> Rect {
         Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
     }
+    /// Segments are chunked so the flag matrix stays within the dispatch limit however long the path is.
     func hits(_ path: [Point], _ obstacles: [Rect]) -> Set<Int> {
         let segments = Array(zip(path, path.dropFirst()))
-        guard let flags = candidates(segments.map { Self.bounds($0.0, $0.1) }, obstacles) else {
-            return Set(obstacles.indices.filter { i in segments.contains { obstacles[i].intersectsLine($0.0, $0.1) } })
-        }
         var result = Set<Int>()
-        for (s, segment) in segments.enumerated() {
-            for r in obstacles.indices where flags[s * obstacles.count + r] != 0 && !result.contains(r) {
-                if obstacles[r].intersectsLine(segment.0, segment.1) { result.insert(r) }
+        let step = max(1, Self.maximumElements / max(1, obstacles.count))
+        for start in stride(from: 0, to: segments.count, by: step) {
+            let part = segments[start..<min(segments.count, start + step)]
+            if let flags = candidates(part.map { Self.bounds($0.0, $0.1) }, obstacles) {
+                for (s, segment) in part.enumerated() {
+                    for r in obstacles.indices where flags[s * obstacles.count + r] != 0 && !result.contains(r) {
+                        if obstacles[r].intersectsLine(segment.0, segment.1) { result.insert(r) }
+                    }
+                }
+            } else {
+                for r in obstacles.indices where !result.contains(r) && part.contains(where: { obstacles[r].intersectsLine($0.0, $0.1) }) { result.insert(r) }
             }
         }
         return result
@@ -57,24 +73,9 @@ final class RoutingCompute: @unchecked Sendable {
         guard let flags = candidates([rect], obstacles) else { return obstacles.indices.filter { rect.intersects(obstacles[$0]) } }
         return obstacles.indices.filter { flags[$0] != 0 && rect.intersects(obstacles[$0]) }
     }
-    /// Visibility rejection is computed in a batch before the original deterministic shortest path.
-    func visibility(_ points: [Point], _ obstacles: [Rect]) -> [Bool]? {
-        guard !obstacles.isEmpty else { return Array(repeating: true, count: points.count * points.count) }
-        guard points.count <= 16_777_216 / max(1, points.count) else {
-            failure = LayoutExecutionError.invalidInput("Visibility table exceeds the 16 MiB limit."); return nil
-        }
-        let count = points.count * points.count, batch = max(1, 262_144 / obstacles.count)
-        var result: [Bool] = []; result.reserveCapacity(count)
-        for start in stride(from: 0, to: count, by: batch) {
-            let indices = start..<min(count, start + batch)
-            let segments = indices.map { (points[$0 / points.count], points[$0 % points.count]) }
-            guard let flags = candidates(segments.map { Self.bounds($0.0, $0.1) }, obstacles) else { return nil }
-            for (i, segment) in segments.enumerated() {
-                result.append(!obstacles.indices.contains { flags[i * obstacles.count + $0] != 0 && obstacles[$0].intersectsLine(segment.0, segment.1) })
-            }
-        }
-        return result
-    }
+    /// Visibility stays on the CPU lazy search. A V²×N candidate matrix with a synchronous wait per
+    /// batch computes every pair, where the quadtree-pruned search only asks about the few it visits.
+    func visibility(_ points: [Point], _ obstacles: [Rect]) -> [Bool]? { nil }
     func overlapMatrix(_ segments: [(start: Point, end: Point)], padding: Double = 0) -> [UInt32]? {
         let boxes = segments.map { Self.bounds($0.start, $0.end).inflated(by: padding) }
         return candidates(boxes, boxes)
@@ -84,14 +85,18 @@ final class RoutingCompute: @unchecked Sendable {
         guard let flags = candidates(boxes, [rect]) else { return points.map(rect.contains) }
         return points.indices.map { flags[$0] != 0 && rect.contains(points[$0]) }
     }
-    func axisBlockers(_ values: [Double], rectangles: [Rect], vertical: Bool) -> [[Int]]? {
+    /// Rectangles whose open span (closed with `closed`) contains each value; the CPU filter in `OrthogonalGroupedEdgeRouter` must agree.
+    func axisBlockers(_ values: [Double], rectangles: [Rect], vertical: Bool, closed: Bool = false) -> [[Int]]? {
         guard !rectangles.isEmpty else { return Array(repeating: [], count: values.count) }
         let low = rectangles.map { vertical ? $0.top : $0.left }.min()!
         let high = rectangles.map { vertical ? $0.bottom : $0.right }.max()!
         let lines = values.map { vertical ? Rect(x: $0, y: low, height: high - low) : Rect(x: low, y: $0, width: high - low) }
         guard let flags = candidates(lines, rectangles) else { return nil }
         return values.enumerated().map { i, value in rectangles.indices.filter { j in
-            flags[i * rectangles.count + j] != 0 && (vertical ? rectangles[j].left < value && value < rectangles[j].right : rectangles[j].top < value && value < rectangles[j].bottom)
+            flags[i * rectangles.count + j] != 0 && {
+                let (low, high) = vertical ? (rectangles[j].left, rectangles[j].right) : (rectangles[j].top, rectangles[j].bottom)
+                return closed ? low <= value && value <= high : low < value && value < high
+            }()
         } }
     }
     func occupiedCells(_ rectangles: [SIMD4<Int32>]) -> [SIMD2<Int32>]? {
@@ -101,7 +106,9 @@ final class RoutingCompute: @unchecked Sendable {
             let minX = rectangles.map(\.x).min()!, minY = rectangles.map(\.y).min()!
             let maxX = rectangles.map(\.z).max()!, maxY = rectangles.map(\.w).max()!
             let width = Int(maxX) - Int(minX) + 1, height = Int(maxY) - Int(minY) + 1
-            guard width > 0, height > 0, width <= 16_777_216 / height else { throw LayoutExecutionError.invalidInput("Routing occupancy exceeds the 64 MiB limit.") }
+            guard width > 0, height > 0 else { return nil }
+            guard width <= Self.maximumElements / height else { fallback("CPU fallback: channel occupancy grid exceeds the Metal 64 MiB limit"); return nil }
+            guard width * height * rectangles.count >= minimumPairs else { return nil }
             let flags = try dispatchOccupancy(rectangles, origin: SIMD2(minX, minY), width: width, count: width * height)
             return flags.indices.compactMap { flags[$0] == 0 ? nil : SIMD2(minX + Int32($0 % width), minY + Int32($0 / width)) }
         } catch { if failure == nil { failure = error }; return nil }
@@ -120,6 +127,7 @@ final class RoutingCompute: @unchecked Sendable {
     }
     private func geometry(_ function: String, _ a: [Point], _ b: [Point], offsets: [Double]) -> [Point]? {
         guard !a.isEmpty else { return [] }
+        guard a.count >= minimumElements else { return nil }
         do {
             try Self.checkCancellation()
             let origin = a[0]
@@ -132,6 +140,7 @@ final class RoutingCompute: @unchecked Sendable {
     /// Weighted-point geometry is computed on Metal. The caller retains original Double endpoints.
     func blend(_ a: [Point], _ b: [Point], weights: [Double]) -> [Point]? {
         guard !a.isEmpty else { return [] }
+        guard a.count >= minimumElements else { return nil }
         do {
             try Self.checkCancellation()
             let origin = a[0]

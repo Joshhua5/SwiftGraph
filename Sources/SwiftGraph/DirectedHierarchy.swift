@@ -7,21 +7,40 @@ final class DirectedHierarchy: LayoutAlgorithm {
     var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
     var maxNodesPerRank: Int?
     var retainBestSweep = true
+    /// Spacing of the ports on one side of a node; targets then aim at the neighbour's port, not its centre.
+    var portPitch: Double = 0
+    static let maxVirtualNodes = 20_000
+    /// Feedback edges laid out against their direction: they rank, order and get virtual chains as target-to-source edges.
+    var reversed: Set<LayoutEdge> = []
     init() {}
     func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
         let a = Adjacency(graph), count = a.nodes.count
         guard count > 0 else { return }
-        var layers = a.layers(maxWidth: maxNodesPerRank ?? .max)
+        var layers: [[Int]]
+        if let width = maxNodesPerRank { layers = a.layers(maxWidth: width) }
+        else {
+            // Network simplex shortens edges globally; layers keep the caller's node order, which the trials vary.
+            let pairs = graph.edges.compactMap { e -> (Int, Int)? in
+                guard let s = a.index[e.source], let t = a.index[e.target] else { return nil }
+                return reversed.contains(e) ? (t, s) : (s, t)
+            }
+            let ranked = DirectedLayering.ranks(count: count, edges: pairs)
+            layers = Array(repeating: [], count: (ranked.max() ?? 0) + 1)
+            for (i, rank) in ranked.enumerated() { layers[rank].append(i) }
+        }
         var ranks = Array(repeating: 0, count: count)
         for (r, layer) in layers.enumerated() { for i in layer { ranks[i] = r } }
         var widths = a.nodes.map(\.width), incoming = Array(repeating: [Int](), count: count), outgoing = incoming
-        var chains: [LayoutEdge: [Int]] = [:]
+        var chains: [LayoutEdge: [Int]] = [:], dummyBudget = Self.maxVirtualNodes
         for edge in graph.edges {
-            guard let s = a.index[edge.source], let t = a.index[edge.target], s != t else { continue }
+            guard let source = a.index[edge.source], let target = a.index[edge.target], source != target else { continue }
+            let (s, t) = reversed.contains(edge) ? (target, source) : (source, target)
             let delta = ranks[t] - ranks[s], span = abs(delta)
             var chain: [Int] = []
-            if span > 1 && span - 1 <= 64 {
+            // Any span gets guidance; only the total of virtual nodes is bounded, so a pathological graph stays linear-ish.
+            if span > 1 && span - 1 <= dummyBudget {
+                dummyBudget -= span - 1
                 for step in 1..<span {
                     let v = widths.count, rank = ranks[s] + step * (delta > 0 ? 1 : -1)
                     widths.append(8); ranks.append(rank); incoming.append([]); outgoing.append([])
@@ -116,7 +135,31 @@ final class DirectedHierarchy: LayoutAlgorithm {
             var x = -total / 2
             for i in layer { xs[i] = x + widths[i] / 2; x += widths[i] + nodeSeparation }
         }
-        for pass in 0..<3 {
+        // Port-aware targets: a node wants to sit where its edges' ports line up with the neighbours' ports.
+        var sortedIn = incoming, sortedOut = outgoing
+        for i in incoming.indices {
+            sortedIn[i].sort { order[$0] < order[$1] }; sortedOut[i].sort { order[$0] < order[$1] }
+        }
+        func portOffsets(_ list: [Int], of i: Int) -> [Double] {
+            guard i < count, list.count > 1 else { return Array(repeating: 0, count: list.count) }
+            let step = min(portPitch, max(0, widths[i] - 24) / Double(list.count - 1))
+            return list.indices.map { (Double($0) - Double(list.count - 1) / 2) * step }
+        }
+        let inOffsets = sortedIn.indices.map { portOffsets(sortedIn[$0], of: $0) }, outOffsets = sortedOut.indices.map { portOffsets(sortedOut[$0], of: $0) }
+        // For each vertex, (neighbour, neighbour's port offset, own port offset) over all its edges.
+        var attachments = Array(repeating: [(Int, Double, Double)](), count: widths.count)
+        var inSlots: [[Int]: [Int]] = [:]
+        for v in sortedIn.indices { for (j, u) in sortedIn[v].enumerated() { inSlots[[u, v], default: []].append(j) } }
+        for u in sortedOut.indices {
+            var used: [Int: Int] = [:]
+            for (j, v) in sortedOut[u].enumerated() {
+                let k = used[v, default: 0]; used[v] = k + 1
+                let slot = inSlots[[u, v]]![k]
+                attachments[u].append((v, inOffsets[v][slot], outOffsets[u][j]))
+                attachments[v].append((u, outOffsets[u][j], inOffsets[v][slot]))
+            }
+        }
+        for pass in 0..<4 {
             try Task.checkCancellation()
             for rank in (pass % 2 == 0 ? Array(layers.indices) : Array(layers.indices.reversed())) {
                 let layer = layers[rank]
@@ -124,22 +167,23 @@ final class DirectedHierarchy: LayoutAlgorithm {
                 for (position, i) in layer.enumerated() {
                     if position > 0 { distance += (widths[layer[position - 1]] + widths[i]) / 2 + nodeSeparation }
                     shift.append(distance)
-                    let neighbors = incoming[i] + outgoing[i]
-                    desired.append((neighbors.isEmpty ? xs[i] : neighbors.reduce(0.0) { $0 + xs[$1] } / Double(neighbors.count)) - distance)
+                    let targets = attachments[i].map { xs[$0.0] + $0.1 - $0.2 }
+                    desired.append((targets.isEmpty ? xs[i] : targets.reduce(0.0, +) / Double(targets.count)) - distance)
                     weights.append(i < count ? 1 : 4)
                 }
-                let fitted = isotonic(desired, weights: weights)
+                let fitted = isotonicFit(desired, weights: weights)
                 for (p, i) in layer.enumerated() { xs[i] = fitted[p] + shift[p] }
             }
         }
         for i in a.nodes.indices { a.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
         for e in graph.edges {
-            let bends = (chains[e] ?? []).map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
+            var bends = (chains[e] ?? []).map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
+            if reversed.contains(e) { bends.reverse() }
             e.path = [e.source.center] + bends + [e.target.center]
         }
     }
 }
-private func isotonic(_ values: [Double], weights: [Double]) -> [Double] {
+func isotonicFit(_ values: [Double], weights: [Double]) -> [Double] {
     var blocks: [(start: Int, end: Int, sum: Double, weight: Double)] = []
     for i in values.indices {
         blocks.append((i, i, values[i] * weights[i], weights[i]))

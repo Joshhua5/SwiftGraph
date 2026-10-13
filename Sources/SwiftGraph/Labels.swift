@@ -2,76 +2,106 @@ import Foundation
 
 /// Swift payloads can opt into labeling without reflection or coupling to a UI framework.
 public protocol GraphLabelData { var label: String { get } }
+private func defaultLabelProvider(_ edge: LayoutEdge) -> String? {
+    if let value = edge.data as? any GraphLabelData { return value.label }
+    if let value = edge.data as? String { return value }
+    if let value = edge.data as? [String: String] { return value["Label"] ?? value["label"] }
+    return nil
+}
+/// A label's size: what the caller measured (the provider, else a size already set on `labelBounds`), else a character estimate.
+private func labelSize(_ edge: LayoutEdge, text: String?, provider: (LayoutEdge, String) -> Size?) -> Size {
+    if let text, let measured = provider(edge, text), measured.width > 0, measured.height > 0 { return measured }
+    if edge.labelBounds.width > 0 && edge.labelBounds.height > 0 { return edge.labelBounds.size }
+    return Size(width: Double((text?.count ?? 0) * 8 + 10), height: 20)
+}
+
 public final class LabelPlacementAlgorithm {
-    public var labelProvider: (LayoutEdge) -> String? = { edge in
-        if let value = edge.data as? any GraphLabelData { return value.label }
-        if let value = edge.data as? String { return value }
-        if let value = edge.data as? [String: String] { return value["Label"] ?? value["label"] }
-        return nil
-    }
+    public var labelProvider: (LayoutEdge) -> String? = defaultLabelProvider
+    /// Measured size of an edge's label text, for callers that can ask their UI toolkit. Without it a size already on
+    /// `labelBounds` is kept, and otherwise the size is estimated from the character count.
+    public var sizeProvider: (LayoutEdge, String) -> Size? = { _, _ in nil }
     public init() {}
     public func applyLabelPlacement(_ graph: LayoutGraph) {
-        let tree = QuadTree<LayoutNode>(bounds: graph.bounds.inflated(by: 500))
-        for node in graph.nodes where !node.isGroup { tree.insert(bounds: node.bounds, item: node) }
         var labeled: [LayoutEdge] = []
         for edge in graph.edges {
             guard let text = labelProvider(edge), !text.isEmpty else { continue }
             labeled.append(edge)
-            let width = Double(text.count * 8 + 10), height = 20.0
-            let center = LabelCollisionRepair.midpoint(edge.path)
-            edge.labelBounds = Rect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
-            for _ in 0..<10 {
-                if (RoutingCompute.current.map { $0.intersections(edge.labelBounds, graph.nodes.filter { !$0.isGroup }.map(\.bounds)).isEmpty } ?? tree.query(edge.labelBounds).isEmpty) { break }
-                edge.labelBounds.y -= 5
-            }
+            let size = labelSize(edge, text: text, provider: sizeProvider), center = LabelCollisionRepair.midpoint(edge.path)
+            edge.labelBounds = Rect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
         }
-        LabelCollisionRepair.apply(labeled, obstacles: graph.nodes.filter { !$0.isGroup }.map(\.bounds))
+        LabelCollisionRepair.apply(labeled, among: graph.edges, obstacles: graph.nodes.filter { !$0.isGroup }.map(\.bounds))
     }
 }
 
 public final class LabelLayoutAlgorithm {
     public var iterations = 200
+    /// Edges without a label (no text and no size on `labelBounds`) are left alone.
+    public var labelProvider: (LayoutEdge) -> String? = defaultLabelProvider
+    public var sizeProvider: (LayoutEdge, String) -> Size? = { _, _ in nil }
     public init() {}
     public func applyLabelLayout(_ graph: LayoutGraph) {
-        let edges = graph.edges
+        let edges = graph.edges.filter { edge in
+            !(labelProvider(edge) ?? "").isEmpty || (edge.labelBounds.width > 0 && edge.labelBounds.height > 0)
+        }
         guard !edges.isEmpty else { return }
         let obstacles = graph.nodes.filter { !$0.isGroup }.map(\.bounds)
         for e in edges {
-            if e.labelBounds.width == 0 { e.labelBounds = Rect(width: Double("Edge[\(e.source.id) -> \(e.target.id)]".count * 8), height: 20) }
+            let size = labelSize(e, text: labelProvider(e), provider: sizeProvider)
+            e.labelBounds = Rect(x: e.labelBounds.x, y: e.labelBounds.y, width: size.width, height: size.height)
             if e.path.count >= 2 {
                 let center = LabelCollisionRepair.midpoint(e.path)
                 e.labelBounds.x = center.x - e.labelBounds.width / 2; e.labelBounds.y = center.y - e.labelBounds.height / 2
             }
         }
-        func energy() -> Double {
-            var result = 0.0
-            let rectangles = edges.map(\.labelBounds)
-            let obstacleFlags = RoutingCompute.current?.candidates(rectangles, obstacles)
-            let labelFlags = RoutingCompute.current?.candidates(rectangles, rectangles)
-            for (i, e) in edges.enumerated() {
-                result += Double(obstacles.indices.filter { j in (obstacleFlags?[i * obstacles.count + j] ?? 1) != 0 && obstacles[j].intersects(e.labelBounds) }.count) * 1000
-                for j in edges.indices where i != j && (labelFlags?[i * edges.count + j] ?? 1) != 0 && e.labelBounds.intersects(edges[j].labelBounds) { result += 100 }
-                if e.path.count >= 2 {
-                    let c = e.labelBounds.center
-                    result += LabelCollisionRepair.distance(c, to: e.path) * 0.1
-                }
-            }
+        let segments = SegmentIndex(graph.edges)
+        let compute = RoutingCompute.current
+        /// One label's share of the energy: nodes it covers, other labels it overlaps, edges crossing it, and its distance
+        /// from its own edge. An overlap costs 100 per label involved, so moving a label changes it by `overlap` = 200.
+        func energy(of i: Int, overlap: Double) -> Double {
+            let e = edges[i], rect = e.labelBounds
+            let others = edges.indices.filter { $0 != i }.map { edges[$0].labelBounds }
+            let obstacleFlags = compute?.candidates([rect], obstacles), labelFlags = compute?.candidates([rect], others)
+            var result = Double(obstacles.indices.filter { (obstacleFlags?[$0] ?? 1) != 0 && obstacles[$0].intersects(rect) }.count) * 1000
+            result += Double(others.indices.filter { (labelFlags?[$0] ?? 1) != 0 && rect.intersects(others[$0]) }.count) * overlap
+            result += Double(segments.hits(rect, except: e)) * 10
+            if e.path.count >= 2 { result += LabelCollisionRepair.distance(rect.center, to: e.path) * 0.1 }
             return result
         }
-        var random = SeededRandom(state: 123), temperature = 100.0, current = energy()
+        var random = SeededRandom(state: 123), temperature = 100.0
+        var current = edges.indices.reduce(0.0) { $0 + energy(of: $1, overlap: 100) }
         var best = current, bestBounds = edges.map(\.labelBounds)
         for _ in 0..<max(0, iterations) {
             if RoutingCompute.isCancelled { return }
-            let edge = edges[Int(random.next() * Double(edges.count))], old = edge.labelBounds
+            let moved = Int(random.next() * Double(edges.count)), edge = edges[moved], old = edge.labelBounds
+            let before = energy(of: moved, overlap: 200)
             edge.labelBounds.x += (random.next() - 0.5) * temperature; edge.labelBounds.y += (random.next() - 0.5) * temperature
-            let candidate = energy()
+            let candidate = current - before + energy(of: moved, overlap: 200)
             if candidate < current || random.next() <= exp((current - candidate) / max(temperature, 1e-12)) { current = candidate }
             else { edge.labelBounds = old }
             if current < best { best = current; bestBounds = edges.map(\.labelBounds) }
             temperature *= 0.95
         }
         for (edge, bounds) in zip(edges, bestBounds) { edge.labelBounds = bounds }
-        LabelCollisionRepair.apply(edges, obstacles: obstacles)
+        LabelCollisionRepair.apply(edges, among: graph.edges, obstacles: obstacles)
+    }
+}
+
+/// Path segments indexed by bounding box, so a label can count the other edges running through it.
+private struct SegmentIndex {
+    let tree: QuadTree<Int>
+    let segments: [(edge: LayoutEdge, a: Point, b: Point)]
+    init(_ edges: [LayoutEdge]) {
+        segments = edges.flatMap { e in zip(e.path, e.path.dropFirst()).map { (edge: e, a: $0, b: $1) } }
+        let boxes = segments.map { RoutingCompute.bounds($0.a, $0.b).inflated(by: 0.5) }
+        tree = QuadTree<Int>(bounds: boxes.dropFirst().reduce(boxes.first ?? Rect()) { $0.union($1) }.inflated(by: 1))
+        for (i, box) in boxes.enumerated() { tree.insert(bounds: box, item: i) }
+    }
+    func hits(_ rect: Rect, except edge: LayoutEdge) -> Int {
+        var seen = Set<ObjectIdentifier>()
+        for i in tree.query(rect.inflated(by: 0.5)) where segments[i].edge !== edge && rect.intersectsLine(segments[i].a, segments[i].b) {
+            seen.insert(ObjectIdentifier(segments[i].edge))
+        }
+        return seen.count
     }
 }
 
@@ -93,7 +123,9 @@ private enum LabelCollisionRepair {
             return (point - (a + delta * t)).length
         }.min() ?? path.first.map { (point - $0).length } ?? 0
     }
-    static func apply(_ edges: [LayoutEdge], obstacles: [Rect]) {
+    /// Moves each label to the candidate along its own edge that covers the fewest nodes, other labels and other edges.
+    static func apply(_ edges: [LayoutEdge], among all: [LayoutEdge], obstacles: [Rect]) {
+        let segments = SegmentIndex(all)
         for _ in 0..<8 {
             var changed = false
             for (index, edge) in edges.enumerated() where edge.labelBounds.width > 0 && edge.labelBounds.height > 0 {
@@ -119,10 +151,11 @@ private enum LabelCollisionRepair {
                     let rect = candidates[i]
                     return [Double(obstacles.indices.filter { j in (obstacleFlags?[i * obstacles.count + j] ?? 1) != 0 && obstacles[j].intersects(rect) }.count),
                             Double(edges.indices.filter { j in j != index && (labelFlags?[i * edges.count + j] ?? 1) != 0 && labelRects[j].intersects(rect) }.count),
+                            Double(segments.hits(rect, except: edge)),
                             distance(rect.center, to: edge.path), (rect.center - original.center).lengthSquared]
                 }
                 var best = original, bestScore = score(0)
-                if bestScore[0] == 0 && bestScore[1] == 0 { continue }
+                if bestScore[0] == 0 && bestScore[1] == 0 && bestScore[2] == 0 { continue }
                 for i in candidates.indices.dropFirst() {
                     let candidate = score(i)
                     if candidate.lexicographicallyPrecedes(bestScore) { best = candidates[i]; bestScore = candidate }

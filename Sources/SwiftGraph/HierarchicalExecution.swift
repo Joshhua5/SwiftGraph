@@ -152,6 +152,8 @@ struct HierarchyPlacementPlan: Sendable {
     var incoming: [[Int]]
     var outgoing: [[Int]]
     var chains: [[Int]]
+    /// Sign of each edge's rank change; nil for self-loops and edges outside the graph, which are not routed between ranks.
+    var flows: [Int?]
     var nodeSeparation: Double
     var layerSeparation: Double
     init(_ graph: LayoutGraph, configuration: HierarchicalLayoutConfiguration) throws {
@@ -161,11 +163,12 @@ struct HierarchyPlacementPlan: Sendable {
         ranks = Array(repeating: 0, count: originalCount)
         for (rank, layer) in layers.enumerated() { for vertex in layer { ranks[vertex] = rank } }
         incoming = Array(repeating: [], count: originalCount); outgoing = incoming
-        chains = Array(repeating: [], count: graph.edges.count)
+        chains = Array(repeating: [], count: graph.edges.count); flows = Array(repeating: nil, count: graph.edges.count)
         for (index, edge) in graph.edges.enumerated() {
             try Task.checkCancellation()
             guard let source = adjacency.index[edge.source], let target = adjacency.index[edge.target], source != target else { continue }
             let delta = ranks[target] - ranks[source], span = abs(delta)
+            flows[index] = delta.signum()
             if span > 1 && span - 1 <= 64 {
                 for step in 1..<span {
                     let vertex = widths.count, rank = ranks[source] + step * (delta > 0 ? 1 : -1)
@@ -266,8 +269,9 @@ struct HierarchyPlacementPlan: Sendable {
         }
         let ys = offsets(heights, gap: layerSeparation)
         for i in 0..<originalCount { graph.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
-        for (i, edge) in graph.edges.enumerated() {
-            edge.path = [edge.source.center] + chains[i].map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) } + [edge.target.center]
+        let routed: [[Point]?] = chains.indices.map { i in
+            flows[i] == nil ? nil : chains[i].map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
         }
+        try routeLayeredEdges(graph, chains: routed, flows: flows)
     }
 }

@@ -18,7 +18,8 @@ struct MetalBundlingTests {
     @Test func midpointCompatibilityMatchesLegacyAtDistanceBoundary() throws {
         let graph = midpointBoundaryGraph()
         var configuration = EdgeBundlingConfiguration(); configuration.iterations = 1; configuration.segments = 2
-        configuration.bundlingDistance = 3.9
+        // Offset collinear edges score about 0.27 on FDEB compatibility, so only the distance gate decides here.
+        configuration.bundlingDistance = 3.9; configuration.compatibilityThreshold = 0.1
         let midpoint = (graph.edges[0].source.center + graph.edges[0].target.center) / 2
         let alternate = graph.edges[0].source.center + (graph.edges[0].target.center - graph.edges[0].source.center) / 2
         #expect(midpoint.x == -3.9 && alternate.x < -3.9)
@@ -31,7 +32,7 @@ struct MetalBundlingTests {
     func gpuBundlingKeepsMidpointBoundaryCompatibility() async throws {
         let cpu = midpointBoundaryGraph(), gpu = midpointBoundaryGraph()
         var configuration = EdgeBundlingConfiguration(); configuration.iterations = 1; configuration.segments = 2
-        configuration.bundlingDistance = 3.9
+        configuration.bundlingDistance = 3.9; configuration.compatibilityThreshold = 0.1
         try await EdgeBundlingOperation(backend: .cpu, configuration: configuration).applyLayoutAsync(cpu)
         let operation = EdgeBundlingOperation(backend: .metal, configuration: configuration)
         try await operation.applyLayoutAsync(gpu)

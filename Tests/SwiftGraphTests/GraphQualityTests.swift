@@ -184,7 +184,7 @@ import Testing
         EdgeSeparator().routeEdges(g)
         #expect(measured(g).values["sharedSegments"] == 0)
         let ys = edges.map { $0.path[0].y }.sorted()
-        #expect(ys.count == 3 && abs(ys[1] - ys[0] - 6) < 1e-9 && abs(ys[2] - ys[1] - 6) < 1e-9 && abs(ys[1] - a.y) < 1e-9)
+        #expect(ys.count == 3 && abs(ys[1] - ys[0] - 10) < 1e-9 && abs(ys[2] - ys[1] - 10) < 1e-9 && abs(ys[1] - a.y) < 1e-9)
         #expect(edges.allSatisfy { $0.path.count == 2 && abs($0.path[0].y - $0.path[1].y) < 1e-9 })
         #expect(loop.path == [Point(x: 10, y: 0), Point(x: 30, y: -30), Point(x: 50, y: 0)])
     }
@@ -204,7 +204,7 @@ import Testing
     }
 
     @Test func separatorNeverPushesRoutesIntoNodesAndLeavesUnsharedPathsAlone() {
-        // The shared corridor is only 4pt wide; lanes 6pt apart would cut a wall, so the routes stay put.
+        // The shared corridor is only 4pt wide; lanes 10pt apart would cut a wall, so the routes stay put.
         let g = nodes([("s", Rect(x: -20, y: -20, width: 40, height: 40)), ("t", Rect(x: 380, y: -20, width: 40, height: 40)),
                        ("top", Rect(x: 100, y: -100, width: 200, height: 98)), ("bottom", Rect(x: 100, y: 2, width: 200, height: 98)),
                        ("x", Rect(x: 0, y: 300, width: 40, height: 40))])
