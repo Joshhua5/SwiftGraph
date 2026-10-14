@@ -1,16 +1,16 @@
 import Foundation
 
 public final class CircularLayoutAlgorithm: LayoutAlgorithm {
-    public var radius: Double = 300
+    public var radius: Float = 300
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
         let nodes = graph.nodes.filter { !$0.isGroup }
         guard !nodes.isEmpty else { return }
         let span = nodes.map { hypot($0.width, $0.height) }.max() ?? 0
-        let r = max(radius, Double(nodes.count) * (span + 20) / (2 * .pi))
+        let r = max(radius, Float(nodes.count) * (span + 20) / (2 * .pi))
         for (i, node) in nodes.enumerated() {
-            let angle = Double(i) * 2 * .pi / Double(nodes.count)
+            let angle = Float(i) * 2 * .pi / Float(nodes.count)
             node.center = Point(x: r + 50 + r * cos(angle), y: r + 50 + r * sin(angle))
         }
         straightEdges(graph)
@@ -18,22 +18,22 @@ public final class CircularLayoutAlgorithm: LayoutAlgorithm {
 }
 
 public final class TabularLayoutAlgorithm: LayoutAlgorithm {
-    public var cellSpacing: Double = 50
+    public var cellSpacing: Float = 50
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation(); gridLayout(graph, spacing: cellSpacing); straightEdges(graph)
     }
 }
-func gridLayout(_ graph: LayoutGraph, spacing: Double) {
+func gridLayout(_ graph: LayoutGraph, spacing: Float) {
     let nodes = graph.nodes.filter { !$0.isGroup }
     guard !nodes.isEmpty else { return }
     let columns = Int(ceil(sqrt(Double(nodes.count))))
     let stepX = (nodes.map(\.width).max() ?? 0) + spacing
     let stepY = (nodes.map(\.height).max() ?? 0) + spacing
-    for (i, n) in nodes.enumerated() { n.x = Double(i % columns) * stepX; n.y = Double(i / columns) * stepY }
+    for (i, n) in nodes.enumerated() { n.x = Float(i % columns) * stepX; n.y = Float(i / columns) * stepY }
 }
 public final class OrthogonalLayoutAlgorithm: LayoutAlgorithm {
-    public var gridSize: Double = 100
+    public var gridSize: Float = 100
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation(); gridLayout(graph, spacing: gridSize)
@@ -46,9 +46,9 @@ public final class OrthogonalLayoutAlgorithm: LayoutAlgorithm {
 
 public final class PartitionGridLayoutAlgorithm: LayoutAlgorithm {
     public var cellAssignment: [String: (row: Int, col: Int)] = [:]
-    public var defaultColumnWidth: Double = 150
-    public var defaultRowHeight: Double = 100
-    public var cellPadding: Double = 20
+    public var defaultColumnWidth: Float = 150
+    public var defaultRowHeight: Float = 100
+    public var cellPadding: Float = 20
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -69,20 +69,20 @@ public final class PartitionGridLayoutAlgorithm: LayoutAlgorithm {
         ChannelEdgeRouter().routeEdges(graph)
     }
 }
-func offsets(_ sizes: [Double], gap: Double = 0) -> [Double] {
-    var position = 0.0
+func offsets(_ sizes: [Float], gap: Float = 0) -> [Float] {
+    var position: Float = 0.0
     return sizes.map { size in defer { position += size + gap }; return position }
 }
 
 public final class KandinskyLayoutAlgorithm: LayoutAlgorithm {
-    public var gridPadding: Double = 40
+    public var gridPadding: Float = 40
     public var maxCellsPerRow: Int?
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
         let a = Adjacency(graph), layers = a.layers(maxWidth: maxCellsPerRow ?? .max)
         guard let columns = layers.map(\.count).max() else { return }
-        var widths = Array(repeating: 0.0, count: columns), heights = Array(repeating: 0.0, count: layers.count)
+        var widths = Array(repeating: Float(0.0), count: columns), heights = Array(repeating: Float(0.0), count: layers.count)
         for (r, layer) in layers.enumerated() {
             for (c, i) in layer.enumerated() { widths[c] = max(widths[c], a.nodes[i].width); heights[r] = max(heights[r], a.nodes[i].height) }
         }
@@ -95,9 +95,9 @@ public final class KandinskyLayoutAlgorithm: LayoutAlgorithm {
 }
 
 public final class VerticalStackLayoutAlgorithm: LayoutAlgorithm {
-    public var spacing: Double = 40
-    public var paddingX: Double = 10
-    public var paddingY: Double = 10
+    public var spacing: Float = 40
+    public var paddingX: Float = 10
+    public var paddingY: Float = 10
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -114,7 +114,7 @@ public enum AlignmentMode: Sendable { case none, left, center, right, top, middl
 public final class AlignmentLayoutAlgorithm: LayoutAlgorithm {
     public var horizontalAlignment: AlignmentMode = .none
     public var verticalAlignment: AlignmentMode = .none
-    public var gridSize: Double = 20
+    public var gridSize: Float = 20
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -150,12 +150,12 @@ public final class FillAreaLayoutAlgorithm: LayoutAlgorithm {
         let nodes = graph.nodes.filter { !$0.isGroup }, count = nodes.count
         guard count > 0 else { return }
         let ratio = fillArea.width > 0 && fillArea.height > 0 ? fillArea.width / fillArea.height : 1
-        let cols = min(count, max(1, Int(ceil(sqrt(Double(count) * ratio)))))
+        let cols = min(count, max(1, Int(ceil(sqrt(Float(count) * ratio)))))
         let rows = (count + cols - 1) / cols
-        let cw = fillArea.width > 0 ? fillArea.width / Double(cols) : 1
-        let ch = fillArea.height > 0 ? fillArea.height / Double(rows) : 1
+        let cw = fillArea.width > 0 ? fillArea.width / Float(cols) : 1
+        let ch = fillArea.height > 0 ? fillArea.height / Float(rows) : 1
         for (i, n) in nodes.enumerated() {
-            n.center = Point(x: fillArea.x + (Double(i % cols) + 0.5) * cw, y: fillArea.y + (Double(i / cols) + 0.5) * ch)
+            n.center = Point(x: fillArea.x + (Float(i % cols) + 0.5) * cw, y: fillArea.y + (Float(i / cols) + 0.5) * ch)
         }
         straightEdges(graph)
     }
@@ -165,7 +165,7 @@ public final class ClearAreaLayoutAlgorithm: LayoutAlgorithm {
     public init(_ areaToClear: Rect = Rect(width: 100, height: 100)) { clearArea = areaToClear }
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
-        let gap = 10.0
+        let gap: Float = 10.0
         for n in graph.nodes where n.bounds.intersects(clearArea) {
             let start = n.bounds
             let others = n.isGroup ? [] : graph.nodes.filter { $0 !== n && !$0.isGroup }.map(\.bounds)
@@ -196,7 +196,7 @@ public final class GivenCoordinatesLayoutAlgorithm: LayoutAlgorithm {
     public func applyLayout(_ graph: LayoutGraph) throws { try Task.checkCancellation(); edgeRouter.routeEdges(graph) }
 }
 public final class RemoveOverlapsLayoutAlgorithm: LayoutAlgorithm {
-    public var minSpacing: Double = 10
+    public var minSpacing: Float = 10
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -241,15 +241,15 @@ func followMovedNodes(_ graph: LayoutGraph, from old: [Rect]) {
     }
 }
 private func carried(_ path: [Point], _ ds: Point, _ dt: Point) -> [Point] {
-    var along = [0.0]
+    var along: [Float] = [0.0]
     for (a, b) in zip(path, path.dropFirst()) { along.append(along.last! + (b - a).length) }
     return path.indices.map { i in
-        let f = along.last! > 0 ? along[i] / along.last! : Double(i) / Double(path.count - 1)
+        let f = along.last! > 0 ? along[i] / along.last! : Float(i) / Float(path.count - 1)
         return path[i] + ds * (1 - f) + dt * f
     }
 }
 private func isRectilinear(_ path: [Point]) -> Bool {
-    zip(path, path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-9 || abs($0.y - $1.y) < 1e-9 }
+    zip(path, path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-5 || abs($0.y - $1.y) < 1e-5 }
 }
 /// Slides the legs of a rectilinear route with the moves of its ends: each leg shifts across itself by the end move at
 /// its end of the route (the first and last legs exactly), blending between for the legs in the middle. A single leg
@@ -257,19 +257,19 @@ private func isRectilinear(_ path: [Point]) -> Bool {
 private func carriedRectilinear(_ route: [Point], _ ds: Point, _ dt: Point) -> [Point] {
     let path = compactPath(route)
     guard path.count >= 2 else { return carried(route, ds, dt) }
-    let legs = zip(path, path.dropFirst()).map { abs($0.y - $1.y) < 1e-9 }   // true: horizontal, shifts in y
+    let legs = zip(path, path.dropFirst()).map { abs($0.y - $1.y) < 1e-5 }   // true: horizontal, shifts in y
     guard zip(legs, legs.dropFirst()).allSatisfy({ $0 != $1 }) else { return carried(route, ds, dt) }
     let first = path[0] + ds, last = path[path.count - 1] + dt
     if legs.count == 1 {
-        if legs[0] ? abs(first.y - last.y) < 1e-9 : abs(first.x - last.x) < 1e-9 { return [first, last] }
+        if legs[0] ? abs(first.y - last.y) < 1e-5 : abs(first.x - last.x) < 1e-5 { return [first, last] }
         return legs[0] ? [first, Point(x: (first.x + last.x) / 2, y: first.y), Point(x: (first.x + last.x) / 2, y: last.y), last]
                        : [first, Point(x: first.x, y: (first.y + last.y) / 2), Point(x: last.x, y: (first.y + last.y) / 2), last]
     }
-    var along = [0.0]
+    var along: [Float] = [0.0]
     for (a, b) in zip(path, path.dropFirst()) { along.append(along.last! + (b - a).length) }
-    let total = max(along.last!, 1e-9)
-    let shift = legs.indices.map { j -> Double in
-        let f = j == 0 ? 0 : j == legs.count - 1 ? 1 : (along[j] + along[j + 1]) / (2 * total)
+    let total = max(along.last!, 1e-6)
+    let shift = legs.indices.map { j -> Float in
+        let f: Float = j == 0 ? 0 : j == legs.count - 1 ? 1 : (along[j] + along[j + 1]) / (2 * total)
         let from = legs[j] ? ds.y : ds.x, to = legs[j] ? dt.y : dt.x
         return from + (to - from) * f
     }
@@ -291,14 +291,14 @@ private func rectilinearRoute(_ a: Point, _ b: Point, _ obstacles: [Rect]) -> [P
     candidates += xs.map { [a, Point(x: $0, y: a.y), Point(x: $0, y: b.y), b] } + ys.map { [a, Point(x: a.x, y: $0), Point(x: b.x, y: $0), b] }
     let valid = candidates.map(compactPath).filter { isRectilinear($0) && ObstaclePolyline.clear($0, obstacles) }
     return valid.min { l, r in
-        let a = (l.count, zip(l, l.dropFirst()).reduce(0.0) { $0 + ($1.1 - $1.0).length }), c = (r.count, zip(r, r.dropFirst()).reduce(0.0) { $0 + ($1.1 - $1.0).length })
+        let a = (l.count, zip(l, l.dropFirst()).reduce(Float(0.0)) { $0 + ($1.1 - $1.0).length }), c = (r.count, zip(r, r.dropFirst()).reduce(Float(0.0)) { $0 + ($1.1 - $1.0).length })
         return a < c
     }
 }
 
 /// Force-scan overlap removal (Misue et al. 1995): sweeps each axis in center order and shifts everything
 /// beyond a conflict by the same amount, so no left/right or above/below relation between nodes changes.
-func forceScan(_ nodes: [LayoutNode], spacing: Double) throws {
+func forceScan(_ nodes: [LayoutNode], spacing: Float) throws {
     for horizontal in [true, false] {
         try Task.checkCancellation()
         let centers = nodes.map(\.center)
@@ -308,7 +308,7 @@ func forceScan(_ nodes: [LayoutNode], spacing: Double) throws {
         while i < order.count {
             var k = i
             while k + 1 < order.count && key(order[k + 1]) == key(order[i]) { k += 1 }
-            var shift = 0.0
+            var shift: Float = 0.0
             for m in order[i...k] {
                 for j in order[(k + 1)...] {
                     let a = nodes[m].bounds, b = nodes[j].bounds, d = b.center - a.center
@@ -330,7 +330,7 @@ func forceScan(_ nodes: [LayoutNode], spacing: Double) throws {
 /// Pushes each pair closer than `spacing` on both axes apart along the axis needing the smaller move,
 /// so rows stay rows and columns stay columns. Pairs with one fixed member move only the other;
 /// fixed pairs are left alone. Returns false if the pass budget runs out before every pair is clear.
-func separateOverlaps(_ nodes: [LayoutNode], spacing: Double, movable: [Bool], passes: Int = 200) throws -> Bool {
+func separateOverlaps(_ nodes: [LayoutNode], spacing: Float, movable: [Bool], passes: Int = 200) throws -> Bool {
     let candidates = nodes.indices.filter { !nodes[$0].isGroup }
     for pass in 0..<passes {
         if pass % 16 == 0 { try Task.checkCancellation() }
@@ -364,17 +364,17 @@ func separateOverlaps(_ nodes: [LayoutNode], spacing: Double, movable: [Bool], p
     return false
 }
 public final class CompactDiskLayoutAlgorithm: LayoutAlgorithm {
-    public var spacing: Double = 40
+    public var spacing: Float = 40
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
         let nodes = graph.nodes.filter { !$0.isGroup }.sorted { $0.width * $0.height > $1.width * $1.height }
         guard !nodes.isEmpty else { return }
         let largest = nodes.prefix(max(1, nodes.count / 2))
-        let c = largest.reduce(0.0) { $0 + max($1.width, $1.height) } / Double(largest.count) / 2 + spacing
+        let c = largest.reduce(Float(0.0)) { $0 + max($1.width, $1.height) } / Float(largest.count) / 2 + spacing
         for (i, n) in nodes.enumerated() {
-            let r = c * sqrt(Double(i)), angle = Double(i) * .pi * (3 - sqrt(5))
-            n.center = Point(x: r * cos(angle), y: r * sin(angle))
+            let r = c * sqrt(Float(i)), angle = Double(i) * .pi * (3 - sqrt(5))
+            n.center = Point(x: r * Float(cos(angle)), y: r * Float(sin(angle)))
         }
         straightEdges(graph)
     }

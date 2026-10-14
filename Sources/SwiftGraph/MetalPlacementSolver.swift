@@ -11,7 +11,7 @@ struct MetalPlacementState: Sendable {
     var order: [UInt32]
     var childOffsets: [UInt32] = []
     var children: [UInt32] = []
-    var scalars: [Double]
+    var scalars: [Float]
     var mode: UInt32
     var resource: String
     var conservativeMagnitude: Double
@@ -19,11 +19,11 @@ struct MetalPlacementState: Sendable {
     var nodeCount: Int? = nil
     var discreteGeometrySafe = true
     var hasWork: Bool { !order.isEmpty }
-    func validatePrecision(_ tolerance: Double) throws {
+    func validatePrecision(_ tolerance: Float) throws {
         let values = bounds.flatMap { [$0.x, $0.y, $0.width, $0.height] } + scalars
-        guard values.allSatisfy({ $0.isFinite && Float($0).isFinite }),
+        guard values.allSatisfy(\.isFinite),
               discreteGeometrySafe, conservativeMagnitude.isFinite,
-              conservativeMagnitude * 2e-7 <= tolerance else { throw LayoutExecutionError.precisionLimit }
+              conservativeMagnitude * 2e-7 <= Double(tolerance) else { throw LayoutExecutionError.precisionLimit }
     }
 }
 struct PlacementExecutionResult: Sendable {
@@ -67,11 +67,11 @@ extension MetalForceSolver {
     func placementAsync(_ state: MetalPlacementState,
                         isolation: isolated (any Actor)? = #isolation) async throws -> (bounds: [Rect], gpuSeconds: Double) {
         let pipeline = try pipeline(resource: state.resource, function: state.serial ? "orderedPlacement" : "basicPlacement")
-        let values = state.bounds.map { SIMD4<Float>(Float($0.x), Float($0.y), Float($0.width), Float($0.height)) }
+        let values = state.bounds.map { SIMD4<Float>($0.x, $0.y, $0.width, $0.height) }
         let input = try buffer(values), output = try buffer(values), flags = try buffer(state.flags)
         let records = try buffer(state.records), order = try buffer(state.order)
         let offsets = try buffer(state.childOffsets), children = try buffer(state.children)
-        let scalars = try buffer(state.scalars.map(Float.init))
+        let scalars = try buffer(state.scalars)
         // Scratch accommodates stable sorting, pass-start overlap windows and tree state.
         let scratch = try buffer(Array(repeating: SIMD4<Float>.zero, count: max(1, state.bounds.count * 4 + 4)))
         defer { recycle([input, output, flags, records, order, offsets, children, scalars, scratch]) }
@@ -170,9 +170,9 @@ extension MetalForceSolver {
             let horizontal = state.records[i].x, vertical = state.records[i].y
             let movesX = !aligns || (horizontal >= 1 && horizontal <= 3) || (horizontal == 7 && state.scalars[0] > 0)
             let movesY = !aligns || (vertical >= 4 && vertical <= 6) || (vertical == 7 && state.scalars[0] > 0)
-            let width = state.resource == "BasicLayouts" && state.mode == 6 ? stackWidth : (resizes ? Double(v.z) : state.bounds[i].width)
-            return Rect(x: movesX ? Double(v.x) : state.bounds[i].x, y: movesY ? Double(v.y) : state.bounds[i].y,
-                        width: width, height: state.resource == "BasicLayouts" && state.mode == 6 ? state.bounds[i].height : (resizes ? Double(v.w) : state.bounds[i].height))
+            let width = state.resource == "BasicLayouts" && state.mode == 6 ? stackWidth : (resizes ? v.z : state.bounds[i].width)
+            return Rect(x: movesX ? v.x : state.bounds[i].x, y: movesY ? v.y : state.bounds[i].y,
+                        width: width, height: state.resource == "BasicLayouts" && state.mode == 6 ? state.bounds[i].height : (resizes ? v.w : state.bounds[i].height))
         }, gpuSeconds)
     }
 }

@@ -10,7 +10,7 @@ struct SeededRandom {
 
 /// Barnes–Hut force tree. Rebuild after moving the input points.
 public final class ForceQuadTree {
-    public var theta: Double
+    public var theta: Float
     private final class Cell {
         let bounds: Rect
         var points: [Int] = []
@@ -21,7 +21,9 @@ public final class ForceQuadTree {
     }
     private var root: Cell?
     private var points: [Point] = []
-    public init(theta: Double = 0.8) { self.theta = theta }
+    public init(theta: Float = 0.8) { self.theta = theta }
+    @_disfavoredOverload
+    public init(theta: Double) { self.theta = Float(theta) }
     public func build(_ points: [Point]) {
         self.points = points
         guard let first = points.first else { root = nil; return }
@@ -33,11 +35,11 @@ public final class ForceQuadTree {
         for i in points.indices { insert(i, into: cell, depth: 0) }
     }
     private func insert(_ i: Int, into cell: Cell, depth: Int) {
-        cell.center = (cell.center * Double(cell.mass) + points[i]) / Double(cell.mass + 1); cell.mass += 1
+        cell.center = (cell.center * Float(cell.mass) + points[i]) / Float(cell.mass + 1); cell.mass += 1
         if cell.children.isEmpty && (cell.points.isEmpty || depth >= 40) { cell.points.append(i); return }
         if cell.children.isEmpty {
             let r = cell.bounds, half = r.width / 2
-            cell.children = (0..<4).map { k in Cell(Rect(x: r.x + Double(k % 2) * half, y: r.y + Double(k / 2) * half, width: half, height: half)) }
+            cell.children = (0..<4).map { k in Cell(Rect(x: r.x + Float(k % 2) * half, y: r.y + Float(k / 2) * half, width: half, height: half)) }
             let old = cell.points; cell.points.removeAll()
             for index in old { insert(index, into: cell.children[quadrant(points[index], cell)], depth: depth + 1) }
         }
@@ -46,17 +48,20 @@ public final class ForceQuadTree {
     private func quadrant(_ point: Point, _ cell: Cell) -> Int {
         (point.x >= cell.bounds.center.x ? 1 : 0) + (point.y >= cell.bounds.center.y ? 2 : 0)
     }
-    public func computeForce(nodeIndex: Int, position: Point, repulsionSquared: Double) -> Point {
+    public func computeForce(nodeIndex: Int, position: Point, repulsionSquared: Float) -> Point {
         guard let root else { return .zero }
+        let angle = Double(nodeIndex) * 2.399963229728653
+        let perturbation = Point(x: Float(cos(angle) * 0.1), y: Float(sin(angle) * 0.1))
         var force = Point.zero, stack = [root]
         func contribution(_ other: Point, mass: Int) -> Point {
             var delta = position - other
-            if delta.lengthSquared > 250_000 { return .zero }
-            if delta.lengthSquared < 0.01 {
-                let angle = Double(nodeIndex) * 2.399963229728653
-                delta = Point(x: cos(angle) * 0.1, y: sin(angle) * 0.1)
+            var squared = delta.lengthSquared
+            if squared > 250_000 { return .zero }
+            if squared < 0.01 {
+                delta = perturbation
+                squared = delta.lengthSquared
             }
-            return delta * (repulsionSquared * Double(mass) / delta.lengthSquared)
+            return delta * (repulsionSquared * Float(mass) / squared)
         }
         while let cell = stack.popLast() {
             guard cell.mass > 0 else { continue }
@@ -84,12 +89,12 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
     public typealias OrganicScope = SwiftGraph.OrganicScope
     public let quality: OrganicLayoutQuality
     public var initialization: OrganicInitialization = .automatic
-    public var nodeSeparation: Double = 20
+    public var nodeSeparation: Float = 20
     public var scope: OrganicScope = .all
-    public var iterations: Double
-    public var initialTemperature: Double = 100
-    public var repulsionForce: Double
-    public var attractionForce: Double = 0.05
+    public var iterations: Float
+    public var initialTemperature: Float = 100
+    public var repulsionForce: Float
+    public var attractionForce: Float = 0.05
     public private(set) var lastDiagnostics: OrganicLayoutDiagnostics?
     var preparedPositions = false
     public init(quality: OrganicLayoutQuality = .quality) {
@@ -102,7 +107,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
         try Task.checkCancellation()
         if quality == .quality {
             var configuration = OrganicLayoutConfiguration()
-            guard iterations.isFinite, iterations >= 0, iterations < Double(Int.max / 16) else {
+            guard iterations.isFinite, iterations >= 0, Double(iterations) < Double(Int.max / 16) else {
                 throw LayoutExecutionError.invalidInput("Iterations must be finite and nonnegative.")
             }
             configuration.iterations = Int(ceil(iterations)); configuration.scope = scope
@@ -114,7 +119,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
             var search = try OrganicQualitySearch(checkpoint.snapshot, configuration)
             if configuration.iterations > 0 && search.fixed.contains(false) {
                 for start in search.starts() {
-                    for strength in [0.5, 1.0, 2.0] {
+                    for strength: Float in [0.5, 1.0, 2.0] {
                         let (input, candidate) = search.candidate(start, strength: strength)
                         try search.consider(input.cpuOrganic(candidate))
                     }
@@ -130,45 +135,57 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
         let fixed = nodes.map { ($0.metadata[GraphMetadataKeys.fixed] as? Bool == true) || (scope == .subset && $0.metadata[GraphMetadataKeys.layoutSubset] as? Bool != true) }
         var positions = nodes.map(\.center), random = SeededRandom()
         if !preparedPositions && nodes.allSatisfy({ $0.x == 0 && $0.y == 0 }) {
-            for i in nodes.indices where !fixed[i] { positions[i] = Point(x: random.next() * 1000 + nodes[i].width / 2, y: random.next() * 1000 + nodes[i].height / 2) }
+            for i in nodes.indices where !fixed[i] {
+                positions[i] = Point(x: Float(random.next() * 1000) + nodes[i].width / 2, y: Float(random.next() * 1000) + nodes[i].height / 2)
+            }
         }
+        let minX = positions.map(\.x).min()!, maxX = positions.map(\.x).max()!
+        let minY = positions.map(\.y).min()!, maxY = positions.map(\.y).max()!
+        let origin = Point(x: minX + (maxX - minX) / 2, y: minY + (maxY - minY) / 2)
+        positions = positions.map { $0 - origin }
         let tree = ForceQuadTree(), repulsionSquared = repulsionForce * repulsionForce
-        for iteration in 0..<Int(ceil(iterations)) {
+        let totalIterations = Int(ceil(iterations))
+        let treeStride = (preparedPositions && totalIterations >= 60) ? 15 : 1
+        for iteration in 0..<totalIterations {
             try Task.checkCancellation()
             var displacement = Array(repeating: Point.zero, count: nodes.count)
             if nodes.count >= 64 {
-                tree.build(positions)
-                for i in nodes.indices { displacement[i] = tree.computeForce(nodeIndex: i, position: positions[i], repulsionSquared: repulsionSquared) }
+                if iteration % treeStride == 0 { tree.build(positions) }
+                for i in nodes.indices where !fixed[i] { displacement[i] = tree.computeForce(nodeIndex: i, position: positions[i], repulsionSquared: repulsionSquared) }
             } else {
-                for i in nodes.indices {
+                for i in nodes.indices where !fixed[i] {
                     for j in nodes.indices where i != j {
                         var delta = positions[i] - positions[j]
-                        if delta.lengthSquared < 0.01 { let sign = i > j ? 0.1 : -0.1; delta = Point(x: sign, y: sign) }
-                        if delta.lengthSquared <= 250_000 { displacement[i] = displacement[i] + delta * (repulsionSquared / delta.lengthSquared) }
+                        var squared = delta.lengthSquared
+                        if squared < 0.01 { let sign: Float = i > j ? 0.1 : -0.1; delta = Point(x: sign, y: sign); squared = 0.02 }
+                        if squared <= 250_000 { displacement[i] = displacement[i] + delta * (repulsionSquared / squared) }
                     }
                 }
             }
-            for i in nodes.indices {
-                for j in a.outgoing[i] {
-                    let force = (positions[i] - positions[j]) * attractionForce
-                    displacement[i] = displacement[i] - force; displacement[j] = displacement[j] + force
+            for i in nodes.indices where !fixed[i] {
+                for j in a.neighbors[i] {
+                    displacement[i] = displacement[i] + (positions[j] - positions[i]) * attractionForce
                 }
             }
-            let temperature = max(0, initialTemperature * (1 - Double(iteration) / iterations))
+            let temperature = max(0, initialTemperature * (1 - Float(iteration) / iterations))
             for i in nodes.indices where !fixed[i] {
                 let length = displacement[i].length
                 if length > 0.1 { positions[i] = positions[i] + displacement[i] * (min(length, temperature) / length) }
             }
         }
-        let offset = fixed.contains(true) ? Point.zero : Point(x: positions.map(\.x).min()!, y: positions.map(\.y).min()!)
         try Task.checkCancellation()
-        for i in nodes.indices where !fixed[i] { nodes[i].center = positions[i] - offset }
+        if fixed.contains(true) {
+            for i in nodes.indices where !fixed[i] { nodes[i].center = positions[i] + origin }
+        } else {
+            let outMinX = positions.map(\.x).min()!, outMinY = positions.map(\.y).min()!
+            for i in nodes.indices where !fixed[i] { nodes[i].center = Point(x: positions[i].x - outMinX, y: positions[i].y - outMinY) }
+        }
     }
 }
 
 public final class BarycenterLayoutAlgorithm: LayoutAlgorithm {
     public var iterations = 3
-    public var minSpacing: Double = 10
+    public var minSpacing: Float = 10
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -182,7 +199,7 @@ public final class BarycenterLayoutAlgorithm: LayoutAlgorithm {
             try Task.checkCancellation()
             var next = positions
             for i in a.nodes.indices where !fixed[i] && !a.neighbors[i].isEmpty {
-                next[i] = a.neighbors[i].reduce(Point.zero) { $0 + positions[$1] } / Double(a.neighbors[i].count)
+                next[i] = a.neighbors[i].reduce(Point.zero) { $0 + positions[$1] } / Float(a.neighbors[i].count)
             }
             positions = next
         }

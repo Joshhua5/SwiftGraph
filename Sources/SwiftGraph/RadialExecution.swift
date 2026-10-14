@@ -4,8 +4,8 @@ public enum RadialLayoutStyle: String, CaseIterable, Sendable { case radial, sta
 
 public struct RadialLayoutConfiguration: Sendable {
     /// Minimum spacing between rings (the star's minimum radius).
-    public var spacing: Double
-    public init(spacing: Double = 100) { self.spacing = spacing }
+    public var spacing: Float
+    public init(spacing: Float = 100) { self.spacing = spacing }
     func validate() throws {
         guard spacing.isFinite, spacing >= 0 else {
             throw LayoutExecutionError.invalidInput("Radial spacing must be finite and nonnegative.")
@@ -62,7 +62,7 @@ public extension LayoutBuilder {
         return useAsyncAlgorithm(RadialLayoutOperation(style: .tree, backend: backend, executor: executor, configuration: configuration))
     }
     @discardableResult func applyMindMap(backend: LayoutBackend, executor: LayoutExecutor = .shared,
-                                         layerDistance: Double = 100) -> Self {
+                                         layerDistance: Float = 100) -> Self {
         useRadialTree(backend: backend, executor: executor) { $0.spacing = layerDistance }
             .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
     }
@@ -75,11 +75,11 @@ struct RadialResult: Sendable {
 }
 
 /// Ring membership and angles are determined in Double on CPU. The GPU finds the
-/// tightest pair for each node; those candidate pairs are re-evaluated in Double.
+/// tightest pair for each node; those candidate pairs are re-evaluated on CPU.
 struct RadialRing: Sendable {
     var indices: [Int]
     var angles: [Double]
-    var diameters: [Double]
+    var diameters: [Float]
     var depth: Int
     var minimumChord: Double {
         guard angles.count > 1 else { return 2 }
@@ -95,11 +95,11 @@ struct RadialRing: Sendable {
             angles = angles.indices.map { Double($0) * 2 * .pi / Double(angles.count) }
         }
     }
-    func clearance(_ i: Int, _ j: Int) -> Double {
-        ((diameters[i] + diameters[j]) / 2 + 20) / (2 * abs(sin((angles[i] - angles[j]) / 2)))
+    func clearance(_ i: Int, _ j: Int) -> Float {
+        ((diameters[i] + diameters[j]) / 2 + 20) / Float(2 * abs(sin((angles[i] - angles[j]) / 2)))
     }
-    func cpuClearance() throws -> Double {
-        var radius = 0.0
+    func cpuClearance() throws -> Float {
+        var radius: Float = 0.0
         for i in indices.indices {
             if i % 128 == 0 { try Task.checkCancellation() }
             for j in (i + 1)..<indices.count { radius = max(radius, clearance(i, j)) }
@@ -167,17 +167,17 @@ struct RadialPlacementPlan {
             append(Array(a.nodes.indices), depth: depth, angles: angles)
         }
     }
-    func apply(_ clearances: [Double], to graph: LayoutGraph, spacing: Double) throws {
-        var cursor = 0.0
+    func apply(_ clearances: [Float], to graph: LayoutGraph, spacing: Float) throws {
+        var cursor: Float = 0.0
         for component in components {
-            var previousRadius = 0.0, previousHalf = 0.0
+            var previousRadius: Float = 0.0, previousHalf: Float = 0.0
             for index in component.rings {
                 try Task.checkCancellation()
                 let ring = rings[index], half = (ring.diameters.max() ?? 0) / 2
                 let base = ring.depth == 0 ? 0 : previousRadius + max(spacing, previousHalf + half + 20)
                 let radius = max(base, clearances[index])
                 for (i, node) in ring.indices.enumerated() {
-                    graph.nodes[node].center = Point(x: radius * cos(ring.angles[i]), y: radius * sin(ring.angles[i]))
+                    graph.nodes[node].center = Point(x: radius * Float(cos(ring.angles[i])), y: radius * Float(sin(ring.angles[i])))
                 }
                 previousRadius = radius; previousHalf = half
             }
@@ -203,7 +203,7 @@ extension LayoutExecutor {
             else if !metalEnabled || !Self.isMetalAvailable { chosen = .cpu; reason = .metalUnavailable }
             else { chosen = .metal }
         }
-        var clearances: [Double] = []
+        var clearances: [Float] = []
         if chosen == .metal {
             do {
                 let state = try RadialClearanceState(plan.rings, tolerance: options.maximumCoordinateError)
@@ -213,7 +213,7 @@ extension LayoutExecutor {
                 gpu = result.gpuSeconds; device = metal!.deviceName
                 var offset = 0
                 for ring in plan.rings {
-                    var radius = 0.0
+                    var radius: Float = 0.0
                     for i in ring.indices.indices {
                         let j = Int(result.partners[offset + i]) - offset
                         guard j >= i, j < ring.indices.count else { throw OrganicLayoutError.metalFailure("Invalid radial pair index") }
@@ -246,21 +246,20 @@ struct RadialClearanceState: Sendable {
     var diameters: [Float] = []
     var ends: [UInt32] = []
     var maximumRingSize = 0
-    init(_ rings: [RadialRing], tolerance: Double) throws {
+    init(_ rings: [RadialRing], tolerance: Float) throws {
         for ring in rings {
             try Task.checkCancellation()
             let end = angles.count + ring.indices.count
             guard end < Int(UInt32.max) else { throw LayoutExecutionError.invalidInput("Too many radial nodes") }
             let chord = ring.minimumChord
-            let bound = ((ring.diameters.max() ?? 0) + 20) / chord
+            let bound = (Double(ring.diameters.max() ?? 0) + 20) / chord
             // A conservative Float arithmetic allowance for ranking candidate pairs.
-            // Exact Double radii and coordinates are reconstructed after readback.
-            guard bound.isFinite, Float(bound).isFinite, bound * (1e-6 + 4e-14 / chord) <= tolerance,
-                  ring.diameters.allSatisfy({ Float($0).isFinite }) else { throw LayoutExecutionError.precisionLimit }
+            guard bound.isFinite, Float(bound).isFinite, bound * (1e-6 + 4e-14 / chord) <= Double(tolerance),
+                  ring.diameters.allSatisfy(\.isFinite) else { throw LayoutExecutionError.precisionLimit }
             angles.append(contentsOf: ring.angles.map { angle in
                 let high = Float(angle); return SIMD2(high, Float(angle - Double(high)))
             })
-            diameters.append(contentsOf: ring.diameters.map(Float.init))
+            diameters.append(contentsOf: ring.diameters)
             ends.append(contentsOf: repeatElement(UInt32(end), count: ring.indices.count))
             maximumRingSize = max(maximumRingSize, ring.indices.count)
         }

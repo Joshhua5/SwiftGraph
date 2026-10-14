@@ -114,7 +114,7 @@ final class MetalForceSolver {
                         steps: Range<Int>, input: inout any MTLBuffer, output: inout any MTLBuffer,
                         fixed: any MTLBuffer, offsets: any MTLBuffer, neighbors: any MTLBuffer,
                         computePipeline: (any MTLComputePipelineState)? = nil,
-                        coolingIterationBudget: Double? = nil,
+                        coolingIterationBudget: Float? = nil,
                         treeBuffers: [any MTLBuffer]? = nil, treeCount: Int = 0) throws -> any MTLCommandBuffer {
         guard let command = queue.makeCommandBuffer() else { throw OrganicLayoutError.metalFailure("Could not create command buffer") }
         command.label = "Organic layout iterations \(steps)"
@@ -129,7 +129,7 @@ final class MetalForceSolver {
             }
             let cooled: Float
             if let budget = coolingIterationBudget {
-                cooled = Float(max(0, Double(temperature) * (1 - Double(step) / budget)))
+                cooled = max(0, temperature * (1 - Float(step) / budget))
             } else { cooled = temperature * (1 - Float(step) / Float(iterations)) }
             var p = Parameters(count: UInt32(state.positions.count), temperature: cooled,
                                repulsionSquared: parameters.repulsionSquared, attraction: parameters.attraction, treeCount: UInt32(treeCount))
@@ -169,7 +169,7 @@ final class MetalForceSolver {
         return (result(input, count: state.positions.count), gpuSeconds)
     }
     func solveAsync(_ state: ForceState, iterations: Int, temperature: Float, parameters: ForceParameters, batchSize: Int,
-                    barycenter: Bool = false, coolingIterationBudget: Double? = nil,
+                    barycenter: Bool = false, coolingIterationBudget: Float? = nil,
                     isolation: isolated (any Actor)? = #isolation) async throws -> (positions: [SIMD2<Float>], gpuSeconds: Double, cpuPreparationSeconds: Double) {
         let computePipeline = barycenter ? try getBarycenterPipeline() : pipeline
         var input = try buffer(state.positions), output = try buffer(state.positions)
@@ -186,7 +186,7 @@ final class MetalForceSolver {
                 return SIMD2(Float(cos(angle) * 0.1), Float(sin(angle) * 0.1))
             })
             defer { recycle([perturbations]) }
-            let treeStride = (coolingIterationBudget != nil && iterations >= 60) ? max(1, min(batch, 15)) : 1
+            let treeStride = (coolingIterationBudget != nil && iterations >= 60 && batch >= 15) ? 15 : 1
             for iteration in stride(from: 0, to: iterations, by: treeStride) {
                 try Task.checkCancellation()
                 let preparationStart = ContinuousClock.now

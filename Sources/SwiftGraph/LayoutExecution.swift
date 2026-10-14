@@ -14,28 +14,28 @@ public enum LayoutExecutionError: Error, Equatable, Sendable {
 public struct OrganicLayoutConfiguration: Sendable {
     public let quality: OrganicLayoutQuality
     public var initialization: OrganicInitialization = .automatic
-    public var nodeSeparation: Double = 20
+    public var nodeSeparation: Float = 20
     public var scope: OrganicScope = .all
-    private var storedIterationBudget: Double = 0
+    private var storedIterationBudget: Float = 0
     /// Compatibility step count. Setting it replaces any fractional budget.
     public var iterations: Int {
         get {
             guard storedIterationBudget.isFinite, storedIterationBudget >= 0,
-                  storedIterationBudget < Double(Int.max / 16) else { return 0 }
+                  Double(storedIterationBudget) < Double(Int.max / 16) else { return 0 }
             return Int(ceil(storedIterationBudget))
         }
-        set { storedIterationBudget = Double(newValue) }
+        set { storedIterationBudget = Float(newValue) }
     }
     /// Legacy mode executes ceil(budget) steps and cools using the original fractional
     /// divisor. Quality mode retains its CPU contract of rounding the budget up first.
-    public var iterationBudget: Double {
+    public var iterationBudget: Float {
         get { storedIterationBudget }
         set { storedIterationBudget = newValue }
     }
-    public var initialTemperature: Double = 100
+    public var initialTemperature: Float = 100
     /// Nominal strength; quality mode compares half, nominal and double strength.
-    public var repulsionForce: Double
-    public var attractionForce: Double = 0.05
+    public var repulsionForce: Float
+    public var attractionForce: Float = 0.05
     var preparedPositions = false
     public init(quality: OrganicLayoutQuality = .quality) {
         self.quality = quality
@@ -43,7 +43,7 @@ public struct OrganicLayoutConfiguration: Sendable {
         repulsionForce = quality == .quality ? 100 : 2000
     }
     func validate() throws {
-        guard iterationBudget.isFinite, iterationBudget >= 0, iterationBudget < Double(Int.max / 16),
+        guard iterationBudget.isFinite, iterationBudget >= 0, Double(iterationBudget) < Double(Int.max / 16),
               [initialTemperature, repulsionForce, attractionForce, nodeSeparation].allSatisfy({ $0.isFinite && $0 >= 0 }),
               (repulsionForce * repulsionForce * 4).isFinite else {
             throw LayoutExecutionError.invalidInput("Iterations, temperature, forces and separation must be finite, nonnegative and within numerical range.")
@@ -60,7 +60,7 @@ public struct MetalLayoutOptions: Sendable {
     public var minimumRadialPairCount = 131_072
     public var iterationsPerBatch = 8
     /// Float precision allowance: coordinate ULP for forces/averaging, and pair-ranking error for radial clearance.
-    public var maximumCoordinateError: Double = 0.01
+    public var maximumCoordinateError: Float = 0.01
     public init() {}
     func validate() throws {
         guard minimumNodeCount >= 0, minimumIterations >= 0, minimumBundlingEdgeCount >= 0, minimumRadialPairCount >= 0, iterationsPerBatch > 0,
@@ -192,8 +192,8 @@ public actor LayoutExecutor {
                     ? (snapshot.nodes.count < 64 ? max(options.iterationsPerBatch, min(configuration.iterations, 600)) : max(options.iterationsPerBatch, 15))
                     : min(options.iterationsPerBatch, workBound)
                 let result = try await solver.solveAsync(prepared.state, iterations: configuration.iterations,
-                    temperature: Float(configuration.initialTemperature),
-                    parameters: ForceParameters(repulsionSquared: Float(configuration.repulsionForce * configuration.repulsionForce), attraction: Float(configuration.attractionForce)),
+                    temperature: configuration.initialTemperature,
+                    parameters: ForceParameters(repulsionSquared: configuration.repulsionForce * configuration.repulsionForce, attraction: configuration.attractionForce),
                     batchSize: batchSize,
                     coolingIterationBudget: configuration.iterationBudget)
                 gpuTime = result.gpuSeconds; deviceName = solver.deviceName
@@ -201,14 +201,14 @@ public actor LayoutExecutor {
                 guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
                     throw OrganicLayoutError.metalFailure("Non-finite output coordinates")
                 }
-                guard result.positions.allSatisfy({ Double(max(abs($0.x), abs($0.y)).ulp) <= options.maximumCoordinateError }) else {
+                guard result.positions.allSatisfy({ max(abs($0.x), abs($0.y)).ulp <= options.maximumCoordinateError }) else {
                     throw LayoutExecutionError.precisionLimit
                 }
                 if fixed.contains(true) {
-                    centers = result.positions.map { Point(x: Double($0.x) + prepared.origin.x, y: Double($0.y) + prepared.origin.y) }
+                    centers = result.positions.map { Point(x: $0.x + prepared.origin.x, y: $0.y + prepared.origin.y) }
                 } else {
                     let minX = result.positions.map(\.x).min()!, minY = result.positions.map(\.y).min()!
-                    centers = result.positions.map { Point(x: Double($0.x - minX), y: Double($0.y - minY)) }
+                    centers = result.positions.map { Point(x: $0.x - minX, y: $0.y - minY) }
                 }
             } catch LayoutExecutionError.precisionLimit where backend == .automatic {
                 chosen = .cpu; reason = .precisionLimit
@@ -235,7 +235,7 @@ public actor LayoutExecutor {
         // fallback therefore does not discard successful GPU solves from timing/iteration totals.
         if actual == .metal {
             for positions in starts {
-                for strength in [0.5, 1.0, 2.0] {
+                for strength: Float in [0.5, 1.0, 2.0] {
                     try Task.checkCancellation()
                     let (input, candidate) = search.candidate(positions, strength: strength)
                     _ = try input.prepareMetal(configuration: candidate, fixed: search.fixed, tolerance: options.maximumCoordinateError)
@@ -246,7 +246,7 @@ public actor LayoutExecutor {
         var solverSeconds = 0.0, evaluationSeconds = 0.0, cpuPreparation = 0.0
         var gpu: Double?, device: String?
         for positions in starts {
-            for strength in [0.5, 1.0, 2.0] {
+            for strength: Float in [0.5, 1.0, 2.0] {
                 try Task.checkCancellation()
                 let (input, candidate) = search.candidate(positions, strength: strength)
                 let solveStart = ContinuousClock.now
@@ -347,35 +347,35 @@ struct GeometrySnapshot: Sendable {
         let algorithm = OrganicLayoutAlgorithm(quality: configuration.quality)
         algorithm.preparedPositions = configuration.preparedPositions
         algorithm.initialization = configuration.initialization; algorithm.nodeSeparation = configuration.nodeSeparation
-        algorithm.scope = configuration.scope; algorithm.iterations = configuration.quality == .quality ? Double(configuration.iterations) : configuration.iterationBudget
+        algorithm.scope = configuration.scope; algorithm.iterations = configuration.quality == .quality ? Float(configuration.iterations) : configuration.iterationBudget
         algorithm.initialTemperature = configuration.initialTemperature
         algorithm.repulsionForce = configuration.repulsionForce; algorithm.attractionForce = configuration.attractionForce
         try algorithm.applyLayout(graph)
         return graph.nodes.map(\.center)
     }
-    func prepareMetal(configuration: OrganicLayoutConfiguration, fixed: [Bool], tolerance: Double) throws -> (state: ForceState, origin: Point) {
+    func prepareMetal(configuration: OrganicLayoutConfiguration, fixed: [Bool], tolerance: Float) throws -> (state: ForceState, origin: Point) {
         var centers = nodes.map { $0.bounds.center }
         if !configuration.preparedPositions && nodes.allSatisfy({ $0.bounds.x == 0 && $0.bounds.y == 0 }) {
             var random = SeededRandom()
             for i in nodes.indices where !fixed[i] {
-                centers[i] = Point(x: random.next() * 1_000 + nodes[i].bounds.width / 2,
-                                   y: random.next() * 1_000 + nodes[i].bounds.height / 2)
+                centers[i] = Point(x: Float(random.next() * 1_000) + nodes[i].bounds.width / 2,
+                                   y: Float(random.next() * 1_000) + nodes[i].bounds.height / 2)
             }
         }
         let minX = centers.map(\.x).min()!, maxX = centers.map(\.x).max()!
         let minY = centers.map(\.y).min()!, maxY = centers.map(\.y).max()!
         let origin = Point(x: minX + (maxX - minX) / 2, y: minY + (maxY - minY) / 2)
-        let bound = max(maxX - minX, maxY - minY) / 2 + Double(configuration.iterations) * configuration.initialTemperature
+        let bound = Double(max(maxX - minX, maxY - minY) / 2) + Double(configuration.iterations) * Double(configuration.initialTemperature)
         var neighbors = Array(repeating: [UInt32](), count: nodes.count)
         for e in edges where e.source != e.target {
             neighbors[e.source].append(UInt32(e.target)); neighbors[e.target].append(UInt32(e.source))
         }
         let degree = neighbors.map(\.count).max() ?? 0
-        let forceBound = Double(nodes.count) * configuration.repulsionForce * configuration.repulsionForce * 10
-            + Double(degree) * bound * 4 * configuration.attractionForce
-        guard bound.isFinite, Float(bound).isFinite, Double(Float(bound).ulp) <= tolerance,
+        let forceBound = Double(nodes.count) * Double(configuration.repulsionForce) * Double(configuration.repulsionForce) * 10
+            + Double(degree) * bound * 4 * Double(configuration.attractionForce)
+        guard bound.isFinite, Float(bound).isFinite, Float(bound).ulp <= tolerance,
               forceBound.isFinite, forceBound < Double(sqrt(Float.greatestFiniteMagnitude)) / 4,
-              Float(configuration.initialTemperature).isFinite, Float(configuration.attractionForce).isFinite else {
+              configuration.initialTemperature.isFinite, configuration.attractionForce.isFinite else {
             throw LayoutExecutionError.precisionLimit
         }
         var flat: [UInt32] = [], offsets: [UInt32] = [0]
@@ -383,7 +383,7 @@ struct GeometrySnapshot: Sendable {
             guard flat.count + adjacent.count < Int(UInt32.max) else { throw LayoutExecutionError.invalidInput("Too many edges for Metal indices.") }
             flat.append(contentsOf: adjacent); offsets.append(UInt32(flat.count))
         }
-        return (ForceState(positions: centers.map { SIMD2(Float($0.x - origin.x), Float($0.y - origin.y)) },
+        return (ForceState(positions: centers.map { SIMD2($0.x - origin.x, $0.y - origin.y) },
                            fixed: fixed.map { $0 ? 1 : 0 }, offsets: offsets, neighbors: flat), origin)
     }
 }

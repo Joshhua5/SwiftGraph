@@ -2,15 +2,15 @@ import Foundation
 
 public enum TreeLayoutStyle: String, CaseIterable, Sendable { case tree, balloon, orgChart, treeMap }
 public struct TreeLayoutConfiguration: Sendable {
-    public var nodeSeparation: Double = 50
-    public var levelSeparation: Double = 50
-    public var minRadius: Double = 50
-    public var layerDistance: Double = 80
-    public var siblingDistance: Double = 40
-    public var padding: Double = 5
+    public var nodeSeparation: Float = 50
+    public var levelSeparation: Float = 50
+    public var minRadius: Float = 50
+    public var layerDistance: Float = 80
+    public var siblingDistance: Float = 40
+    public var padding: Float = 5
     public init() {}
     func validate(_ style: TreeLayoutStyle) throws {
-        let values: [Double]
+        let values: [Float]
         switch style {
         case .tree: values = [nodeSeparation, levelSeparation]
         case .balloon: values = [minRadius]
@@ -78,7 +78,7 @@ func treePlacementPlan(_ graph: LayoutGraph, style: TreeLayoutStyle, configurati
     var records = Array(repeating: SIMD4<Int32>(0, -1, 0, 0), count: targets.count)
     var flags = targets.map { UInt32(($0.isGroup ? 1 : 0) | (($0.data as? String)?.lowercased() == "assistant" ? 2 : 0)) }
     let index = Dictionary(uniqueKeysWithValues: targets.enumerated().map { ($0.element, $0.offset) })
-    var mode: UInt32 = 0, scalars: [Double]
+    var mode: UInt32 = 0, scalars: [Float]
     if style == .treeMap {
         mode = 3; scalars = [c.padding]
         var children: [LayoutNode: [LayoutNode]] = [:]
@@ -139,39 +139,35 @@ func treePlacementPlan(_ graph: LayoutGraph, style: TreeLayoutStyle, configurati
     for i in ordered { flags[i] |= 8 }
     var childOffsets: [UInt32] = [0], children: [UInt32] = []
     for list in lists { children.append(contentsOf: list.map(UInt32.init)); childOffsets.append(UInt32(children.count)) }
-    let size = targets.map { max($0.width, $0.height) }.max() ?? 0
+    let size = Double(targets.map { max($0.width, $0.height) }.max() ?? 0)
     let magnitude: Double
-    if style == .treeMap { magnitude = 4_000 + abs(c.padding) * Double(targets.count) * 4 }
+    if style == .treeMap { magnitude = 4_000 + abs(Double(c.padding)) * Double(targets.count) * 4 }
     else if style == .orgChart {
         let assistants = flags.filter { $0 & 10 == 10 }.count
-        let horizontal = Double(targets.count) * (size + abs(c.siblingDistance)) + Double(assistants) * (size + 20)
-        let vertical = Double(records.map { max(0, $0.x) }.max() ?? 0) * abs(c.layerDistance) + Double(assistants) * (size + 30)
+        let horizontal = Double(targets.count) * (size + abs(Double(c.siblingDistance))) + Double(assistants) * (size + 20)
+        let vertical = Double(records.map { max(0, $0.x) }.max() ?? 0) * abs(Double(c.layerDistance)) + Double(assistants) * (size + 30)
         magnitude = (max(horizontal, vertical) + size) * 4
     } else {
-        magnitude = (size + (scalars.map(abs).max() ?? 0) + 1) * Double(max(1, targets.count)) * 4
+        magnitude = (size + Double(scalars.map(abs).max() ?? 0) + 1) * Double(max(1, targets.count)) * 4
     }
     var orientationSafe = true
     if style == .treeMap {
         // Precision analysis propagates dimensions only, never final positions.
         // GPU still computes subtree weights, rectangle sizes and coordinates.
-        var weights = Array(repeating: 0.0, count: targets.count)
-        var exact = targets.map { SIMD2<Double>($0.width, $0.height) }
-        var approximate = exact.map { SIMD2<Float>(Float($0.x), Float($0.y)) }
-        for i in ordered.reversed() { weights[i] = max(1, lists[i].reduce(0) { $0 + weights[$1] }) }
+        var weights = Array(repeating: Float(0.0), count: targets.count)
+        var approximate = targets.map { SIMD2<Float>($0.width, $0.height) }
+        for i in ordered.reversed() { weights[i] = max(1, lists[i].reduce(Float(0)) { $0 + weights[$1] }) }
         for i in ordered {
-            if records[i].z == 1 { exact[i] = SIMD2(1000, 1000); approximate[i] = SIMD2(1000, 1000) }
-            let e = exact[i], a = approximate[i], vertical = e.x > e.y, floatVertical = a.x > a.y
+            if records[i].z == 1 { approximate[i] = SIMD2(1000, 1000) }
+            let a = approximate[i], floatVertical = a.x > a.y
             if lists[i].count > 1 {
-                let nearBoundary = e.x != e.y && abs(Double(a.x) - Double(a.y)) <= Double(max(a.x.ulp, a.y.ulp)) * 8
-                if vertical != floatVertical || nearBoundary { orientationSafe = false }
+                let nearBoundary = a.x != a.y && abs(a.x - a.y) <= max(a.x.ulp, a.y.ulp) * 8
+                if nearBoundary { orientationSafe = false }
             }
-            let inner = SIMD2(max(0, e.x - 2 * c.padding), max(0, e.y - 2 * c.padding))
-            let fInner = SIMD2(max(0, a.x - 2 * Float(c.padding)), max(0, a.y - 2 * Float(c.padding)))
-            let total = max(1, lists[i].reduce(0) { $0 + weights[$1] })
-            let fTotal = max(1, lists[i].reduce(Float(0)) { $0 + Float(weights[$1]) })
+            let fInner = SIMD2(max(0, a.x - 2 * c.padding), max(0, a.y - 2 * c.padding))
+            let fTotal = max(1, lists[i].reduce(Float(0)) { $0 + weights[$1] })
             for child in lists[i] {
-                let ratio = weights[child] / total, fRatio = Float(weights[child]) / fTotal
-                exact[child] = vertical ? SIMD2(inner.x * ratio, inner.y) : SIMD2(inner.x, inner.y * ratio)
+                let fRatio = weights[child] / fTotal
                 approximate[child] = floatVertical ? SIMD2(fInner.x * fRatio, fInner.y) : SIMD2(fInner.x, fInner.y * fRatio)
             }
         }

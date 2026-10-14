@@ -10,38 +10,38 @@ public struct GridCell: Equatable, Sendable {
 }
 /// Defaults match each synchronous layout. Only fields used by the selected style matter.
 public struct BasicLayoutConfiguration: Sendable {
-    public var radius: Double = 300
-    public var cellSpacing: Double = 50
-    private var configuredGridSize: Double?
+    public var radius: Float = 300
+    public var cellSpacing: Float = 50
+    private var configuredGridSize: Float?
     /// Orthogonal defaults to 100; alignment defaults to 20. Setting this familiar
     /// property explicitly configures either style's grid.
-    public var gridSize: Double {
+    public var gridSize: Float {
         get { configuredGridSize ?? 100 }
         set { configuredGridSize = newValue }
     }
     public var cellAssignment: [String: GridCell] = [:]
-    public var defaultColumnWidth: Double = 150
-    public var defaultRowHeight: Double = 100
-    public var cellPadding: Double = 20
-    public var gridPadding: Double = 40
+    public var defaultColumnWidth: Float = 150
+    public var defaultRowHeight: Float = 100
+    public var cellPadding: Float = 20
+    public var gridPadding: Float = 40
     public var maxCellsPerRow: Int?
-    public var spacing: Double = 40
-    public var paddingX: Double = 10
-    public var paddingY: Double = 10
+    public var spacing: Float = 40
+    public var paddingX: Float = 10
+    public var paddingY: Float = 10
     public var horizontalAlignment: AlignmentMode = .none
     public var verticalAlignment: AlignmentMode = .none
     /// Alias for alignment callers, sharing any explicit `gridSize` setting.
-    public var alignmentGridSize: Double {
+    public var alignmentGridSize: Float {
         get { configuredGridSize ?? 20 }
         set { configuredGridSize = newValue }
     }
     public var area: Rect = Rect(width: 100, height: 100)
     public var fillArea: Rect { get { area } set { area = newValue } }
     public var clearArea: Rect { get { area } set { area = newValue } }
-    public var minSpacing: Double = 10
+    public var minSpacing: Float = 10
     public init(style: BasicLayoutStyle? = nil) { if style == .alignment { configuredGridSize = 20 } }
     func validate(_ style: BasicLayoutStyle) throws {
-        let values: [Double]
+        let values: [Float]
         switch style {
         case .circular: values = [radius]
         case .tabular: values = [cellSpacing]
@@ -140,11 +140,11 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     let nodes = graph.nodes, count = nodes.count
     var order = nodes.indices.filter { !nodes[$0].isGroup }
     var records = Array(repeating: SIMD4<Int32>(-1, -1, 0, 0), count: count)
-    var scalars: [Double] = [], mode: UInt32 = 0, serial = false
+    var scalars: [Float] = [], mode: UInt32 = 0, serial = false
     switch style {
     case .circular: mode = 0; scalars = [c.radius]
     case .tabular, .orthogonal:
-        mode = 1; scalars = [style == .tabular ? c.cellSpacing : c.gridSize, Double(Int(ceil(sqrt(Double(order.count)))))]
+        mode = 1; scalars = [style == .tabular ? c.cellSpacing : c.gridSize, Float(Int(ceil(sqrt(Double(order.count)))))]
     case .partitionGrid:
         mode = 2; order = []
         let cells = c.cellAssignment.filter { $0.value.row >= 0 && $0.value.column >= 0 }
@@ -152,7 +152,7 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
         for i in nodes.indices {
             if let cell = cells[nodes[i].id] { records[i] = SIMD4(Int32(cell.row), Int32(cell.column), 0, 0); order.append(i) }
         }
-        scalars = [c.defaultColumnWidth, c.defaultRowHeight, c.cellPadding, Double(rows), Double(columns)]
+        scalars = [c.defaultColumnWidth, c.defaultRowHeight, c.cellPadding, Float(rows), Float(columns)]
     case .kandinsky:
         mode = 3; let a = Adjacency(graph), layers = a.layers(maxWidth: c.maxCellsPerRow ?? .max)
         let indices = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element, $0.offset) })
@@ -166,10 +166,10 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     case .fillArea:
         mode = 5
         let ratio = c.area.width > 0 && c.area.height > 0 ? c.area.width / c.area.height : 1
-        let proposed = ceil(sqrt(Double(order.count) * ratio))
+        let proposed = ceil(sqrt(Double(order.count) * Double(ratio)))
         guard proposed.isFinite, proposed < Double(Int.max) else { throw LayoutExecutionError.invalidInput("Fill-area aspect ratio is too large.") }
         let columns = min(max(1, order.count), max(1, Int(proposed))), rows = (order.count + columns - 1) / columns
-        scalars = [c.area.x, c.area.y, c.area.width, c.area.height, Double(columns), Double(max(1, rows))]
+        scalars = [c.area.x, c.area.y, c.area.width, c.area.height, Float(columns), Float(max(1, rows))]
     case .verticalStack:
         mode = 6; order = Array(nodes.indices); order.sort { nodes[$0].id.compare(nodes[$1].id, options: .numeric) == .orderedAscending }
         scalars = [c.spacing, c.paddingX, c.paddingY]
@@ -200,27 +200,27 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
         }
         if !conflicts { order = [] }
     }
-    let size = nodes.map { max($0.width, $0.height) }.max() ?? 0
-    let coordinate = nodes.map { max(abs($0.x), abs($0.y)) }.max() ?? 0
-    let parameters = scalars.map(abs).max() ?? 0
+    let size = Double(nodes.map { max($0.width, $0.height) }.max() ?? 0)
+    let coordinate = Double(nodes.map { max(abs($0.x), abs($0.y)) }.max() ?? 0)
+    let parameters = Double(scalars.map(abs).max() ?? 0)
     let magnitude: Double
     switch style {
     case .circular:
-        let radius = max(c.radius, Double(order.count) * (size * sqrt(2) + 20) / (2 * .pi))
+        let radius = max(Double(c.radius), Double(order.count) * (size * sqrt(2) + 20) / (2 * .pi))
         magnitude = (2 * radius + 50 + size) * 4
     case .tabular, .orthogonal:
-        magnitude = (size + abs(scalars[0])) * ceil(sqrt(Double(order.count))) * 4 + size
+        magnitude = (size + abs(Double(scalars[0]))) * ceil(sqrt(Double(order.count))) * 4 + size
     case .partitionGrid:
         let usedRows = Double((records.map { max(-1, $0.x) }.max() ?? -1) + 1)
         let usedColumns = Double((records.map { max(-1, $0.y) }.max() ?? -1) + 1)
-        magnitude = max(usedRows * max(abs(c.defaultRowHeight), size + 2 * abs(c.cellPadding)),
-                        usedColumns * max(abs(c.defaultColumnWidth), size + 2 * abs(c.cellPadding))) * 4 + size
+        magnitude = max(usedRows * max(abs(Double(c.defaultRowHeight)), size + 2 * abs(Double(c.cellPadding))),
+                        usedColumns * max(abs(Double(c.defaultColumnWidth)), size + 2 * abs(Double(c.cellPadding)))) * 4 + size
     case .kandinsky:
         let rows = records.map { $0.x }.max() ?? 0, columns = records.map { $0.y }.max() ?? 0
-        magnitude = Double(max(rows, columns) + 1) * (size + abs(c.gridPadding)) * 4 + size
-    case .compactDisk: magnitude = (size + abs(c.spacing)) * sqrt(Double(order.count)) * 4
+        magnitude = Double(max(rows, columns) + 1) * (size + abs(Double(c.gridPadding))) * 4 + size
+    case .compactDisk: magnitude = (size + abs(Double(c.spacing))) * sqrt(Double(order.count)) * 4
     case .fillArea: magnitude = (parameters + size) * 4
-    case .verticalStack: magnitude = (size + abs(c.spacing)) * Double(order.count) * 4 + abs(c.paddingX) + abs(c.paddingY)
+    case .verticalStack: magnitude = (size + abs(Double(c.spacing))) * Double(order.count) * 4 + abs(Double(c.paddingX)) + abs(Double(c.paddingY))
     case .alignment: magnitude = (coordinate + size + parameters) * 4
     case .clearArea: magnitude = (coordinate + parameters + Double(max(1, order.count)) * (size + 10)) * 4
     case .removeOverlaps: magnitude = (coordinate + size + parameters + 1) * Double(max(1, count)) * 4
@@ -229,31 +229,21 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     if style == .alignment && c.alignmentGridSize > 0 {
         for node in nodes {
             for (value, mode) in [(node.x, c.horizontalAlignment), (node.y, c.verticalAlignment)] where mode == .snapToGrid {
-                let exact = (value / c.alignmentGridSize).rounded(.toNearestOrEven)
-                let approximate = (Float(value) / Float(c.alignmentGridSize)).rounded(.toNearestOrEven)
-                if Double(approximate) != exact { discreteSafe = false }
+                let q = value / c.alignmentGridSize
+                let d = abs(q - q.rounded(.toNearestOrEven))
+                if d > 0 && abs(d - 0.5) <= Float(0.5).ulp * 8 { discreteSafe = false }
             }
         }
     } else if style == .removeOverlaps {
-        // Force scan groups equal centers and uses stable tie order. A Float
-        // conversion that merges/splits a group is a discrete precision failure.
+        // Force scan groups equal centers and uses stable tie order. Near-coincident
+        // centers within a few ULPs are rejected for explicit precision protection.
         for horizontal in [true, false] {
-            let key: (Int) -> Double = { horizontal ? nodes[$0].center.x : nodes[$0].center.y }
-            let approximate: (Int) -> Float = { i in
-                horizontal ? Float(nodes[i].x) + Float(nodes[i].width) / 2 : Float(nodes[i].y) + Float(nodes[i].height) / 2
-            }
+            let key: (Int) -> Float = { horizontal ? nodes[$0].center.x : nodes[$0].center.y }
             let sorted = order.sorted { key($0) == key($1) ? $0 < $1 : key($0) < key($1) }
             for k in 1..<max(1, sorted.count) {
-                let a = sorted[k - 1], b = sorted[k]
-                if (key(a) == key(b)) != (approximate(a) == approximate(b)) || approximate(a) > approximate(b) { discreteSafe = false }
+                let a = sorted[k - 1], b = sorted[k], ka = key(a), kb = key(b)
+                if ka != kb && abs(ka - kb) <= max(abs(ka).ulp, abs(kb).ulp) * 8 { discreteSafe = false }
             }
-        }
-    } else if style == .clearArea {
-        let a = SIMD4<Float>(Float(c.area.x), Float(c.area.y), Float(c.area.width), Float(c.area.height))
-        for node in nodes {
-            let r = SIMD4<Float>(Float(node.x), Float(node.y), Float(node.width), Float(node.height))
-            let intersects = r.x < a.x + a.z && r.x + r.z > a.x && r.y < a.y + a.w && r.y + r.w > a.y
-            if intersects != node.bounds.intersects(c.area) { discreteSafe = false }
         }
     }
     let participating = Set(order)

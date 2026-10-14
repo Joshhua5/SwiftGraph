@@ -8,12 +8,12 @@ public struct OrganicQualityMeasurements: Sendable, Equatable {
     public var clearanceViolations: Int
     public var edgeNodeIntersections: Int
     public var crossings: Int
-    public var edgeLength: Double
-    public var drawingArea: Double
+    public var edgeLength: Float
+    public var drawingArea: Float
 
     func precedes(_ other: Self) -> Bool {
-        let lhs = [Double(clearanceViolations), Double(edgeNodeIntersections), Double(crossings), edgeLength, drawingArea]
-        let rhs = [Double(other.clearanceViolations), Double(other.edgeNodeIntersections), Double(other.crossings), other.edgeLength, other.drawingArea]
+        let lhs = [Float(clearanceViolations), Float(edgeNodeIntersections), Float(crossings), edgeLength, drawingArea]
+        let rhs = [Float(other.clearanceViolations), Float(other.edgeNodeIntersections), Float(other.crossings), other.edgeLength, other.drawingArea]
         for (a, b) in zip(lhs, rhs) where a != b { return a < b }
         return false
     }
@@ -60,19 +60,19 @@ struct OrganicQualitySearch {
         let original = snapshot.nodes.map { $0.bounds.center }
         guard configuration.initialization == .automatic else { return [original] }
         let anchors = original.indices.filter { fixed[$0] }
-        let center = anchors.isEmpty ? Point.zero : anchors.reduce(Point.zero) { $0 + original[$1] } / Double(anchors.count)
-        let area = snapshot.nodes.reduce(0.0) { $0 + ($1.bounds.width + configuration.nodeSeparation) * ($1.bounds.height + configuration.nodeSeparation) }
+        let center = anchors.isEmpty ? Point.zero : anchors.reduce(Point.zero) { $0 + original[$1] } / Float(anchors.count)
+        let area = snapshot.nodes.reduce(Float(0)) { $0 + ($1.bounds.width + configuration.nodeSeparation) * ($1.bounds.height + configuration.nodeSeparation) }
         let side = max(100, sqrt(area) * 2)
         return [original] + (42...44).map { seed in
             var random = SeededRandom(state: UInt64(seed)), positions = original
             for i in positions.indices where !fixed[i] {
-                positions[i] = center + Point(x: (random.next() - 0.5) * side, y: (random.next() - 0.5) * side)
+                positions[i] = center + Point(x: Float(random.next() - 0.5) * side, y: Float(random.next() - 0.5) * side)
             }
             return positions
         }
     }
 
-    func candidate(_ positions: [Point], strength: Double) -> (GeometrySnapshot, OrganicLayoutConfiguration) {
+    func candidate(_ positions: [Point], strength: Float) -> (GeometrySnapshot, OrganicLayoutConfiguration) {
         var input = snapshot
         for i in input.nodes.indices {
             let r = input.nodes[i].bounds
@@ -92,7 +92,7 @@ struct OrganicQualitySearch {
             throw LayoutExecutionError.invalidInput("Non-finite organic candidate.")
         }
         var positions = raw
-        // Preserve Double coordinates even when a GPU candidate returned rounded pins.
+        // Preserve exact coordinates for fixed pins.
         for i in positions.indices where fixed[i] { positions[i] = snapshot.nodes[i].bounds.center }
         compact(&positions)
         try separate(&positions)
@@ -115,9 +115,9 @@ struct OrganicQualitySearch {
         }
     }
 
-    static func conflict(_ a: Rect, _ b: Rect, _ gap: Double) -> Bool {
+    static func conflict(_ a: Rect, _ b: Rect, _ gap: Float) -> Bool {
         // A tiny tolerance prevents floating-point boundary contact from becoming a conflict.
-        a.inflated(by: max(0, gap - 1e-7)).intersects(b)
+        a.inflated(by: max(0, gap - 1e-4)).intersects(b)
     }
 
     func separate(_ positions: inout [Point]) throws {
@@ -130,8 +130,8 @@ struct OrganicQualitySearch {
                     guard Self.conflict(bounds[i], bounds[j], gap) else { continue }
                     let dx = (bounds[i].width + bounds[j].width) / 2 + gap - abs(positions[i].x - positions[j].x)
                     let dy = (bounds[i].height + bounds[j].height) / 2 + gap - abs(positions[i].y - positions[j].y)
-                    let shift = dx <= dy ? Point(x: (positions[i].x <= positions[j].x ? -1 : 1) * (dx + 1e-6)) : Point(y: (positions[i].y <= positions[j].y ? -1 : 1) * (dy + 1e-6))
-                    let left = fixed[i] ? 0.0 : (fixed[j] ? 1.0 : 0.5), right = fixed[j] ? 0.0 : (fixed[i] ? 1.0 : 0.5)
+                    let shift = dx <= dy ? Point(x: (positions[i].x <= positions[j].x ? -1 : 1) * (dx + 1e-4)) : Point(y: (positions[i].y <= positions[j].y ? -1 : 1) * (dy + 1e-4))
+                    let left: Float = fixed[i] ? 0.0 : (fixed[j] ? 1.0 : 0.5), right: Float = fixed[j] ? 0.0 : (fixed[i] ? 1.0 : 0.5)
                     positions[i] = positions[i] + shift * left; bounds[i] = bounds[i].translated(by: shift * left)
                     positions[j] = positions[j] - shift * right; bounds[j] = bounds[j].translated(by: shift * -right)
                     moved = true
@@ -153,11 +153,11 @@ struct OrganicQualitySearch {
         zip(positions, nodes).map { p, n in Rect(x: p.x - n.bounds.width / 2, y: p.y - n.bounds.height / 2, width: n.bounds.width, height: n.bounds.height) }
     }
 
-    static func nearestPlacement(_ rect: Rect, obstacles: [Rect], gap: Double) throws -> Point {
+    static func nearestPlacement(_ rect: Rect, obstacles: [Rect], gap: Float) throws -> Point {
         guard obstacles.contains(where: { conflict(rect, $0, gap) }) else { return .zero }
-        let padded = obstacles.map { $0.inflated(by: gap + 1e-6) }
-        let xs = Set([0.0] + padded.flatMap { [$0.left - rect.right, $0.right - rect.left] }).sorted()
-        let ys = Set([0.0] + padded.flatMap { [$0.top - rect.bottom, $0.bottom - rect.top] }).sorted()
+        let padded = obstacles.map { $0.inflated(by: gap + 1e-4) }
+        let xs = Set([Float(0.0)] + padded.flatMap { [$0.left - rect.right, $0.right - rect.left] }).sorted()
+        let ys = Set([Float(0.0)] + padded.flatMap { [$0.top - rect.bottom, $0.bottom - rect.top] }).sorted()
         var best: Point?
         for x in xs {
             try Task.checkCancellation()
@@ -184,9 +184,9 @@ struct OrganicQualitySearch {
                 return hypot(a.width, a.height) / 2 + hypot(b.width, b.height) / 2 + configuration.nodeSeparation
             }.sorted()
             let median = lengths[lengths.count / 2]
-            guard median > 1e-9 else { continue }
+            guard median > 1e-6 else { continue }
             let scale = min(1, 2.5 * targets[targets.count / 2] / median)
-            let center = component.reduce(Point.zero) { $0 + positions[$1] } / Double(component.count)
+            let center = component.reduce(Point.zero) { $0 + positions[$1] } / Float(component.count)
             for i in component { positions[i] = center + (positions[i] - center) * scale }
         }
     }
@@ -201,8 +201,8 @@ struct OrganicQualitySearch {
         }
         var occupied = anchored.map { bounds[$0] }
         let gap = configuration.nodeSeparation
-        let rowWidth = max(200, sqrt(bounds.reduce(0) { $0 + ($1.width + gap) * ($1.height + gap) }))
-        var x = 0.0, y = 0.0, rowHeight = 0.0
+        let rowWidth = max(200, sqrt(bounds.reduce(Float(0)) { $0 + ($1.width + gap) * ($1.height + gap) }))
+        var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
         for c in free {
             try Task.checkCancellation()
             let r = bounds[c], delta: Point
@@ -231,15 +231,15 @@ struct OrganicQualitySearch {
         return result
     }
 
-    static func measure(_ positions: [Point], _ snapshot: GeometrySnapshot, separation: Double) throws -> OrganicQualityMeasurements {
+    static func measure(_ positions: [Point], _ snapshot: GeometrySnapshot, separation: Float) throws -> OrganicQualityMeasurements {
         let rects = zip(positions, snapshot.nodes).map { p, n in Rect(x: p.x - n.bounds.width / 2, y: p.y - n.bounds.height / 2, width: n.bounds.width, height: n.bounds.height) }
-        var overlaps = 0, hits = 0, crossings = 0, length = 0.0
+        var overlaps = 0, hits = 0, crossings = 0, length: Float = 0.0
         for i in rects.indices {
             if i % 32 == 0 { try Task.checkCancellation() }
             for j in rects.indices where j > i { if conflict(rects[i], rects[j], separation) { overlaps += 1 } }
         }
         let edges = snapshot.edges.filter { $0.source != $0.target }
-        let edgeBounds = edges.map { e -> (minX: Double, maxX: Double, minY: Double, maxY: Double) in
+        let edgeBounds = edges.map { e -> (minX: Float, maxX: Float, minY: Float, maxY: Float) in
             let a = positions[e.source], b = positions[e.target]
             return (min(a.x, b.x), max(a.x, b.x), min(a.y, b.y), max(a.y, b.y))
         }
@@ -259,9 +259,9 @@ struct OrganicQualitySearch {
                 guard e.source != f.source && e.source != f.target && e.target != f.source && e.target != f.target else { continue }
                 let c = positions[f.source], d = positions[f.target], u = b - a, v = d - c
                 let denominator = u.x * v.y - u.y * v.x
-                guard abs(denominator) > 1e-9 else { continue }
+                guard abs(denominator) > 1e-6 else { continue }
                 let w = c - a, t = (w.x * v.y - w.y * v.x) / denominator, s = (w.x * u.y - w.y * u.x) / denominator
-                if t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9 { crossings += 1 }
+                if t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5 { crossings += 1 }
             }
         }
         let bounds = rects.first.map { first in rects.dropFirst().reduce(first) { $0.union($1) } } ?? Rect()
