@@ -10,7 +10,7 @@ import Foundation
 /// corners: the lanes slide along the line to fit it, and draw closer together if it is still too small, so
 /// orthogonal routes never end in a diagonal stub. Self-loops are untouched.
 public final class EdgeSeparator: EdgeRouter {
-    public var spacing: Double = 10
+    public var spacing: Float = 10
     /// Edges still sharing a stretch after the last run: the corridor had no room for lanes, or the lanes would cut a node.
     public private(set) var unseparatedEdges: [LayoutEdge] = []
     /// The most lanes any one shared stretch was spread over in the last run.
@@ -20,13 +20,13 @@ public final class EdgeSeparator: EdgeRouter {
     private struct Segment {
         var edge: Int, index: Int
         var start: Point, end: Point, direction: Point, normal: Point
-        var low: Double, high: Double
+        var low: Float, high: Float
         /// Whether the low/high end is an interior bend, which moves along the line when its neighbour shifts.
         var lowBends: Bool, highBends: Bool
     }
-    private static let tolerance = 1e-6
+    private static let tolerance: Float = 1e-5
     /// Segments this close in direction count as running the same way.
-    private static let angleLimit = sin(2 * Double.pi / 180)
+    private static let angleLimit = Float(sin(2 * Double.pi / 180))
 
     public func routeEdges(_ graph: LayoutGraph) { separate(graph.edges, ObstaclePolyline.Scene(graph.nodes)) }
 
@@ -41,7 +41,7 @@ public final class EdgeSeparator: EdgeRouter {
                 let a = path[k], b = path[k + 1], delta = b - a
                 var u = delta / delta.length
                 // One canonical direction per line, so reciprocal edges land on the same track.
-                if u.x < -1e-9 || (abs(u.x) <= 1e-9 && u.y < 0) { u = u * -1 }
+                if u.x < -1e-6 || (abs(u.x) <= 1e-6 && u.y < 0) { u = u * -1 }
                 let ta = Self.dot(u, a), tb = Self.dot(u, b)
                 let startBends = k > 0, endBends = k + 2 < path.count
                 segments.append(Segment(edge: e, index: k, start: a, end: b, direction: u, normal: Point(x: -u.y, y: u.x),
@@ -60,8 +60,8 @@ public final class EdgeSeparator: EdgeRouter {
         for (g, group) in groups.enumerated() {
             if RoutingCompute.isCancelled { return }
             let u = segments[group[0]].direction, n = segments[group[0]].normal
-            var spans: [Int: (low: Double, high: Double, first: Int)] = [:], runs: [Int: [(Double, Double)]] = [:]
-            var perpendicular = 0.0
+            var spans: [Int: (low: Float, high: Float, first: Int)] = [:], runs: [Int: [(Float, Float)]] = [:]
+            var perpendicular: Float = 0.0
             for s in group {
                 let segment = segments[s], ta = Self.dot(u, segment.start), tb = Self.dot(u, segment.end)
                 perpendicular += Self.dot(n, segment.start + segment.end) / 2
@@ -73,7 +73,7 @@ public final class EdgeSeparator: EdgeRouter {
                 }
             }
             guard spans.count > 1 else { continue }
-            let centre = perpendicular / Double(group.count)
+            let centre = perpendicular / Float(group.count)
             // Insertion sort: the pairwise order need not be transitive when some crossing is unavoidable.
             var ordered: [Int] = []
             for e in spans.keys.sorted() {
@@ -91,25 +91,25 @@ public final class EdgeSeparator: EdgeRouter {
             // Lanes sit `spacing` apart about the group. A node beside it pushes them to the open side, keeping a full
             // spacing from it if that still fits and half a spacing otherwise; a corridor too narrow for 1pt lanes stays merged.
             let low = spans.values.map(\.low).min()!, high = spans.values.map(\.high).max()!
-            let room = Self.room(u, n, centre, low, high, scene, reach: Double(count + 1) * spacing)
-            let span = Double(count - 1) * spacing
+            let room = Self.room(u, n, centre, low, high, scene, reach: Float(count + 1) * spacing)
+            let span = Float(count - 1) * spacing
             // A lane that leaves a node square to its face must stay on the face, clear of its corners.
             let faces = group.compactMap { Self.faceSpan(segments[$0], paths, edges, n: n, spacing: spacing) }
             let faceLow = faces.map(\.low).max() ?? -.infinity, faceHigh = faces.map(\.high).min() ?? .infinity
             // The lanes' window is the corridor between the nearest nodes (less `reserve`) within the faces: centred on
             // the group and slid along it to fit, or drawn closer together when it is narrower than the full spread.
-            func place(_ reserve: Double) -> (first: Double, step: Double) {
+            func place(_ reserve: Float) -> (first: Float, step: Float) {
                 let low = max(centre - max(room.minus - reserve, 0), faceLow), high = min(centre + max(room.plus - reserve, 0), faceHigh)
                 guard high >= low else { return (centre, 0) }
-                if high - low >= span - 1e-9 { return (min(max(centre - span / 2, low), high - span), spacing) }
-                return (low, (high - low) / Double(count - 1))
+                if high - low >= span - 1e-5 { return (min(max(centre - span / 2, low), high - span), spacing) }
+                return (low, (high - low) / Float(count - 1))
             }
             var (first, step) = place(spacing)
-            if step < spacing - 1e-9 { (first, step) = place(spacing / 2) }
+            if step < spacing - 1e-5 { (first, step) = place(spacing / 2) }
             guard step >= 1 else { cramped.formUnion(spans.keys); continue }
             widestGroup = max(widestGroup, count)
             for s in group {
-                let segment = segments[s], position = first + Double(lane[segment.edge]!) * step
+                let segment = segments[s], position = first + Float(lane[segment.edge]!) * step
                 shifts[segment.edge][segment.index] = n * (position - Self.dot(n, segment.start + segment.end) / 2)
                 shiftGroup[segment.edge][segment.index] = g
             }
@@ -176,7 +176,7 @@ public final class EdgeSeparator: EdgeRouter {
 
     /// Unions segments of different edges that run the same way (within `angleLimit`, and `spacing` apart across
     /// the stretch they share) and overlap, or come within `reach` of each other at a bend.
-    private static func sharedGroups(_ segments: [Segment], reach: Double, spacing: Double) -> [[Int]] {
+    private static func sharedGroups(_ segments: [Segment], reach: Float, spacing: Float) -> [[Int]] {
         guard segments.count > 1 else { return [] }
         let boxes = segments.map { ObstaclePolyline.bounds([$0.start, $0.end]).inflated(by: reach + tolerance) }
         let tree = QuadTree<Int>(bounds: boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }.inflated(by: 1))
@@ -195,14 +195,14 @@ public final class EdgeSeparator: EdgeRouter {
         return groups.values.filter { $0.count > 1 }.sorted { $0[0] < $1[0] }
     }
 
-    private static func related(_ s: Segment, _ t: Segment, reach: Double, spacing: Double) -> Bool {
+    private static func related(_ s: Segment, _ t: Segment, reach: Float, spacing: Float) -> Bool {
         guard abs(cross(s.direction, t.direction)) <= angleLimit else { return false }
         // `t` in `s`'s frame: along the line and across it.
         let ta = dot(s.direction, t.start), tb = dot(s.direction, t.end), pa = dot(s.normal, t.start), pb = dot(s.normal, t.end)
         let base = dot(s.normal, s.start), low = min(ta, tb), high = max(ta, tb)
         let overlap = min(s.high, high) - max(s.low, low)
         guard overlap > -reach else { return false }
-        func across(_ x: Double) -> Double { abs((abs(tb - ta) < tolerance ? (pa + pb) / 2 : pa + (pb - pa) * (x - ta) / (tb - ta)) - base) }
+        func across(_ x: Float) -> Float { abs((abs(tb - ta) < tolerance ? (pa + pb) / 2 : pa + (pb - pa) * (x - ta) / (tb - ta)) - base) }
         if overlap > tolerance { return max(across(max(s.low, low)), across(min(s.high, high))) <= spacing + tolerance }
         let below = s.high <= low, aligned = dot(s.direction, t.direction) > 0
         let tLow = aligned ? t.lowBends : t.highBends, tHigh = aligned ? t.highBends : t.lowBends
@@ -216,7 +216,7 @@ public final class EdgeSeparator: EdgeRouter {
     private static func precedes(_ a: Int, _ b: Int, _ paths: [[Point]], _ ka: Int, _ kb: Int, _ u: Point) -> Bool {
         for ahead in [true, false] {
             let turn = parting(trail(paths[a], ka, u, ahead), trail(paths[b], kb, u, ahead), ahead ? u : u * -1)
-            if abs(turn) > 1e-9 { return ahead ? turn < 0 : turn > 0 }
+            if abs(turn) > 1e-5 { return ahead ? turn < 0 : turn > 0 }
         }
         // Paths that never part: the lower-index edge keeps to the left of its own travel, which stays
         // consistent round corners, unlike a fixed side of each track.
@@ -227,10 +227,10 @@ public final class EdgeSeparator: EdgeRouter {
 
     /// Free width either side of a shared stretch: the nearer node on that side bounds it.
     /// Nodes further off than `reach` cannot narrow the spread, so only those are looked up.
-    private static func room(_ u: Point, _ n: Point, _ c: Double, _ low: Double, _ high: Double, _ scene: ObstaclePolyline.Scene,
-                             reach: Double) -> (minus: Double, plus: Double) {
+    private static func room(_ u: Point, _ n: Point, _ c: Float, _ low: Float, _ high: Float, _ scene: ObstaclePolyline.Scene,
+                             reach: Float) -> (minus: Float, plus: Float) {
         let window = ObstaclePolyline.bounds([(low, c - reach), (high, c - reach), (low, c + reach), (high, c + reach)].map { u * $0.0 + n * $0.1 })
-        var minus = Double.infinity, plus = Double.infinity
+        var minus = Float.infinity, plus = Float.infinity
         for i in scene.within(window) where !scene.nodes[i].isGroup {
             let r = scene.rects[i]
             let corners = [Point(x: r.left, y: r.top), Point(x: r.right, y: r.top), Point(x: r.left, y: r.bottom), Point(x: r.right, y: r.bottom)]
@@ -248,8 +248,8 @@ public final class EdgeSeparator: EdgeRouter {
     }
 
     /// Signed angle by which trail `a` parts counter-clockwise of trail `b`, both travelling along `direction`.
-    private static func parting(_ a: [Point], _ b: [Point], _ direction: Point) -> Double {
-        func angle(_ d: Point, _ v: Point) -> Double { v.length <= tolerance ? 0 : atan2(cross(d, v), dot(d, v)) }
+    private static func parting(_ a: [Point], _ b: [Point], _ direction: Point) -> Float {
+        func angle(_ d: Point, _ v: Point) -> Float { v.length <= tolerance ? 0 : atan2(cross(d, v), dot(d, v)) }
         // Ends at different points on the shared line: the nearer one turns first while the other runs on.
         if (a[0] - b[0]).length > tolerance {
             let aFirst = dot(direction, a[0]) < dot(direction, b[0])
@@ -264,7 +264,7 @@ public final class EdgeSeparator: EdgeRouter {
         // Still heading the same way but the legs differ in length: the shorter one turns first while the other runs on.
         if i < a.count && i < b.count {
             let va = a[i] - c, vb = b[i] - c
-            if va.length > tolerance, vb.length > tolerance, abs(cross(va, vb)) <= 1e-9 * va.length * vb.length, dot(va, vb) > 0 {
+            if va.length > tolerance, vb.length > tolerance, abs(cross(va, vb)) <= 1e-5 * va.length * vb.length, dot(va, vb) > 0 {
                 let aFirst = va.length < vb.length, turner = aFirst ? a : b, heading = aFirst ? va : vb
                 let turn = i + 1 < turner.count ? angle(heading, turner[i + 1] - turner[i]) : 0
                 return aFirst ? turn : -turn
@@ -283,10 +283,10 @@ public final class EdgeSeparator: EdgeRouter {
             if d1 == d2 { result.append(path[k] + d1); continue }
             let p1 = path[k - 1] + d1, v1 = path[k] - path[k - 1], p2 = path[k] + d2, v2 = path[k + 1] - path[k]
             let denominator = cross(v1, v2), limit = min(4 * max(d1.length, d2.length), 0.5 * min(v1.length, v2.length))
-            if abs(denominator) > 1e-12 * v1.length * v2.length {
+            if abs(denominator) > 1e-6 * v1.length * v2.length {
                 let corner = p1 + v1 * (cross(p2 - p1, v2) / denominator)
                 // A right-angle bend keeps its exact corner (it cannot spike), so orthogonal routes stay orthogonal.
-                if (corner - path[k]).length <= limit || abs(dot(v1, v2)) <= 1e-9 * v1.length * v2.length { result.append(corner); continue }
+                if (corner - path[k]).length <= limit || abs(dot(v1, v2)) <= 1e-5 * v1.length * v2.length { result.append(corner); continue }
             }
             if dot(v1, v2) < 0 { result += [path[k] + d1, path[k] + d2] } else { result.append(path[k] + (d1 + d2) / 2) }
         }
@@ -296,10 +296,10 @@ public final class EdgeSeparator: EdgeRouter {
 
     /// The stretch across a lane (along `n`) that keeps an end leg on the face it leaves: the face less an inset from its
     /// corners, widened to take in the leg's own position. Nil unless the segment is an axis-aligned first or last leg.
-    private static func faceSpan(_ segment: Segment, _ paths: [[Point]], _ edges: [LayoutEdge], n: Point, spacing: Double) -> (low: Double, high: Double)? {
-        guard abs(abs(n.x) - 1) < 1e-9 || abs(abs(n.y) - 1) < 1e-9 else { return nil }
+    private static func faceSpan(_ segment: Segment, _ paths: [[Point]], _ edges: [LayoutEdge], n: Point, spacing: Float) -> (low: Float, high: Float)? {
+        guard abs(abs(n.x) - 1) < 1e-5 || abs(abs(n.y) - 1) < 1e-5 else { return nil }
         let path = paths[segment.edge], edge = edges[segment.edge]
-        var spans: [(low: Double, high: Double)] = []
+        var spans: [(low: Float, high: Float)] = []
         for (isEnd, end, node) in [(segment.index == 0, path[0], edge.source), (segment.index == path.count - 2, path[path.count - 1], edge.target)] where isEnd {
             let r = node.bounds, horizontal = abs(n.y) > 0.5
             let onFace = horizontal ? (abs(end.x - r.left) <= tolerance || abs(end.x - r.right) <= tolerance) && end.y >= r.top - tolerance && end.y <= r.bottom + tolerance
@@ -315,7 +315,7 @@ public final class EdgeSeparator: EdgeRouter {
 
     /// Keeps a shifted end on its node. An end that left its node square to a face is clamped to the face less an inset
     /// from its corners, and the bend beside it moves with it, so the end leg stays square to the face.
-    private static func anchor(_ path: inout [Point], _ original: [Point], atStart: Bool, inside bounds: Rect, spacing: Double) {
+    private static func anchor(_ path: inout [Point], _ original: [Point], atStart: Bool, inside bounds: Rect, spacing: Float) {
         let i = atStart ? 0 : path.count - 1, j = atStart ? 1 : path.count - 2
         guard path.count >= 2, original.count >= 2 else { return }
         let o = original[atStart ? 0 : original.count - 1], b = original[atStart ? 1 : original.count - 2]
@@ -345,9 +345,9 @@ public final class EdgeSeparator: EdgeRouter {
     }
     private static func properCrossing(_ a: Point, _ b: Point, _ c: Point, _ d: Point) -> Bool {
         let u = b - a, v = d - c, denominator = cross(u, v)
-        guard abs(denominator) > 1e-9 * u.length * v.length else { return false }
+        guard abs(denominator) > 1e-5 * u.length * v.length else { return false }
         let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
-        return t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9
+        return t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5
     }
     /// Crossings between two paths.
     private static func crossings(_ p: [Point], _ q: [Point]) -> Int {
@@ -371,9 +371,9 @@ public final class EdgeSeparator: EdgeRouter {
         }
         return Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0, $1) } })
     }
-    private static func overlaps(_ a: (Double, Double), _ b: (Double, Double), reach: Double) -> Bool {
+    private static func overlaps(_ a: (Float, Float), _ b: (Float, Float), reach: Float) -> Bool {
         min(a.1, b.1) - max(a.0, b.0) > -reach
     }
-    private static func dot(_ a: Point, _ b: Point) -> Double { a.x * b.x + a.y * b.y }
-    private static func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
+    private static func dot(_ a: Point, _ b: Point) -> Float { a.x * b.x + a.y * b.y }
+    private static func cross(_ a: Point, _ b: Point) -> Float { a.x * b.y - a.y * b.x }
 }

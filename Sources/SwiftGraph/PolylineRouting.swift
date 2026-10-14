@@ -4,13 +4,13 @@ import Foundation
 /// Detours prefer few bends, avoid crossing routes already laid, and fan out where several share a corner.
 /// Ports are not interpreted.
 public final class PolylineEdgeRouter: EdgeRouter {
-    public var padding: Double = ObstaclePolyline.defaultPadding
+    public var padding: Float = ObstaclePolyline.defaultPadding
     /// Spreads edges sharing a collinear stretch this far apart; 0 leaves them overlapping.
-    public var edgeSpacing: Double = 10
+    public var edgeSpacing: Float = 10
     /// Cost of a half-turn in a detour, in length units; 0 chooses the shortest path alone.
-    public var bendPenalty: Double = 20
+    public var bendPenalty: Float = 20
     /// Cost of crossing a routed segment in a detour, in length units; 0 ignores crossings.
-    public var crossingPenalty: Double = 40
+    public var crossingPenalty: Float = 40
     /// Edges with no clear route; they keep a straight centre-to-centre line so they stay visible.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     /// Edges that still share a stretch with another after separation (no room for lanes, or lanes would cut a node).
@@ -22,7 +22,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
         let scene = ObstaclePolyline.Scene(graph.nodes), routed = ObstaclePolyline.SegmentIndex(bounds: scene.bounds)
         let edges = graph.edges.filter { $0.source !== $0.target }
         var corners: [Point: [ObstaclePolyline.Bend]] = [:], used = Array(repeating: [ObstaclePolyline.Bend](), count: edges.count), detoured: [Int] = []
-        func route(_ i: Int) -> (path: [Point], gap: Double, bends: [ObstaclePolyline.Bend])? {
+        func route(_ i: Int) -> (path: [Point], gap: Float, bends: [ObstaclePolyline.Bend])? {
             scene.route(edges[i], padding: padding, bend: bendPenalty, crossing: crossingPenalty, routed: routed, corners: corners, fan: edgeSpacing)
         }
         func register(_ i: Int, _ bends: [ObstaclePolyline.Bend]) {
@@ -45,7 +45,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
                 let edge = edges[i], old = edge.path
                 routed.remove(owner: i)
                 let before = ObstaclePolyline.cost(old, bend: bendPenalty, crossing: crossingPenalty, routed: routed)
-                if let found = route(i), ObstaclePolyline.cost(found.path, bend: bendPenalty, crossing: crossingPenalty, routed: routed) < before - 1e-9 {
+                if let found = route(i), ObstaclePolyline.cost(found.path, bend: bendPenalty, crossing: crossingPenalty, routed: routed) < before - 1e-4 {
                     edge.path = found.path; register(i, found.bends)
                 }
                 routed.add(edge.path, owner: i)
@@ -60,7 +60,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
 
 /// Obstacle-aware visibility search, shared by the polyline router and layout repairs.
 enum ObstaclePolyline {
-    static let defaultPadding = 10.0
+    static let defaultPadding: Float = 10.0
 
     /// The obstacles of one routing pass, indexed once; a window around each edge is searched first and
     /// widened only when the route found would cut something outside it.
@@ -75,7 +75,7 @@ enum ObstaclePolyline {
             for (i, r) in rects.enumerated() { tree.insert(bounds: r, item: i) }
         }
         /// Every obstacle touching `area`, in index order.
-        func within(_ area: Rect) -> [Int] { tree.query(area.inflated(by: 1e-6)).sorted() }
+        func within(_ area: Rect) -> [Int] { tree.query(area.inflated(by: 1e-5)).sorted() }
         /// Obstacles of `edge` touching `area`: everything but its own ends and the groups containing them.
         func near(_ area: Rect, _ edge: LayoutEdge) -> [Int] {
             within(area).filter { i in
@@ -97,7 +97,7 @@ enum ObstaclePolyline {
             }
         }
         /// Obstacles outside `included` that the route would cut, judged as the search judges them.
-        private func violators(_ path: [Point], _ included: Set<Int>, _ edge: LayoutEdge, gap: Double) -> [Int] {
+        private func violators(_ path: [Point], _ included: Set<Int>, _ edge: LayoutEdge, gap: Float) -> [Int] {
             let start = path[0], end = path[path.count - 1]
             return relevant(ObstaclePolyline.bounds(path).inflated(by: gap), edge, start, end).filter { i in
                 guard !included.contains(i) else { return false }
@@ -108,16 +108,16 @@ enum ObstaclePolyline {
         /// The route of `edge` with the padding it was found at and the corners it bends at; nil when no clear route
         /// exists. Padding is halved, quartered and finally cut to about 1 when padded obstacles seal a corridor.
         /// `corners` holds the bends already at each padded corner, and `fan` is how far apart later ones are spread.
-        func route(_ edge: LayoutEdge, padding: Double, bend: Double = 0, crossing: Double = 0, routed: SegmentIndex? = nil,
-                   corners: [Point: [Bend]] = [:], fan: Double = 0) -> (path: [Point], gap: Double, bends: [Bend])? {
+        func route(_ edge: LayoutEdge, padding: Float, bend: Float = 0, crossing: Float = 0, routed: SegmentIndex? = nil,
+                   corners: [Point: [Bend]] = [:], fan: Float = 0) -> (path: [Point], gap: Float, bends: [Bend])? {
             let start = edge.source.center, end = edge.target.center
-            let gap = padding.isFinite ? max(1e-5, padding) : 10
+            let gap: Float = padding.isFinite ? max(1e-5, padding) : 10
             var ladder = [gap]
-            for g in [gap / 2, gap / 4, 1.0] where g < ladder[ladder.count - 1] { ladder.append(g) }
+            for g in [gap / 2, gap / 4, Float(1.0)] where g < ladder[ladder.count - 1] { ladder.append(g) }
             let window = ObstaclePolyline.bounds([start, end]).inflated(by: 2 * gap + (end - start).length / 4)
             let initial = Set(relevant(window, edge, start, end))
-            var extra: ((Point, Point) -> Double)?
-            if let routed, crossing > 0 { extra = { a, b in crossing * Double(routed.crossings(a, b)) } }
+            var extra: ((Point, Point) -> Float)?
+            if let routed, crossing > 0 { extra = { a, b in crossing * Float(routed.crossings(a, b)) } }
             for level in ladder {
                 var included = initial
                 while true {
@@ -137,7 +137,7 @@ enum ObstaclePolyline {
         }
         /// Edges bending at one padded corner would read as a junction: each later one bends a step further out,
         /// unless that would clear a node's padding or add a crossing. Bends that run alike are left to the separator.
-        private func spread(_ path: [Point], _ corners: [Point: [Bend]], _ edge: LayoutEdge, _ routed: SegmentIndex?, gap: Double, step: Double) -> [Point] {
+        private func spread(_ path: [Point], _ corners: [Point: [Bend]], _ edge: LayoutEdge, _ routed: SegmentIndex?, gap: Float, step: Float) -> [Point] {
             var path = path
             let start = path[0], end = path[path.count - 1]
             func crossings(_ p: [Point]) -> Int { routed.map { index in zip(p, p.dropFirst()).reduce(0) { $0 + index.crossings($1.0, $1.1) } } ?? 0 }
@@ -148,10 +148,10 @@ enum ObstaclePolyline {
                 let a = path[k - 1] - corner, b = path[k + 1] - corner
                 guard a.length > 0, b.length > 0 else { continue }
                 let inward = a / a.length + b / b.length
-                guard inward.length > 1e-9 else { continue }
+                guard inward.length > 1e-6 else { continue }
                 let outward = inward / -inward.length, crossed = crossings(path)
                 for n in stride(from: count, through: 1, by: -1) {
-                    var trial = path; trial[k] = corner + outward * (step * Double(n))
+                    var trial = path; trial[k] = corner + outward * (step * Float(n))
                     if relevant(ObstaclePolyline.bounds(trial).inflated(by: gap), edge, start, end).allSatisfy({ i in
                         let probe = ObstaclePolyline.probe(rects[i], start, end, gap, straight: true)
                         return !zip(trial, trial.dropFirst()).contains { probe.intersectsLine($0, $1) }
@@ -168,7 +168,7 @@ enum ObstaclePolyline {
         /// Whether `other` arrives and leaves the same way (or the reverse), so a separator lane rather than a corner offset serves it.
         func runsWith(_ other: Bend) -> Bool {
             func close(_ a: Point, _ b: Point) -> Bool {
-                abs(a.x * b.y - a.y * b.x) <= sin(5 * Double.pi / 180) * a.length * b.length && a.x * b.x + a.y * b.y > 0
+                abs(a.x * b.y - a.y * b.x) <= Float(sin(5 * Double.pi / 180)) * a.length * b.length && a.x * b.x + a.y * b.y > 0
             }
             return close(toward, other.toward) && close(away, other.away) || close(toward, other.away) && close(away, other.toward)
         }
@@ -187,25 +187,25 @@ enum ObstaclePolyline {
         }
         func remove(owner: Int) { for (i, s) in segments.enumerated() where s.owner == owner { removed.insert(i) } }
         func crossings(_ a: Point, _ b: Point) -> Int {
-            func side(_ p: Point, _ q: Point, _ r: Point) -> Double { (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) }
+            func side(_ p: Point, _ q: Point, _ r: Point) -> Float { (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) }
             return tree.query(ObstaclePolyline.bounds([a, b]).inflated(by: 1e-3)).reduce(0) { count, i in
                 guard !removed.contains(i) else { return count }
                 let (c, d, _) = segments[i]
                 let d1 = side(a, b, c), d2 = side(a, b, d), d3 = side(c, d, a), d4 = side(c, d, b)
-                return count + (d1 * d2 < -1e-9 && d3 * d4 < -1e-9 ? 1 : 0)
+                return count + (d1 * d2 < -1e-5 && d3 * d4 < -1e-5 ? 1 : 0)
             }
         }
     }
     /// The detour search's own measure of a path: length, bends and crossings.
-    static func cost(_ path: [Point], bend: Double, crossing: Double, routed: SegmentIndex) -> Double {
-        var total = 0.0
+    static func cost(_ path: [Point], bend: Float, crossing: Float, routed: SegmentIndex) -> Float {
+        var total: Float = 0.0
         for (k, (a, b)) in zip(path, path.dropFirst()).enumerated() {
-            total += (b - a).length + crossing * Double(routed.crossings(a, b))
+            total += (b - a).length + crossing * Float(routed.crossings(a, b))
             if bend > 0, k > 0 { total += bend * turn(path[k - 1], a, b) / .pi }
         }
         return total
     }
-    static func turn(_ a: Point, _ b: Point, _ c: Point) -> Double {
+    static func turn(_ a: Point, _ b: Point, _ c: Point) -> Float {
         let u = b - a, v = c - b
         return atan2(abs(u.x * v.y - u.y * v.x), u.x * v.x + u.y * v.y)
     }
@@ -232,24 +232,24 @@ enum ObstaclePolyline {
         }
     }
     /// Near endpoints a route may need less padding, but never less body clearance.
-    private static func clearance(_ r: Rect, _ start: Point, _ end: Point, _ gap: Double) -> Double {
-        func distance(_ p: Point) -> Double {
+    private static func clearance(_ r: Rect, _ start: Point, _ end: Point, _ gap: Float) -> Float {
+        func distance(_ p: Point) -> Float {
             max(0, max(max(r.left - p.x, p.x - r.right), max(r.top - p.y, p.y - r.bottom)))
         }
         return min(gap, min(distance(start), distance(end)) / 2)
     }
     /// What a route must stay out of: the padded obstacle, or for a straight line half the padding.
-    private static func probe(_ r: Rect, _ start: Point, _ end: Point, _ gap: Double, straight: Bool) -> Rect {
+    private static func probe(_ r: Rect, _ start: Point, _ end: Point, _ gap: Float, straight: Bool) -> Rect {
         let c = clearance(r, start, end, gap)
-        return straight ? r.inflated(by: c / 2) : r.inflated(by: c).inflated(by: -min(1e-7, c / 2))
+        return straight ? r.inflated(by: c / 2) : r.inflated(by: c).inflated(by: -min(1e-4, c / 2))
     }
 
     /// Shortest path (A* over the visibility graph of padded corners) that keeps the padding clear of `obstacles`.
     /// A straight line needs only half the padding. `bend` charges a half-turn and `extra` a segment; both default to nothing.
-    static func search(_ start: Point, _ end: Point, _ obstacles: [Rect], padding: Double, bend: Double = 0,
-                       extra: ((Point, Point) -> Double)? = nil) -> [Point]? {
+    static func search(_ start: Point, _ end: Point, _ obstacles: [Rect], padding: Float, bend: Float = 0,
+                       extra: ((Point, Point) -> Float)? = nil) -> [Point]? {
         guard !obstacles.contains(where: { $0.contains(start) || $0.contains(end) }) else { return nil }
-        let gap = padding.isFinite ? max(1e-5, padding) : 10
+        let gap: Float = padding.isFinite ? max(1e-5, padding) : 10
         if clear([start, end], obstacles.map { $0.inflated(by: clearance($0, start, end, gap) / 2) }) { return [start, end] }
         var points = [start, end], seen: Set<Point> = [start, end]
         let expanded = obstacles.map { probe($0, start, end, gap, straight: false) }
@@ -264,19 +264,19 @@ enum ObstaclePolyline {
         let tree = QuadTree<Rect>(bounds: expanded.dropFirst().reduce(expanded[0]) { $0.union($1) }.inflated(by: 1))
         for r in expanded { tree.insert(bounds: r, item: r) }
         func visible(_ a: Point, _ b: Point) -> Bool {
-            let area = Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).inflated(by: 1e-6)
+            let area = Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).inflated(by: 1e-5)
             return !tree.query(area).contains { $0.intersectsLine(a, b) }
         }
         let heuristic = points.map { ($0 - end).length }
-        var cost = Array(repeating: Double.infinity, count: points.count), previous = Array(repeating: -1, count: points.count)
+        var cost = Array(repeating: Float.infinity, count: points.count), previous = Array(repeating: -1, count: points.count)
         // Binary min-heap on (estimate, index): the lower index wins ties.
-        var heap: [(Double, Int)] = []
-        func before(_ a: (Double, Int), _ b: (Double, Int)) -> Bool { a.0 == b.0 ? a.1 < b.1 : a.0 < b.0 }
-        func push(_ item: (Double, Int)) {
+        var heap: [(Float, Int)] = []
+        func before(_ a: (Float, Int), _ b: (Float, Int)) -> Bool { a.0 == b.0 ? a.1 < b.1 : a.0 < b.0 }
+        func push(_ item: (Float, Int)) {
             heap.append(item); var c = heap.count - 1
             while c > 0, before(heap[c], heap[(c - 1) / 2]) { heap.swapAt(c, (c - 1) / 2); c = (c - 1) / 2 }
         }
-        func pop() -> (Double, Int)? {
+        func pop() -> (Float, Int)? {
             guard let top = heap.first else { return nil }
             let last = heap.removeLast()
             if !heap.isEmpty {
@@ -293,7 +293,7 @@ enum ObstaclePolyline {
         cost[0] = 0; push((heuristic[0], 0))
         while let (estimate, current) = pop() {
             if RoutingCompute.isCancelled { return nil }
-            if estimate > cost[current] + heuristic[current] + 1e-9 { continue }
+            if estimate > cost[current] + heuristic[current] + 1e-4 { continue }
             if current == 1 {
                 var result = [end], index = 1
                 while previous[index] >= 0 { index = previous[index]; result.append(points[index]) }
@@ -316,7 +316,7 @@ enum ObstaclePolyline {
     /// route keeps its path, or a straight line if it has none, and is returned so callers can report it. Detoured
     /// edges are then separated by `spacing`.
     @discardableResult
-    static func repair(_ graph: LayoutGraph, edges: [LayoutEdge]? = nil, padding: Double = defaultPadding, spacing: Double = 10) -> [LayoutEdge] {
+    static func repair(_ graph: LayoutGraph, edges: [LayoutEdge]? = nil, padding: Float = defaultPadding, spacing: Float = 10) -> [LayoutEdge] {
         let scene = Scene(graph.nodes)
         var detoured: [LayoutEdge] = [], failed: [LayoutEdge] = []
         for edge in (edges ?? graph.edges) where edge.source !== edge.target {

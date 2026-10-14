@@ -4,10 +4,10 @@ import Foundation
 /// Its identity is independent of coordinates; disjoint runs may reuse a slot.
 struct DirectedChannelSegment {
     var id: Int
-    var source: Double
-    var target: Double
-    var low: Double { min(source, target) }
-    var high: Double { max(source, target) }
+    var source: Float
+    var target: Float
+    var low: Float { min(source, target) }
+    var high: Float { max(source, target) }
 }
 
 struct DirectedChannelAllocation {
@@ -18,7 +18,7 @@ struct DirectedChannelAllocation {
     /// strongest preferences first and reverse any that close a cycle. Pairs without a
     /// preference only need distinct slots, so they stay unoriented until the weighted order
     /// is known and are then oriented to add the least depth.
-    static func solve(_ input: [DirectedChannelSegment], clearance: Double) throws -> Self {
+    static func solve(_ input: [DirectedChannelSegment], clearance: Float) throws -> Self {
         let segments = input.filter { abs($0.source - $0.target) > DirectedGeometry.epsilon }.sorted { $0.id < $1.id }
         struct Preference { var from: Int; var to: Int; var weight: Int }
         var preferences: [Preference] = [], neutral: [Preference] = []
@@ -117,14 +117,14 @@ final class DirectedChannelPlan {
         var points: [Point]
     }
     let nodes: [LayoutNode]
-    let ranks: [Double]
+    let ranks: [Float]
     let nodeRanks: [LayoutNode: Int]
-    let clearance: Double, spacing: Double
+    let clearance: Float, spacing: Float
     var chains: [Chain]
 
     init(nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>,
          ports: [LayoutEdge: (Point, Point, Point, Point)], edgeIndices: [LayoutEdge: Int],
-         clearance: Double, spacing: Double) {
+         clearance: Float, spacing: Float) {
         self.nodes = nodes; self.clearance = clearance; self.spacing = spacing
         ranks = Array(Set(nodes.map { $0.center.x })).sorted()
         let byCoordinate = Dictionary(uniqueKeysWithValues: ranks.enumerated().map { ($0.element, $0.offset) })
@@ -152,10 +152,10 @@ final class DirectedChannelPlan {
             try Task.checkCancellation()
             let chain = chains[index]
             guard chain.points.count > 2 else { continue }
-            var intervals: [(Double, Double)] = []
+            var intervals: [(Float, Float)] = []
             for part in 1..<(chain.points.count - 1) {
                 let rank = chain.firstRank + part, y = chain.points[part].y
-                var low = -Double.infinity, high = Double.infinity
+                var low = -Float.infinity, high = Float.infinity
                 for node in nodes where nodeRanks[node] == rank {
                     let r = node.bounds.inflated(by: clearance)
                     if r.bottom <= y { low = max(low, r.bottom) }
@@ -192,7 +192,7 @@ final class DirectedChannelPlan {
 
     /// Slot demand sets the distance between rank columns, with the configured gap
     /// as a lower bound. Coordinates are then materialized from the same allocation.
-    func apply(minimumGap: Double) throws -> [LayoutEdge: [Point]] {
+    func apply(minimumGap: Float) throws -> [LayoutEdge: [Point]] {
         guard ranks.count > 1 else { return [:] }
         try straighten()
         struct Transition { var chain: Int; var part: Int; var segment: DirectedChannelSegment }
@@ -210,7 +210,7 @@ final class DirectedChannelPlan {
         for rank in corridors.indices {
             let allocation = try DirectedChannelAllocation.solve(corridors[rank].map(\.segment), clearance: spacing)
             allocations.append(allocation)
-            let gap = max(minimumGap, Double(allocation.count + 1) * spacing + clearance * 2)
+            let gap = max(minimumGap, Float(allocation.count + 1) * spacing + clearance * 2)
             coordinates.append(coordinates[rank] + widths[rank] / 2 + gap + widths[rank + 1] / 2)
         }
         for node in nodes { node.center.x = coordinates[nodeRanks[node]!] }
@@ -222,16 +222,16 @@ final class DirectedChannelPlan {
             }
             return p
         }
-        var tracks: [Int: [Int: Double]] = [:]
+        var tracks: [Int: [Int: Float]] = [:]
         for rank in corridors.indices {
             let allocation = allocations[rank]
             let low = coordinates[rank] + widths[rank] / 2 + clearance
             let high = coordinates[rank + 1] - widths[rank + 1] / 2 - clearance
             // The gap formula leaves room for every slot at `spacing`; spread the tracks across
             // the channel rather than packing them around its centre.
-            let step = (high - low) / Double(allocation.count + 1)
+            let step = (high - low) / Float(allocation.count + 1)
             for transition in corridors[rank] {
-                tracks[transition.chain, default: [:]][transition.part] = low + Double((allocation.slots[transition.segment.id] ?? 0) + 1) * step
+                tracks[transition.chain, default: [:]][transition.part] = low + Float((allocation.slots[transition.segment.id] ?? 0) + 1) * step
             }
         }
         var result: [LayoutEdge: [Point]] = [:]

@@ -3,14 +3,14 @@ import Foundation
 public struct EdgeBundlingConfiguration: Sendable {
     public var iterations = 30
     public var segments = 10
-    public var k: Double = 0.1
-    public var compatibilityThreshold: Double = 0.6
-    public var bundlingDistance: Double = 500
+    public var k: Float = 0.1
+    public var compatibilityThreshold: Float = 0.6
+    public var bundlingDistance: Float = 500
     /// Clearance kept between bundled control points and other nodes.
-    public var nodePadding: Double = 8
+    public var nodePadding: Float = 8
     /// Lateral gap between edges joining the same two nodes.
-    public var edgeSpacing: Double = 8
-    public var simplifyTolerance: Double = 2
+    public var edgeSpacing: Float = 8
+    public var simplifyTolerance: Float = 2
     public init() {}
     var settings: BundlingSettings {
         BundlingSettings(iterations: iterations, segments: segments, k: k, compatibilityThreshold: compatibilityThreshold, bundlingDistance: bundlingDistance,
@@ -95,7 +95,7 @@ extension LayoutExecutor {
                     let result = try await metal!.bundleAsync(state, iterations: bundler.schedule[cycle].iterations, batchSize: options.iterationsPerBatch)
                     seconds += result.gpuSeconds
                     guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { throw OrganicLayoutError.metalFailure("Non-finite bundle coordinates") }
-                    bundler.finish(cycle: cycle, positions: result.positions.map { Point(x: Double($0.x), y: Double($0.y)) })
+                    bundler.finish(cycle: cycle, positions: result.positions.map { Point(x: $0.x, y: $0.y) })
                 }
                 device = metal!.deviceName; gpuTime = seconds
                 paths = zip(edges, bundler.paths()).map { BundledPath(index: $0.index, points: $1) }
@@ -133,14 +133,14 @@ extension GeometrySnapshot {
         return zip(edges.filter { $0.source != $0.target }, bundler.paths()).map { BundledPath(index: $0.index, points: $1) }
     }
     /// The first cycle's kernel input, after the precision and size checks Metal needs before any submission.
-    func prepareBundling(_ configuration: EdgeBundlingConfiguration, paths: [[Point]] = [], tolerance: Double) throws -> (state: BundlingState, bundler: EdgeBundler) {
+    func prepareBundling(_ configuration: EdgeBundlingConfiguration, paths: [[Point]] = [], tolerance: Float) throws -> (state: BundlingState, bundler: EdgeBundler) {
         var bundler = bundler(configuration, paths: paths)
         guard !bundler.schedule.isEmpty else { throw LayoutExecutionError.invalidInput("Bundling has no iterations to run.") }
         guard bundler.edges.count < Int(UInt32.max), configuration.segments < Int(UInt32.max) / max(1, bundler.edges.count) - 1 else {
             throw LayoutExecutionError.invalidInput("Too many bundle points for Metal indices.")
         }
         let extent = bundler.normalisedExtent
-        guard extent.isFinite, Float(extent).isFinite, Double(Float(extent).ulp) * bundler.unit <= tolerance, configuration.k <= 1e6 else { throw LayoutExecutionError.precisionLimit }
+        guard extent.isFinite, extent.ulp * bundler.unit <= tolerance, configuration.k <= 1e6 else { throw LayoutExecutionError.precisionLimit }
         guard bundler.compatible.count < 8_388_608 else { throw LayoutExecutionError.invalidInput("Metal bundling compatibility exceeds the 64 MiB limit.") }
         return (bundler.state(cycle: 0), bundler)
     }

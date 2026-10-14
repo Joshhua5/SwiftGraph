@@ -2,12 +2,12 @@
 struct GroupLayoutEngine {
     let graph: LayoutGraph
     let groups: [LayoutNode]
-    let padding: Double
+    let padding: Float
     private let containers: [LayoutNode: LayoutNode]
     private let descendants: [LayoutNode: [LayoutNode]]
     private let ownedEdges: [LayoutNode: [LayoutEdge]]
 
-    init(_ graph: LayoutGraph, padding: Double) throws {
+    init(_ graph: LayoutGraph, padding: Float) throws {
         guard padding.isFinite, padding >= 0 else {
             throw LayoutExecutionError.invalidInput("Group padding must be finite and nonnegative.")
         }
@@ -240,14 +240,14 @@ extension GroupLayoutEngine {
         guard groups.count > 1 else { return }
         let boundary = graph.edges.filter { containers[$0.source] !== containers[$0.target] }
         guard !boundary.isEmpty else { return }
-        func length(_ edges: [LayoutEdge]) -> Double {
+        func length(_ edges: [LayoutEdge]) -> Float {
             edges.reduce(0) { sum, edge in
                 sum + zip(edge.path, edge.path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length }
             }
         }
         func contains(_ outer: Rect, _ inner: Rect) -> Bool {
-            inner.left >= outer.left - 1e-7 && inner.right <= outer.right + 1e-7 &&
-            inner.top >= outer.top - 1e-7 && inner.bottom <= outer.bottom + 1e-7
+            inner.left >= outer.left - 1e-5 && inner.right <= outer.right + 1e-5 &&
+            inner.top >= outer.top - 1e-5 && inner.bottom <= outer.bottom + 1e-5
         }
         func obstacles() -> LayoutGraph {
             let routing = subgraph(graph, nodes: graph.nodes)
@@ -282,10 +282,10 @@ extension GroupLayoutEngine {
                     let crossing = incident.filter { members.contains($0.source) != members.contains($0.target) }
                     guard incident.allSatisfy({ !failures.contains($0) && $0.path.count >= 2 }) else { continue }
                     let offsets = incoming.map { $0.source.center - $0.target.center }
-                    let mean = offsets.reduce(.zero) { $0 + $1 / Double(offsets.count) }
+                    let mean = offsets.reduce(.zero) { $0 + $1 / Float(offsets.count) }
                     // Use absolute flow so opposing inputs do not cancel the primary axis.
                     let horizontal = offsets.reduce(0) { $0 + abs($1.y) } >= offsets.reduce(0) { $0 + abs($1.x) }
-                    var low = -Double.infinity, high = Double.infinity
+                    var low = -Float.infinity, high = Float.infinity
                     if group !== graph.root, let content = group.groupContentBounds {
                         low = horizontal ? content.left - node.bounds.left : content.top - node.bounds.top
                         high = horizontal ? content.right - node.bounds.right : content.bottom - node.bounds.bottom
@@ -305,7 +305,7 @@ extension GroupLayoutEngine {
                     }
                     guard low <= high else { continue }
                     let shift = min(high, max(low, horizontal ? mean.x : mean.y))
-                    guard shift.isFinite, abs(shift) > 1e-7 else { continue }
+                    guard shift.isFinite, abs(shift) > 1e-5 else { continue }
                     let nodeState = moved.map { ($0, $0.bounds, $0.groupContentBounds, $0.groupHeaderBounds) }
                     let edgeState = incident.map { ($0, $0.path, $0.labelBounds) }
                     let beforeIncoming = length(incoming), beforeTotal = length(crossing)
@@ -315,7 +315,7 @@ extension GroupLayoutEngine {
                         }
                         for (edge, path, label) in edgeState { edge.path = path; edge.labelBounds = label }
                     }
-                    for fraction in [1.0, 0.5] {
+                    for fraction: Float in [1.0, 0.5] {
                         let delta = horizontal ? Point(x: shift * fraction) : Point(y: shift * fraction)
                         for (n, bounds, content, header) in nodeState {
                             n.bounds = bounds.translated(by: delta)
@@ -342,7 +342,7 @@ extension GroupLayoutEngine {
                                 }
                         }
                         if router.unroutableEdges.isEmpty, fits,
-                           length(incoming) < beforeIncoming - 1e-7, length(crossing) <= beforeTotal + 1e-7,
+                           length(incoming) < beforeIncoming - 1e-5, length(crossing) <= beforeTotal + 1e-5,
                            crossing.allSatisfy({ scene.clear($0.path, $0) }),
                            clearEdges.allSatisfy({ scene.clear($0.path, $0) }) {
                             clearEdges = graph.edges.filter { $0.path.count >= 2 && scene.clear($0.path, $0) }

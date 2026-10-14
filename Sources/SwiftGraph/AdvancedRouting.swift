@@ -3,15 +3,15 @@ import Foundation
 struct BundlingSettings: Sendable {
     var iterations = 30
     var segments = 10
-    var k = 0.1
-    var compatibilityThreshold = 0.6
-    var bundlingDistance = 500.0
+    var k: Float = 0.1
+    var compatibilityThreshold: Float = 0.6
+    var bundlingDistance: Float = 500.0
     /// Clearance kept between bundled control points and other nodes.
-    var nodePadding = 8.0
+    var nodePadding: Float = 8.0
     /// Lateral gap between edges joining the same two nodes.
-    var edgeSpacing = 8.0
+    var edgeSpacing: Float = 8.0
     /// Control points closer than this to the line through their neighbours are dropped.
-    var simplifyTolerance = 2.0
+    var simplifyTolerance: Float = 2.0
 }
 
 /// Force-directed edge bundling (Holten and van Wijk) that starts from the routes edges already have. Edges attract
@@ -24,12 +24,12 @@ struct BundlingSettings: Sendable {
 public final class EdgeBundlingRouter: EdgeRouter {
     public var iterations = 30
     public var segments = 10
-    public var k: Double = 0.1
-    public var compatibilityThreshold: Double = 0.6
-    public var bundlingDistance: Double = 500
-    public var nodePadding: Double = 8
-    public var edgeSpacing: Double = 8
-    public var simplifyTolerance: Double = 2
+    public var k: Float = 0.1
+    public var compatibilityThreshold: Float = 0.6
+    public var bundlingDistance: Float = 500
+    public var nodePadding: Float = 8
+    public var edgeSpacing: Float = 8
+    public var simplifyTolerance: Float = 2
     public init() {}
     var settings: BundlingSettings {
         BundlingSettings(iterations: iterations, segments: segments, k: k, compatibilityThreshold: compatibilityThreshold, bundlingDistance: bundlingDistance,
@@ -60,11 +60,11 @@ struct EdgeBundler {
     let edges: [BundlingEdge]
     /// Each edge's starting route, endpoints exact: its own path when it still joins its nodes, else a straight line.
     let base: [[Point]]
-    let unit: Double
+    let unit: Float
     let origin: Point
     let offsets: [UInt32]
     let compatible: [SIMD2<UInt32>]
-    let springs: [Double]
+    let springs: [Float]
     let schedule: [(segments: Int, iterations: Int)]
     private(set) var points: [[Point]]
     private let tree: QuadTree<Int>
@@ -75,13 +75,13 @@ struct EdgeBundler {
         base = input.map { e in
             var path = e.path
             let ok = path.count >= 2 && path.allSatisfy { $0.x.isFinite && $0.y.isFinite }
-                && e.source >= 0 && e.target >= 0 && nodes[e.source].inflated(by: 1e-6).contains(path[0]) && nodes[e.target].inflated(by: 1e-6).contains(path[path.count - 1])
+                && e.source >= 0 && e.target >= 0 && nodes[e.source].inflated(by: 1e-5).contains(path[0]) && nodes[e.target].inflated(by: 1e-5).contains(path[path.count - 1])
             if !ok { path = [e.from, e.to] }
             return path
         }
         let chords = base.map { ($0[0], $0[$0.count - 1]) }, lengths = chords.map { ($0.1 - $0.0).length }
         let usable = lengths.filter { $0 > 0.1 }
-        unit = usable.isEmpty ? 1 : max(1e-9, usable.reduce(0, +) / Double(usable.count) / 100)
+        unit = usable.isEmpty ? 1 : max(1e-6, usable.reduce(0, +) / Float(usable.count) / 100)
         let all = chords.flatMap { [$0.0, $0.1] }
         origin = all.isEmpty ? .zero : Point(x: (all.map(\.x).min()! + all.map(\.x).max()!) / 2, y: (all.map(\.y).min()! + all.map(\.y).max()!) / 2)
         // Compatibility is decided on the end-to-end chords, so it matches whatever route each edge starts with.
@@ -120,31 +120,31 @@ struct EdgeBundler {
         for i in solidBounds { tree.insert(bounds: nodes[i].inflated(by: padded), item: i) }
     }
     /// How much of `q`, projected onto `p`'s line, lies around `p`'s midpoint (Holten and van Wijk's visibility).
-    private static func visibility(_ p: (Point, Point), _ q: (Point, Point)) -> Double {
+    private static func visibility(_ p: (Point, Point), _ q: (Point, Point)) -> Float {
         let d = p.1 - p.0, length = d.length, n = d / length
-        func along(_ x: Point) -> Double { (x - p.0).x * n.x + (x - p.0).y * n.y }
+        func along(_ x: Point) -> Float { (x - p.0).x * n.x + (x - p.0).y * n.y }
         let i0 = along(q.0), i1 = along(q.1), span = abs(i1 - i0)
-        guard span > 1e-9 else { return 0 }
+        guard span > 1e-6 else { return 0 }
         return max(0, 1 - 2 * abs(length / 2 - (i0 + i1) / 2) / span)
     }
     var cycleCount: Int { schedule.count }
     func normalised(_ p: Point) -> Point { (p - origin) / unit }
     /// Resamples a route to `n` segments by arc length, keeping its own vertices where they land near a sample.
     private static func resample(_ path: [Point], to n: Int) -> [Point] {
-        var along = [0.0]
+        var along: [Float] = [0]
         for (a, b) in zip(path, path.dropFirst()) { along.append(along.last! + (b - a).length) }
         let total = along.last!
         guard total > 0 else { return Array(repeating: path[0], count: n + 1) }
         // Anchors: vertex -> nearest free sample, in order, so the arc position of every sample stays monotone.
-        var anchored = [0: 0.0, n: total], lastIndex = 0
+        var anchored: [Int: Float] = [0: 0, n: total], lastIndex = 0
         for v in 1..<max(1, path.count - 1) {
-            let k = Int((along[v] / total * Double(n)).rounded())
+            let k = Int((along[v] / total * Float(n)).rounded())
             if k > lastIndex && k < n { anchored[k] = along[v]; lastIndex = k }
         }
         let keys = anchored.keys.sorted()
-        var targets = Array(repeating: 0.0, count: n + 1)
+        var targets = Array(repeating: Float(0), count: n + 1)
         for (lo, hi) in zip(keys, keys.dropFirst()) {
-            for k in lo...hi { targets[k] = anchored[lo]! + (anchored[hi]! - anchored[lo]!) * Double(k - lo) / Double(hi - lo) }
+            for k in lo...hi { targets[k] = anchored[lo]! + (anchored[hi]! - anchored[lo]!) * Float(k - lo) / Float(hi - lo) }
         }
         var segment = 0
         return targets.map { s in
@@ -157,20 +157,20 @@ struct EdgeBundler {
         let m = path.count - 1
         guard m != n else { return path }
         return (0...n).map { k in
-            let t = Double(k) / Double(n) * Double(m), i = min(m - 1, Int(t))
-            return path[i] + (path[i + 1] - path[i]) * (t - Double(i))
+            let t = Float(k) / Float(n) * Float(m), i = min(m - 1, Int(t))
+            return path[i] + (path[i + 1] - path[i]) * (t - Float(i))
         }
     }
     /// Control points at the cycle's resolution, normalised for the iteration kernel.
     mutating func state(cycle c: Int) -> BundlingState {
         let n = schedule[c].segments
         points = c == 0 ? base.map { Self.resample($0, to: n) } : points.map { Self.subdivide($0, to: n) }
-        return BundlingState(positions: points.flatMap { $0.map { let q = normalised($0); return SIMD2(Float(q.x), Float(q.y)) } },
-                             offsets: offsets, compatible: compatible, springs: springs.map(Float.init), segments: n)
+        return BundlingState(positions: points.flatMap { $0.map { let q = normalised($0); return SIMD2(q.x, q.y) } },
+                             offsets: offsets, compatible: compatible, springs: springs, segments: n)
     }
-    var normalisedExtent: Double {
+    var normalisedExtent: Float {
         let q = base.flatMap { $0 }.map(normalised)
-        return (q.map { max(abs($0.x), abs($0.y)) }.max() ?? 0) + Double(settings.iterations * 2) * Double(maximumDegree + 1) * 0.1
+        return (q.map { max(abs($0.x), abs($0.y)) }.max() ?? 0) + Float(settings.iterations * 2) * Float(maximumDegree + 1) * 0.1
     }
     /// Takes a cycle's result (normalised), restores exact endpoints and moves interior points out of nodes.
     mutating func finish(cycle c: Int, positions: [Point]) {
@@ -182,7 +182,7 @@ struct EdgeBundler {
             points[i] = path
         }
     }
-    /// The kernel on the CPU, in the same arithmetic as the Metal shader but in Double.
+    /// The kernel on the CPU, in the same Float arithmetic as the Metal shader.
     mutating func runCPU() -> Bool {
         for c in schedule.indices {
             _ = state(cycle: c)
@@ -190,7 +190,7 @@ struct EdgeBundler {
             var current = points.flatMap { $0.map(normalised) }
             for iteration in 0..<count {
                 if RoutingCompute.isCancelled { return false }
-                let step = 0.1 * (1 - Double(iteration) / Double(count))
+                let step: Float = 0.1 * (1 - Float(iteration) / Float(count))
                 var next = current
                 for e in points.indices {
                     for p in 1..<n {
@@ -226,7 +226,7 @@ struct EdgeBundler {
         }
         return p
     }
-    private func blockers(_ a: Point, _ b: Point, edge: Int, clearance: Double) -> [Int] {
+    private func blockers(_ a: Point, _ b: Point, edge: Int, clearance: Float) -> [Int] {
         tree.query(RoutingCompute.bounds(a, b).inflated(by: 0.5)).filter { !own($0, edge: edge) && nodes[$0].inflated(by: clearance).intersectsLine(a, b) }.sorted()
     }
     private func hits(_ path: [Point], edge: Int) -> Int {
@@ -241,13 +241,13 @@ struct EdgeBundler {
                 let a = result[k], b = result[k + 1]
                 if let i = blockers(a, b, edge: edge, clearance: settings.nodePadding / 2).first {
                     let r = nodes[i].inflated(by: settings.nodePadding), d = b - a
-                    var t0 = 0.0, t1 = 1.0
-                    for (origin, delta, low, high) in [(a.x, d.x, r.left, r.right), (a.y, d.y, r.top, r.bottom)] where abs(delta) > 1e-12 {
+                    var t0: Float = 0, t1: Float = 1
+                    for (origin, delta, low, high) in [(a.x, d.x, r.left, r.right), (a.y, d.y, r.top, r.bottom)] where abs(delta) > 1e-6 {
                         let u = (low - origin) / delta, v = (high - origin) / delta
                         t0 = max(t0, min(u, v)); t1 = min(t1, max(u, v))
                     }
                     let mid = pushOut(a + d * ((t0 + t1) / 2), edge: edge)
-                    if (mid - a).length > 1e-6 && (mid - b).length > 1e-6 { result.insert(mid, at: k + 1); changed = true; k += 1 }
+                    if (mid - a).length > 1e-5 && (mid - b).length > 1e-5 { result.insert(mid, at: k + 1); changed = true; k += 1 }
                 }
                 k += 1
             }
@@ -272,10 +272,10 @@ struct EdgeBundler {
         while let (lo, hi) = stack.popLast() {
             guard hi - lo > 1 else { continue }
             let a = path[lo], b = path[hi], d = b - a, length = d.length
-            var worst = lo + 1, deviation = -1.0
+            var worst = lo + 1, deviation: Float = -1
             for i in (lo + 1)..<hi {
                 let w = path[i] - a
-                let distance = length > 1e-12 ? abs(d.x * w.y - d.y * w.x) / length : w.length
+                let distance = length > 1e-6 ? abs(d.x * w.y - d.y * w.x) / length : w.length
                 if distance > deviation { deviation = distance; worst = i }
             }
             if deviation <= settings.simplifyTolerance && blockers(a, b, edge: edge, clearance: settings.nodePadding / 2).isEmpty { continue }
@@ -285,15 +285,15 @@ struct EdgeBundler {
     }
     /// Positions nearest `values` (in lane order) that are at least `gap` apart and within each lane's bounds; where the
     /// bounds leave no room the bounds win and the lanes crowd.
-    private static func lanes(_ values: [Double], gap: Double, low: [Double], high: [Double]) -> [Double] {
-        var blocks: [(sum: Double, count: Int)] = []
+    private static func lanes(_ values: [Float], gap: Float, low: [Float], high: [Float]) -> [Float] {
+        var blocks: [(sum: Float, count: Int)] = []
         for (rank, v) in values.enumerated() {
-            blocks.append((v - Double(rank) * gap, 1))
-            while blocks.count > 1, blocks[blocks.count - 2].sum / Double(blocks[blocks.count - 2].count) > blocks[blocks.count - 1].sum / Double(blocks[blocks.count - 1].count) {
+            blocks.append((v - Float(rank) * gap, 1))
+            while blocks.count > 1, blocks[blocks.count - 2].sum / Float(blocks[blocks.count - 2].count) > blocks[blocks.count - 1].sum / Float(blocks[blocks.count - 1].count) {
                 let last = blocks.removeLast(); blocks[blocks.count - 1].sum += last.sum; blocks[blocks.count - 1].count += last.count
             }
         }
-        var x = blocks.flatMap { b in Array(repeating: b.sum / Double(b.count), count: b.count) }.enumerated().map { $1 + Double($0) * gap }
+        var x = blocks.flatMap { b in Array(repeating: b.sum / Float(b.count), count: b.count) }.enumerated().map { $1 + Float($0) * gap }
         for _ in 0..<3 {
             for r in x.indices.dropFirst() { x[r] = max(x[r], x[r - 1] + gap) }
             for r in x.indices.dropLast().reversed() { x[r] = min(x[r], x[r + 1] - gap) }
@@ -304,16 +304,16 @@ struct EdgeBundler {
     /// Resamples routes at one shared set of arc fractions: every vertex of every route, plus an even grid, so lanes can be
     /// compared point for point while each keeps the corners it was given.
     private func aligned(_ routes: [[Point]]) -> [[Point]] {
-        func arcs(_ r: [Point]) -> [Double] {
-            var along = [0.0]
+        func arcs(_ r: [Point]) -> [Float] {
+            var along: [Float] = [0]
             for (a, b) in zip(r, r.dropFirst()) { along.append(along.last! + (b - a).length) }
             let total = along.last!
-            return total > 0 ? along.map { $0 / total } : r.indices.map { Double($0) / Double(max(1, r.count - 1)) }
+            return total > 0 ? along.map { $0 / total } : r.indices.map { Float($0) / Float(max(1, r.count - 1)) }
         }
         let fractions = routes.map(arcs), grid = max(2, schedule.last?.segments ?? 2)
-        var all = (0...grid).map { Double($0) / Double(grid) } + fractions.flatMap { $0 }
+        var all = (0...grid).map { Float($0) / Float(grid) } + fractions.flatMap { $0 }
         all.sort()
-        var shared: [Double] = []
+        var shared: [Float] = []
         for f in all where shared.isEmpty || f - shared[shared.count - 1] > 1e-3 { shared.append(f) }
         shared[shared.count - 1] = 1
         return routes.indices.map { m in
@@ -334,33 +334,33 @@ struct EdgeBundler {
             // Orientation follows the lower node index, so reciprocal edges share one side convention.
             let routes = aligned(members.map { edges[$0].source > edges[$0].target ? Array(all[$0].reversed()) : all[$0] }), n = routes[0].count - 1
             guard n >= 2 else { continue }
-            var arc = [0.0]
-            for p in 1...n { arc.append(arc[p - 1] + routes.reduce(0.0) { $0 + ($1[p] - $1[p - 1]).length }) }
-            let mean = (0...n).map { p in routes.reduce(Point.zero) { $0 + $1[p] } / Double(routes.count) }
+            var arc: [Float] = [0]
+            for p in 1...n { arc.append(arc[p - 1] + routes.reduce(Float(0)) { $0 + ($1[p] - $1[p - 1]).length }) }
+            let mean = (0...n).map { p in routes.reduce(Point.zero) { $0 + $1[p] } / Float(routes.count) }
             // One normal per control point, from the members' average heading, so every lane is measured across the same line.
             let normals = (0...n).map { p -> Point in
                 let heading = routes.reduce(Point.zero) { sum, r in
-                    let d = r[min(n, p + 1)] - r[max(0, p - 1)]; return sum + d / max(1e-9, d.length)
+                    let d = r[min(n, p + 1)] - r[max(0, p - 1)]; return sum + d / max(1e-6, d.length)
                 }
                 let l = heading.length
-                return l > 1e-9 ? Point(x: -heading.y / l, y: heading.x / l) : .zero
+                return l > 1e-6 ? Point(x: -heading.y / l, y: heading.x / l) : .zero
             }
-            func lateral(_ m: Int, _ p: Int) -> Double { let d = routes[m][p] - mean[p]; return d.x * normals[p].x + d.y * normals[p].y }
-            let drift = routes.indices.map { m in (1..<n).reduce(0.0) { $0 + lateral(m, $1) } }
+            func lateral(_ m: Int, _ p: Int) -> Float { let d = routes[m][p] - mean[p]; return d.x * normals[p].x + d.y * normals[p].y }
+            let drift = routes.indices.map { m in (1..<n).reduce(Float(0)) { $0 + lateral(m, $1) } }
             let order = routes.indices.sorted { (drift[$0], members[$0]) < (drift[$1], members[$1]) }
             var fanned = routes
             for p in 1..<n where normals[p] != .zero {
-                let t = arc[p] / max(1e-9, arc[n]), gap = settings.edgeSpacing * min(1, t / 0.4, (1 - t) / 0.4)
+                let t = arc[p] / max(1e-6, arc[n]), gap = settings.edgeSpacing * min(1, t / 0.4, (1 - t) / 0.4)
                 let v = order.map { lateral($0, p) }
                 // How far each lane may move along the normal before it meets another node's padding.
-                let room = order.map { m -> (low: Double, high: Double) in
-                    let o = routes[m][p], reach = Double(members.count) * settings.edgeSpacing
+                let room = order.map { m -> (low: Float, high: Float) in
+                    let o = routes[m][p], reach = Float(members.count) * settings.edgeSpacing
                     var low = -reach, high = reach
                     for k in tree.query(RoutingCompute.bounds(o - normals[p] * reach, o + normals[p] * reach)) where !own(k, edge: members[0]) {
                         let r = nodes[k].inflated(by: settings.nodePadding)
-                        var s0 = -Double.infinity, s1 = Double.infinity
+                        var s0 = -Float.infinity, s1 = Float.infinity
                         for (origin, direction, a, b) in [(o.x, normals[p].x, r.left, r.right), (o.y, normals[p].y, r.top, r.bottom)] {
-                            if abs(direction) < 1e-12 { if origin <= a || origin >= b { s1 = -.infinity } }
+                            if abs(direction) < 1e-6 { if origin <= a || origin >= b { s1 = -.infinity } }
                             else { let u = (a - origin) / direction, w = (b - origin) / direction; s0 = max(s0, min(u, w)); s1 = min(s1, max(u, w)) }
                         }
                         guard s0 < s1 else { continue }
@@ -382,13 +382,13 @@ struct EdgeBundler {
         return groups.keys.sorted { $0.lexicographicallyPrecedes($1) }.map { groups[$0]! }.filter { $0.count > 1 }
     }
     private static func cross(_ a: [Point], _ b: [Point]) -> Bool {
-        func x(_ p: Point, _ q: Point) -> Double { p.x * q.y - p.y * q.x }
+        func x(_ p: Point, _ q: Point) -> Float { p.x * q.y - p.y * q.x }
         for (p, q) in zip(a, a.dropFirst()) {
             for (r, t) in zip(b, b.dropFirst()) {
                 let u = q - p, v = t - r, den = x(u, v)
-                guard abs(den) > 1e-12 else { continue }
+                guard abs(den) > 1e-6 else { continue }
                 let f = x(r - p, v) / den, g = x(r - p, u) / den
-                if f > 1e-9 && f < 1 - 1e-9 && g > 1e-9 && g < 1 - 1e-9 { return true }
+                if f > 1e-5 && f < 1 - 1e-5 && g > 1e-5 && g < 1 - 1e-5 { return true }
             }
         }
         return false

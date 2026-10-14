@@ -3,14 +3,14 @@ import Foundation
 /// Everything the backends share about one request: the work graph, port-sized nodes and components.
 final class DirectedPlan {
     let graph: LayoutGraph, nodes: [LayoutNode], edges: [LayoutEdge]
-    let edgeIndex: [LayoutEdge: Int], pitch: Double, components: [[Int]]
+    let edgeIndex: [LayoutEdge: Int], pitch: Float, components: [[Int]]
     /// Feedback routed as top lanes outside the ranks; `reversed` feedback is laid out and routed between them like any edge.
     let feedback: Set<LayoutEdge>, reversed: Set<LayoutEdge>
     let start: ContinuousClock.Instant, original: LayoutGraph
     var diagnostics: DirectedLayoutDiagnostics
     var placementTime = 0.0, routingTime = 0.0
     var drawings: [(nodes: [LayoutNode], edges: [LayoutEdge], bounds: Rect)] = []
-    init(graph: LayoutGraph, nodes: [LayoutNode], edges: [LayoutEdge], edgeIndex: [LayoutEdge: Int], feedback: Set<LayoutEdge>, reversed: Set<LayoutEdge>, pitch: Double,
+    init(graph: LayoutGraph, nodes: [LayoutNode], edges: [LayoutEdge], edgeIndex: [LayoutEdge: Int], feedback: Set<LayoutEdge>, reversed: Set<LayoutEdge>, pitch: Float,
          components: [[Int]], diagnostics: DirectedLayoutDiagnostics, start: ContinuousClock.Instant, original: LayoutGraph) {
         self.graph = graph; self.nodes = nodes; self.edges = edges; self.edgeIndex = edgeIndex; self.feedback = feedback; self.reversed = reversed; self.pitch = pitch
         self.components = components; self.diagnostics = diagnostics; self.start = start; self.original = original
@@ -77,7 +77,7 @@ final class DirectedComponentRun {
         for n in members { let w = n.width; n.width = n.height; n.height = w }
         let hierarchy = DirectedHierarchy()
         hierarchy.retainBestSweep = candidate % variants == 0
-        hierarchy.layerSeparation = max(configuration.layerSpacing, min(320, Double(edges.count) * 2.5))
+        hierarchy.layerSeparation = max(configuration.layerSpacing, min(320, Float(edges.count) * 2.5))
         hierarchy.nodeSeparation = configuration.nodeSpacing
         hierarchy.portPitch = plan.pitch
         hierarchy.reversed = plan.reversed

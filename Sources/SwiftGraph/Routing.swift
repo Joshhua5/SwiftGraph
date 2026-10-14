@@ -32,7 +32,7 @@ func compactPath(_ path: [Point]) -> [Point] {
         if result.last == p { continue }
         if result.count >= 2 {
             let a = result[result.count - 2], b = result[result.count - 1], u = b - a, v = p - b
-            if abs(u.x * v.y - u.y * v.x) < 1e-8 && u.x * v.x + u.y * v.y >= 0 { result.removeLast() }
+            if abs(u.x * v.y - u.y * v.x) < 1e-5 && u.x * v.x + u.y * v.y >= 0 { result.removeLast() }
         }
         result.append(p)
     }
@@ -50,7 +50,7 @@ public enum EdgeEndpointClipper {
     private static func clipStart(_ path: [Point], to rect: Rect) -> [Point] {
         let inside = (RoutingCompute.current.flatMap { $0.stages.isEmpty || path.count >= 64 ? $0.contains(path, rect) : nil }) ?? path.map(rect.contains)
         guard inside.first == true, inside.last == false else { return path }
-        let core = rect.inflated(by: -1e-6)
+        let core = rect.inflated(by: -1e-5)
         for k in stride(from: path.count - 2, through: 0, by: -1) {
             let a = path[k], b = path[k + 1]
             // A segment may cross the node without a vertex inside it; grazing the boundary does not count.
@@ -66,13 +66,13 @@ public enum EdgeEndpointClipper {
     }
     private static func shallow(_ a: Point, _ b: Point, _ c: Point) -> Bool {
         let u = b - a, v = c - b, lu = u.length, lv = v.length
-        return lu > 1e-12 && lv > 1e-12 && (u.x * v.x + u.y * v.y) / (lu * lv) > 0.9
+        return lu > 1e-6 && lv > 1e-6 && (u.x * v.x + u.y * v.y) / (lu * lv) > 0.9
     }
     /// Parameter at which segment `a`→`b` leaves `rect`, or nil when it misses it.
-    private static func exit(_ a: Point, _ b: Point, _ rect: Rect) -> Double? {
-        var lo = 0.0, hi = 1.0
+    private static func exit(_ a: Point, _ b: Point, _ rect: Rect) -> Float? {
+        var lo: Float = 0.0, hi: Float = 1.0
         for (origin, delta, low, high) in [(a.x, b.x - a.x, rect.left, rect.right), (a.y, b.y - a.y, rect.top, rect.bottom)] {
-            if abs(delta) < 1e-12 {
+            if abs(delta) < 1e-6 {
                 if origin < low || origin > high { return nil }
             } else {
                 let t1 = (low - origin) / delta, t2 = (high - origin) / delta
@@ -90,9 +90,9 @@ public enum EdgeEndpointClipper {
 /// then nest outward.
 public final class SelfLoopRouter: EdgeRouter {
     /// How far a corner loop reaches beyond the node.
-    public var loopSize: Double = 16
+    public var loopSize: Float = 16
     /// Clearance a loop keeps from other nodes.
-    public var padding: Double = 4
+    public var padding: Float = 4
     /// Loops with no clear corner; they are still drawn at the best one.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
@@ -103,21 +103,21 @@ public final class SelfLoopRouter: EdgeRouter {
         let loopCounts = Dictionary(grouping: loops, by: \.source).mapValues(\.count)
         for edge in loops {
             let node = edge.source, r = node.bounds, corners = used[node, default: []]
-            let ring = Double(corners.count / 4), taken = Set(corners.suffix(corners.count % 4))
+            let ring = Float(corners.count / 4), taken = Set(corners.suffix(corners.count % 4))
             // Rings step outward by 6 along the sides; on small nodes the steps shrink to fit before the middle, so legs stay apart.
             let cap = max(2, min(r.width, r.height) / 2 - 1.5), base = min(max(min(r.width, r.height) / 4, 4), 16, cap)
-            let rings = Double((loopCounts[node, default: 1] + 3) / 4)
+            let rings = Float((loopCounts[node, default: 1] + 3) / 4)
             let inset = base + ring * (rings > 1 ? min(6, max(1, (cap - base) / (rings - 1))) : 6)
             let size = loopSize + ring * 6
             let obstacles = ObstaclePolyline.obstacles(edge, graph).map { $0.inflated(by: padding) }
             // Loops still to be routed carry stale paths; leave them out of the crossing count.
             let routes = graph.edges.filter { $0 !== edge && !pending.contains($0) && $0.path.count >= 2 }.map(\.path)
             let attached = Self.attachments(node, graph)
-            var best: (path: [Point], corner: Int, score: [Double])?, fallback: (path: [Point], corner: Int, score: [Double])?
-            for scale in [1.0, 0.5] where best == nil {
+            var best: (path: [Point], corner: Int, score: [Float])?, fallback: (path: [Point], corner: Int, score: [Float])?
+            for scale: Float in [1.0, 0.5] where best == nil {
                 for corner in 0..<4 where !taken.contains(corner) {
                     let path = Self.loop(r, corner: corner, size: size * scale, inset: inset)
-                    let score = [Double(Self.overlaps(path, routes)), Double(Self.crossings(path, routes)), Double(attached[corner]), Double(corner)]
+                    let score = [Float(Self.overlaps(path, routes)), Float(Self.crossings(path, routes)), Float(attached[corner]), Float(corner)]
                     if ObstaclePolyline.clear(path, obstacles) {
                         if best == nil || score.lexicographicallyPrecedes(best!.score) { best = (path, corner, score) }
                     } else if scale == 1, fallback == nil || score.lexicographicallyPrecedes(fallback!.score) {
@@ -131,8 +131,8 @@ public final class SelfLoopRouter: EdgeRouter {
         }
     }
     /// Corner 0 is top-right, then clockwise.
-    private static func loop(_ r: Rect, corner: Int, size: Double, inset: Double) -> [Point] {
-        let sx: Double = corner < 2 ? 1 : -1, sy: Double = corner == 0 || corner == 3 ? -1 : 1
+    private static func loop(_ r: Rect, corner: Int, size: Float, inset: Float) -> [Point] {
+        let sx: Float = corner < 2 ? 1 : -1, sy: Float = corner == 0 || corner == 3 ? -1 : 1
         let cx = sx > 0 ? r.right : r.left, cy = sy < 0 ? r.top : r.bottom
         let a = min(inset, r.width / 2, r.height / 2)
         return [Point(x: cx - sx * a, y: cy), Point(x: cx - sx * a, y: cy + sy * size), Point(x: cx + sx * size, y: cy + sy * size),
@@ -145,29 +145,29 @@ public final class SelfLoopRouter: EdgeRouter {
         for e in graph.edges where e.source !== e.target && (e.source === node || e.target === node) && e.path.count >= 2 {
             let path = e.source === node ? e.path : e.path.reversed()
             // A route starting at the centre shows its direction at the next point.
-            let p = (path[0] - c).length > 1e-9 ? path[0] : path[1]
+            let p = (path[0] - c).length > 1e-6 ? path[0] : path[1]
             counts[p.x >= c.x ? (p.y < c.y ? 0 : 1) : (p.y < c.y ? 3 : 2)] += 1
         }
         return counts
     }
     /// Segment pairs that run along the same line over a stretch; stacked edges read as one.
     private static func overlaps(_ path: [Point], _ routes: [[Point]]) -> Int {
-        func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
+        func cross(_ a: Point, _ b: Point) -> Float { a.x * b.y - a.y * b.x }
         var count = 0
         for (a, b) in zip(path, path.dropFirst()) {
             let u = b - a, length = u.length
-            guard length > 1e-9 else { continue }
+            guard length > 1e-6 else { continue }
             for route in routes {
-                for (c, d) in zip(route, route.dropFirst()) where abs(cross(u, c - a)) < 1e-6 * length && abs(cross(u, d - a)) < 1e-6 * length {
+                for (c, d) in zip(route, route.dropFirst()) where abs(cross(u, c - a)) < 1e-5 * length && abs(cross(u, d - a)) < 1e-5 * length {
                     let s = (c - a).x * u.x + (c - a).y * u.y, e = (d - a).x * u.x + (d - a).y * u.y
-                    if min(length * length, max(s, e)) - max(0, min(s, e)) > 1e-6 * length { count += 1 }
+                    if min(length * length, max(s, e)) - max(0, min(s, e)) > 1e-5 * length { count += 1 }
                 }
             }
         }
         return count
     }
     private static func crossings(_ path: [Point], _ routes: [[Point]]) -> Int {
-        func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
+        func cross(_ a: Point, _ b: Point) -> Float { a.x * b.y - a.y * b.x }
         var count = 0
         let segments = Array(zip(path, path.dropFirst())), other = routes.flatMap { Array(zip($0, $0.dropFirst())) }
         let flags = RoutingCompute.current?.candidates(segments.map { RoutingCompute.bounds($0.0, $0.1) }, other.map { RoutingCompute.bounds($0.0, $0.1) })
@@ -175,16 +175,16 @@ public final class SelfLoopRouter: EdgeRouter {
             let (a, b) = segment
             for (j, pair) in other.enumerated() where flags == nil || flags![i * other.count + j] != 0 {
                 let (c, d) = pair, u = b - a, v = d - c, denominator = cross(u, v)
-                guard abs(denominator) > 1e-12 else { continue }
+                guard abs(denominator) > 1e-6 else { continue }
                 let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
-                if t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9 { count += 1 }
+                if t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5 { count += 1 }
             }
         }
         return count
     }
 }
 /// Replaces every segment of `path` that crosses an obstacle by a visibility detour; segments with no detour are kept.
-func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Double = 8) -> [Point] {
+func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Float = 8) -> [Point] {
     var result = path, k = 0
     while k + 1 < result.count {
         if RoutingCompute.isCancelled { return result }
@@ -197,17 +197,17 @@ func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Double = 8) ->
 }
 private func overlaps(_ a: Point, _ b: Point, _ c: Point, _ d: Point) -> Bool {
     let u = b - a, v = d - c, length = u.length
-    guard length > 1e-9, v.length > 1e-9 else { return false }
-    let tolerance = 1e-6 * max(length, v.length)
+    guard length > 1e-6, v.length > 1e-6 else { return false }
+    let tolerance = 1e-5 * max(length, v.length)
     guard abs(u.x * v.y - u.y * v.x) < tolerance, abs(u.x * (c - a).y - u.y * (c - a).x) < tolerance else { return false }
     let tc = ((c - a).x * u.x + (c - a).y * u.y) / length, td = ((d - a).x * u.x + (d - a).y * u.y) / length
-    return min(length, max(tc, td)) - max(0, min(tc, td)) > 1e-6
+    return min(length, max(tc, td)) - max(0, min(tc, td)) > 1e-5
 }
 private func onSegment(_ p: Point, _ a: Point, _ b: Point) -> Bool {
     let u = b - a, w = p - a, length = u.length
-    guard length > 1e-9, abs(u.x * w.y - u.y * w.x) < 1e-6 * length else { return false }
+    guard length > 1e-6, abs(u.x * w.y - u.y * w.x) < 1e-5 * length else { return false }
     let t = (w.x * u.x + w.y * u.y) / (length * length)
-    return t > 1e-9 && t < 1 - 1e-9
+    return t > 1e-5 && t < 1 - 1e-5
 }
 /// Straight, or one 45-degree stretch and one axis-aligned stretch. Each edge takes the diagonal at its start or its end,
 /// whichever avoids nodes, then siblings' shared stretches, then bends that sit on another route.
@@ -230,7 +230,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
             guard let bend = bendOf(e) else { continue }
             let first = bends?[i] ?? bend, options = [[a, first, b], [a, b - (first - a), b]]
             let obstacles = ObstaclePolyline.obstacles(e, graph)
-            let scores = options.enumerated().map { k, path -> [Double] in
+            let scores = options.enumerated().map { k, path -> [Int] in
                 let segments = Array(zip(path, path.dropFirst()))
                 let hits = obstacles.filter { r in segments.contains { r.intersectsLine($0.0, $0.1) } }.count
                 var shared = 0, onRoute = 0
@@ -241,7 +241,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
                         if onSegment(path[1], c, f) { onRoute += 1 }
                     }
                 }
-                return [Double(hits), Double(shared), Double(onRoute), Double(k)]
+                return [hits, shared, onRoute, k]
             }
             let best = scores.indices.min { scores[$0].lexicographicallyPrecedes(scores[$1]) }!
             e.path = options[best]; routed.append((e, e.path))
@@ -249,20 +249,20 @@ public final class OctilinearEdgeRouter: EdgeRouter {
     }
 }
 /// Shifts the interior vertices of `path` sideways by `offset` (mitred, capped); the ends stay where they are.
-private func offsetPolyline(_ path: [Point], by offset: Double) -> [Point] {
+private func offsetPolyline(_ path: [Point], by offset: Float) -> [Point] {
     guard path.count > 2 else { return path }
-    func normal(_ a: Point, _ b: Point) -> Point { let d = b - a, l = max(1e-9, d.length); return Point(x: -d.y / l, y: d.x / l) }
+    func normal(_ a: Point, _ b: Point) -> Point { let d = b - a, l = max(1e-6, d.length); return Point(x: -d.y / l, y: d.x / l) }
     return path.indices.map { i in
         guard i > 0 && i < path.count - 1 else { return path[i] }
         let n1 = normal(path[i - 1], path[i]), n2 = normal(path[i], path[i + 1]), sum = n1 + n2, l = sum.length
-        guard l > 1e-9 else { return path[i] }
+        guard l > 1e-6 else { return path[i] }
         return path[i] + sum / l * (offset / max(0.5, l / 2))
     }
 }
 /// Edges between the same two nodes get lanes spread either side of the straight line. When a lane would cross a node
 /// the group follows the shortest way round instead, with the lanes spread along it; a lone edge keeps its route.
 public final class ParallelEdgeRouter: EdgeRouter {
-    public var edgeSpacing: Double = 20
+    public var edgeSpacing: Float = 20
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
         var groups: [Set<LayoutNode>: [LayoutEdge]] = [:]
@@ -275,7 +275,7 @@ public final class ParallelEdgeRouter: EdgeRouter {
             }
             let a = edges[0].source.center, b = edges[0].target.center, delta = b - a, length = max(0.001, delta.length)
             let normal = Point(x: -delta.y / length, y: delta.x / length)
-            let offsets = edges.indices.map { (Double($0) - Double(edges.count - 1) / 2) * edgeSpacing }
+            let offsets = edges.indices.map { (Float($0) - Float(edges.count - 1) / 2) * edgeSpacing }
             let midpoints = RoutingCompute.current?.parallel(Array(repeating: a, count: edges.count), Array(repeating: b, count: edges.count), offsets: offsets)
             let obstacles = ObstaclePolyline.obstacles(edges[0], graph)
             var base: [Point]??
@@ -295,7 +295,7 @@ public final class ParallelEdgeRouter: EdgeRouter {
 /// turns into its leaf. Leaves are grouped by column (or row) and every group has its own parallel lane, so the shared
 /// stretch shows which leaves belong together. Legs that would cross a node are detoured.
 public final class BusEdgeRouter: EdgeRouter {
-    public var busSpacing: Double = 20
+    public var busSpacing: Float = 20
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
         var processed = Set<LayoutEdge>()
@@ -305,12 +305,12 @@ public final class BusEdgeRouter: EdgeRouter {
             guard edges.count >= 3 else { continue }
             let others = edges.map { $0.source === hub ? $0.target : $0.source }
             let horizontal = others.map(\.x).max()! - others.map(\.x).min()! > others.map(\.y).max()! - others.map(\.y).min()!
-            let mean = others.reduce(Point.zero) { $0 + $1.center } / Double(others.count)
+            let mean = others.reduce(Point.zero) { $0 + $1.center } / Float(others.count)
             // Lanes sit across the trunk axis: y for a horizontal bus, x for a vertical one.
-            let side: Double = (horizontal ? mean.y >= hub.center.y : mean.x >= hub.center.x) ? 1 : -1
-            func lane(_ r: Rect) -> ClosedRange<Double> { horizontal ? r.top...r.bottom : r.left...r.right }
-            func along(_ r: Rect) -> ClosedRange<Double> { horizontal ? r.left...r.right : r.top...r.bottom }
-            func point(_ lane: Double, _ along: Double) -> Point { horizontal ? Point(x: along, y: lane) : Point(x: lane, y: along) }
+            let side: Float = (horizontal ? mean.y >= hub.center.y : mean.x >= hub.center.x) ? 1 : -1
+            func lane(_ r: Rect) -> ClosedRange<Float> { horizontal ? r.top...r.bottom : r.left...r.right }
+            func along(_ r: Rect) -> ClosedRange<Float> { horizontal ? r.left...r.right : r.top...r.bottom }
+            func point(_ lane: Float, _ along: Float) -> Point { horizontal ? Point(x: along, y: lane) : Point(x: lane, y: along) }
             let hubLane = lane(hub.bounds), reach = side > 0 ? hubLane.upperBound : hubLane.lowerBound
             let cross = others.map { horizontal ? $0.center.y : $0.center.x }
             let thickness = others.map { lane($0.bounds).upperBound - lane($0.bounds).lowerBound }
@@ -355,7 +355,7 @@ public final class BusEdgeRouter: EdgeRouter {
 public final class CurveFittingEdgeRouter: EdgeRouter {
     /// Subdivision depth of a rounded corner: at most 2^iterations segments (up to 2^5); 0 leaves routes alone.
     public var iterations = 2
-    public var radius = 10.0
+    public var radius: Float = 10.0
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) { fitCurves(graph) }
     public func fitCurves(_ graph: LayoutGraph) {
@@ -380,14 +380,14 @@ public final class CurveFittingEdgeRouter: EdgeRouter {
         !zip(path, path.dropFirst()).contains { a, b in rects.contains { $0.intersectsLine(a, b) } }
     }
     /// The arc replacing corner `p` between `a` and `b`, or nil for straight and doubled-back corners.
-    private static func arc(_ a: Point, _ p: Point, _ b: Point, radius: Double, steps: Int) -> [Point]? {
+    private static func arc(_ a: Point, _ p: Point, _ b: Point, radius: Float, steps: Int) -> [Point]? {
         let u = a - p, v = b - p, lu = u.length, lv = v.length
-        guard lu > 1e-9, lv > 1e-9, abs(u.x * v.y - u.y * v.x) > 1e-6 * lu * lv else { return nil }
+        guard lu > 1e-6, lv > 1e-6, abs(u.x * v.y - u.y * v.x) > 1e-5 * lu * lv else { return nil }
         let r = min(radius, lu / 2, lv / 2), from = p + u / lu * r, to = p + v / lv * r
         // Keep chords near 4.5 units or longer so tight arcs do not turn into micro-segments.
         let n = max(1, min(steps, Int(((to - from).length + 2 * r) / 2 / 4.5)))
         return (0...n).map { i in
-            let t = Double(i) / Double(n), s = 1 - t
+            let t = Float(i) / Float(n), s = 1 - t
             return from * (s * s) + p * (2 * s * t) + to * (t * t)
         }
     }

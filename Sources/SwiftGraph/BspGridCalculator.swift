@@ -39,13 +39,13 @@ public final class BspGridCalculator {
             let sorted = nodes.sorted { vertical ? $0.x < $1.x : $0.y < $1.y }
             let center = vertical ? bounds.center.x : bounds.center.y
             // Cut through the widest gap, so the longest lane runs down the most open corridor; ties go to the centre.
-            var maxEnd = -Double.infinity, split: Double?, widest = 0.0
+            var maxEnd = -Float.infinity, split: Float?, widest: Float = 0.0
             for i in 0..<(sorted.count - 1) {
                 maxEnd = max(maxEnd, vertical ? sorted[i].bounds.right : sorted[i].bounds.bottom)
                 let nextStart = vertical ? sorted[i + 1].x : sorted[i + 1].y
                 if nextStart > maxEnd {
                     let mid = (maxEnd + nextStart) / 2, gap = nextStart - maxEnd
-                    if split == nil || gap > widest + 1e-9 || (abs(gap - widest) <= 1e-9 && abs(mid - center) < abs(split! - center)) { split = mid; widest = gap }
+                    if split == nil || gap > widest + 1e-5 || (abs(gap - widest) <= 1e-5 && abs(mid - center) < abs(split! - center)) { split = mid; widest = gap }
                 }
             }
             guard let cut = split else { continue }
@@ -83,7 +83,7 @@ public final class BspGridCalculator {
     /// Every cut of every partition tree, plus the frame, in one deterministic list. Cuts keep the extent of their own
     /// partition, so they meet the cuts of the enclosing partition. Leaves holding several nodes that no straight cut
     /// separates get lanes `laneInset` outside each node's outline, split wherever they would cross another node.
-    public func getAllGridSegments(laneInset: Double = 10) -> [(start: Point, end: Point)] {
+    public func getAllGridSegments(laneInset: Float = 10) -> [(start: Point, end: Point)] {
         guard let graph, let root = trees[graph.root] else { return [] }
         let r = root.bounds
         var result = [(Point(x: r.left, y: r.top), Point(x: r.right, y: r.top)), (Point(x: r.left, y: r.bottom), Point(x: r.right, y: r.bottom)), (Point(x: r.left, y: r.top), Point(x: r.left, y: r.bottom)), (Point(x: r.right, y: r.top), Point(x: r.right, y: r.bottom))].map { (start: $0.0, end: $0.1) }
@@ -95,7 +95,7 @@ public final class BspGridCalculator {
         }
         return result
     }
-    private func collect(_ tree: BspTreeNode, _ inset: Double, _ result: inout [(start: Point, end: Point)]) {
+    private func collect(_ tree: BspTreeNode, _ inset: Float, _ result: inout [(start: Point, end: Point)]) {
         if let s = segment(tree) { result.append(s) }
         if let left = tree.left { collect(left, inset, &result) }
         if let right = tree.right { collect(right, inset, &result) }
@@ -111,8 +111,8 @@ public final class BspGridCalculator {
                     let end = horizontal ? b.right : b.bottom
                     let cuts = tree.containedNodes.filter { horizontal ? $0.bounds.top < v && v < $0.bounds.bottom : $0.bounds.left < v && v < $0.bounds.right }
                         .map { horizontal ? ($0.bounds.left, $0.bounds.right) : ($0.bounds.top, $0.bounds.bottom) }.sorted { $0.0 < $1.0 }
-                    func add(_ a: Double, _ z: Double) {
-                        if z - a > 1e-6 { result.append(horizontal ? (Point(x: a, y: v), Point(x: z, y: v)) : (Point(x: v, y: a), Point(x: v, y: z))) }
+                    func add(_ a: Float, _ z: Float) {
+                        if z - a > 1e-5 { result.append(horizontal ? (Point(x: a, y: v), Point(x: z, y: v)) : (Point(x: v, y: a), Point(x: v, y: z))) }
                     }
                     for (lo, hi) in cuts { if lo > from { add(from, min(lo, end)) }; from = max(from, hi) }
                     if from < end { add(from, end) }

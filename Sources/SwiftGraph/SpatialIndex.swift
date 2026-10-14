@@ -15,7 +15,7 @@ public final class QuadTree<Value> {
         entries.append((rect, item))
         if children.isEmpty && entries.count > capacity && maxDepth > 0 && bounds.width > 0 && bounds.height > 0 {
             let halfW = bounds.width / 2, halfH = bounds.height / 2
-            children = [(1.0, 0.0), (0.0, 0.0), (0.0, 1.0), (1.0, 1.0)].map { x, y in QuadTree(bounds: Rect(x: bounds.x + x * halfW, y: bounds.y + y * halfH, width: halfW, height: halfH), capacity: capacity, maxDepth: maxDepth - 1) }
+            children = [(Float(1), Float(0)), (0, 0), (0, 1), (1, 1)].map { x, y in QuadTree(bounds: Rect(x: bounds.x + x * halfW, y: bounds.y + y * halfH, width: halfW, height: halfH), capacity: capacity, maxDepth: maxDepth - 1) }
             let old = entries; entries = []
             for (r, value) in old.reversed() {
                 if let child = child(for: r) { child.insert(bounds: r, item: value) }
@@ -57,7 +57,7 @@ public final class ChannelGridCalculator {
     private var grids: [LayoutNode: ChannelGrid] = [:]
     /// Clearance kept between a channel and the obstacle it runs beside: channels sit on child outlines inflated by up
     /// to this much (never past the midline of the gap) instead of on the outlines themselves. 0 keeps raw outlines.
-    public var margin: Double = 0
+    public var margin: Float = 0
     public init() {}
     public func buildChannels(_ root: LayoutNode) {
         grids = [:]
@@ -78,7 +78,7 @@ public final class ChannelGridCalculator {
                 }
                 func cuts(_ nodes: [LayoutNode], horizontal: Bool) -> [Int] {
                     let sorted = nodes.sorted { horizontal ? $0.x < $1.x : $0.y < $1.y }
-                    var end = -Double.infinity, result: [Int] = []
+                    var end = -Float.infinity, result: [Int] = []
                     for n in sorted {
                         let start = horizontal ? n.x : n.y
                         if start > end && end.isFinite { result.append(Int((start + end) / 2)) }
@@ -94,10 +94,10 @@ public final class ChannelGridCalculator {
     /// Each child's start and end lines pushed out by `margin`, but no further than halfway to the next obstacle beside it
     /// (one overlapping it across the axis) or the group edge. Left and top lines round down, right and bottom lines up,
     /// so a line never lands on the outline it was pushed away from.
-    private func outlines(_ nodes: [LayoutNode], within range: ClosedRange<Double>, horizontal: Bool) -> [Int] {
+    private func outlines(_ nodes: [LayoutNode], within range: ClosedRange<Float>, horizontal: Bool) -> [Int] {
         let rects = nodes.map(\.bounds)
-        func span(_ r: Rect) -> (Double, Double) { horizontal ? (r.left, r.right) : (r.top, r.bottom) }
-        func across(_ r: Rect) -> (Double, Double) { horizontal ? (r.top, r.bottom) : (r.left, r.right) }
+        func span(_ r: Rect) -> (Float, Float) { horizontal ? (r.left, r.right) : (r.top, r.bottom) }
+        func across(_ r: Rect) -> (Float, Float) { horizontal ? (r.top, r.bottom) : (r.left, r.right) }
         var result: [Int] = []
         for (i, rect) in rects.enumerated() {
             let (start, end) = span(rect), (crossStart, crossEnd) = across(rect)
@@ -119,7 +119,7 @@ public final class BspTreeNode {
     public enum Axis: Sendable { case none, horizontal, vertical }
     public var bounds: Rect
     public var splitAxis: Axis = .none
-    public var splitPosition: Double = 0
+    public var splitPosition: Float = 0
     public var left: BspTreeNode?
     public var right: BspTreeNode?
     public var containedNodes: [LayoutNode] = []

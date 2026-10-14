@@ -7,15 +7,15 @@ import Foundation
 /// The strictly increasing maps preserve crossings, port offsets, orthogonality and node
 /// dimensions in both axes.
 enum DirectedDrawingCompaction {
-    static func apply(nodes: [LayoutNode], edges: [LayoutEdge], clearance: Double, spacing: Double,
-                      layerSpacing: Double, nodeSpacing: Double) throws {
+    static func apply(nodes: [LayoutNode], edges: [LayoutEdge], clearance: Float, spacing: Float,
+                      layerSpacing: Float, nodeSpacing: Float) throws {
         for horizontal in [true, false] {
             try Task.checkCancellation()
-            let projections = nodes.map { node -> (Double, Double) in
+            let projections = nodes.map { node -> (Float, Float) in
                 let r = node.bounds.inflated(by: clearance)
                 return horizontal ? (r.left, r.right) : (r.top, r.bottom)
             }.sorted { $0.0 < $1.0 }
-            var intervals: [(Double, Double)] = []
+            var intervals: [(Float, Float)] = []
             for p in projections {
                 if let last = intervals.last, p.0 <= last.1 { intervals[intervals.count - 1].1 = max(last.1, p.1) }
                 else { intervals.append(p) }
@@ -27,7 +27,7 @@ enum DirectedDrawingCompaction {
             guard let first = coordinates.first else { continue }
             // Bodies are `clearance` inside the padded intervals, so the padded gap keeps the body gap.
             let required = max(0, (horizontal ? layerSpacing : nodeSpacing) - 2 * clearance)
-            var steps = [0.0], gaps: [Int: [Int]] = [:], interval = 0
+            var steps: [Float] = [0.0], gaps: [Int: [Int]] = [:], interval = 0
             for i in coordinates.indices.dropFirst() {
                 let a = coordinates[i - 1], b = coordinates[i]
                 while interval < intervals.count && intervals[interval].1 <= a { interval += 1 }
@@ -38,8 +38,8 @@ enum DirectedDrawingCompaction {
             // Within a gap between two blocks, the tracks keep their spacing; the gap as a whole
             // is stretched back up to the required spacing (never beyond its original width).
             for indices in gaps.values {
-                let kept = indices.reduce(0.0) { $0 + steps[$1] }
-                let original = indices.reduce(0.0) { $0 + coordinates[$1] - coordinates[$1 - 1] }
+                let kept = indices.reduce(Float(0)) { $0 + steps[$1] }
+                let original = indices.reduce(Float(0)) { $0 + coordinates[$1] - coordinates[$1 - 1] }
                 let target = min(original, required)
                 if kept > 0 && kept < target { for i in indices { steps[i] *= target / kept } }
             }

@@ -3,15 +3,13 @@ import Foundation
 import Metal
 
 extension MetalForceSolver {
-    func directedGeometryAsync(nodes: [LayoutNode], edges: [LayoutEdge], tolerance: Double,
+    func directedGeometryAsync(nodes: [LayoutNode], edges: [LayoutEdge], tolerance: Float,
                               isolation: isolated (any Actor)? = #isolation) async throws -> (score: DirectedGeometry.Score, gpuSeconds: Double) {
         try Task.checkCancellation()
         let compute = try pipeline(resource: "HierarchicalLayouts", function: "directedGeometry")
         let rawPoints = edges.flatMap(\.path)
         let rawBounds = nodes.flatMap { [Point(x: $0.bounds.left, y: $0.bounds.top), Point(x: $0.bounds.right, y: $0.bounds.bottom)] }
         guard rawPoints.count + rawBounds.count < Int(UInt32.max) else { throw LayoutExecutionError.invalidInput("Too many directed geometry coordinates") }
-        // Equality and coordinate ordering have discrete CPU semantics even when
-        // two distinct Double values collapse to the same high/low Float encoding.
         let allCoordinates = rawPoints + rawBounds
         guard allCoordinates.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
             throw OrganicLayoutError.metalFailure("Non-finite directed geometry")
@@ -20,13 +18,12 @@ extension MetalForceSolver {
         let xIDs = Dictionary(uniqueKeysWithValues: xValues.enumerated().map { ($0.element, UInt32($0.offset)) })
         let yIDs = Dictionary(uniqueKeysWithValues: yValues.enumerated().map { ($0.element, UInt32($0.offset)) })
         func coordinateID(_ point: Point) -> SIMD2<UInt32> { SIMD2(xIDs[point.x]!, yIDs[point.y]!) }
-        let extent = (rawPoints + rawBounds).reduce(0.0) { max($0, abs($1.x), abs($1.y)) }
-        guard extent.isFinite, Float(extent).isFinite, extent * 1e-13 <= min(tolerance, DirectedGeometry.epsilon / 100) else {
+        let extent = (rawPoints + rawBounds).reduce(Float(0)) { max($0, abs($1.x), abs($1.y)) }
+        guard extent.isFinite, extent * 1e-13 <= min(tolerance, DirectedGeometry.epsilon / 100) else {
             throw LayoutExecutionError.precisionLimit
         }
         func split(_ value: Point) -> SIMD4<Float> {
-            let x = Float(value.x), y = Float(value.y)
-            return SIMD4(x, Float(value.x - Double(x)), y, Float(value.y - Double(y)))
+            SIMD4(value.x, 0, value.y, 0)
         }
         var offsets: [UInt32] = [0]
         for edge in edges {
@@ -93,7 +90,7 @@ extension MetalForceSolver {
             } }
         }
         let pruneEdgeBounds = edges.count > 2
-        let edgeBoxes: [(minX: Double, maxX: Double, minY: Double, maxY: Double)] = pruneEdgeBounds ? edges.map { edge in
+        let edgeBoxes: [(minX: Float, maxX: Float, minY: Float, maxY: Float)] = pruneEdgeBounds ? edges.map { edge in
             guard let first = edge.path.first else { return (0, -1, 0, -1) }
             var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
             for p in edge.path.dropFirst() {
@@ -146,7 +143,7 @@ extension MetalForceSolver {
         let temporarySize = max(n + 1, plan.incoming.map(\.count).max() ?? 0, plan.outgoing.map(\.count).max() ?? 0)
         let orderScratch = try lease(Array(repeating: UInt32(0), count: 3 * n + temporarySize + 3))
         let widths = try lease(plan.widths.map { value -> SIMD2<Float> in
-            let high = Float(value); return SIMD2(high, Float(value - Double(high)))
+            SIMD2(value, 0)
         })
         let coordinateScratch = try lease(Array(repeating: SIMD2<Float>.zero, count: 4 * n))
         let blockScratch = try lease(Array(repeating: UInt32(0), count: 2 * n))
@@ -159,7 +156,7 @@ extension MetalForceSolver {
         }
         var parameters = Parameters(count: UInt32(n), originalCount: UInt32(plan.originalCount), rankCount: UInt32(plan.layers.count),
             directed: directed ? 1 : 0, retainBest: retainBest ? 1 : 0,
-            separation: SIMD2(Float(plan.nodeSeparation), Float(plan.nodeSeparation - Double(Float(plan.nodeSeparation)))), temporarySize: UInt32(temporarySize))
+            separation: SIMD2(plan.nodeSeparation, 0), temporarySize: UInt32(temporarySize))
         let orderResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, orderScratch]
         let placementResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, widths, coordinateScratch, blockScratch, ends]
         var seconds = 0.0
@@ -228,7 +225,7 @@ extension MetalForceSolver {
 }
 #else
 extension MetalForceSolver {
-    func directedGeometryAsync(nodes: [LayoutNode], edges: [LayoutEdge], tolerance: Double,
+    func directedGeometryAsync(nodes: [LayoutNode], edges: [LayoutEdge], tolerance: Float,
                               isolation: isolated (any Actor)? = #isolation) async throws -> (score: DirectedGeometry.Score, gpuSeconds: Double) {
         throw OrganicLayoutError.metalUnavailable
     }

@@ -11,7 +11,7 @@ final class RoutingCompute: @unchecked Sendable {
     static var isCancelled: Bool { Task.isCancelled || cancellation?.isCancelled == true }
     static func checkCancellation() throws { try Task.checkCancellation(); try cancellation?.check() }
     let solver: MetalForceSolver
-    let tolerance: Double
+    let tolerance: Float
     var failure: (any Error)?
     var gpuSeconds = 0.0
     var stages: [String] = []
@@ -23,14 +23,14 @@ final class RoutingCompute: @unchecked Sendable {
     static let automaticPairs = 65_536, automaticElements = 8_192
     var minimumPairs = 0, minimumElements = 0
     let statisticsChanged: () -> Void
-    init(solver: MetalForceSolver, tolerance: Double, statisticsChanged: @escaping () -> Void) {
+    init(solver: MetalForceSolver, tolerance: Float, statisticsChanged: @escaping () -> Void) {
         self.tolerance = tolerance; self.solver = solver; self.statisticsChanged = statisticsChanged
     }
 
     // Outward rounding makes rejection safe even at huge absolute coordinates. Accepted candidates
-    // receive the original Double predicate, preserving boundary and ordered-search decisions exactly.
+    // receive the original predicate, preserving boundary and ordered-search decisions exactly.
     private func box(_ r: Rect) throws -> SIMD4<Float> {
-        let values = [Float(min(r.left, r.right)).nextDown, Float(min(r.top, r.bottom)).nextDown, Float(max(r.left, r.right)).nextUp, Float(max(r.top, r.bottom)).nextUp]
+        let values = [min(r.left, r.right).nextDown, min(r.top, r.bottom).nextDown, max(r.left, r.right).nextUp, max(r.top, r.bottom).nextUp]
         guard values.allSatisfy(\.isFinite) else { throw LayoutExecutionError.precisionLimit }
         return SIMD4(values[0], values[1], values[2], values[3])
     }
@@ -76,7 +76,7 @@ final class RoutingCompute: @unchecked Sendable {
     /// Visibility stays on the CPU lazy search. A V²×N candidate matrix with a synchronous wait per
     /// batch computes every pair, where the quadtree-pruned search only asks about the few it visits.
     func visibility(_ points: [Point], _ obstacles: [Rect]) -> [Bool]? { nil }
-    func overlapMatrix(_ segments: [(start: Point, end: Point)], padding: Double = 0) -> [UInt32]? {
+    func overlapMatrix(_ segments: [(start: Point, end: Point)], padding: Float = 0) -> [UInt32]? {
         let boxes = segments.map { Self.bounds($0.start, $0.end).inflated(by: padding) }
         return candidates(boxes, boxes)
     }
@@ -86,7 +86,7 @@ final class RoutingCompute: @unchecked Sendable {
         return points.indices.map { flags[$0] != 0 && rect.contains(points[$0]) }
     }
     /// Rectangles whose open span (closed with `closed`) contains each value; the CPU filter in `OrthogonalGroupedEdgeRouter` must agree.
-    func axisBlockers(_ values: [Double], rectangles: [Rect], vertical: Bool, closed: Bool = false) -> [[Int]]? {
+    func axisBlockers(_ values: [Float], rectangles: [Rect], vertical: Bool, closed: Bool = false) -> [[Int]]? {
         guard !rectangles.isEmpty else { return Array(repeating: [], count: values.count) }
         let low = rectangles.map { vertical ? $0.top : $0.left }.min()!
         let high = rectangles.map { vertical ? $0.bottom : $0.right }.max()!
@@ -116,40 +116,40 @@ final class RoutingCompute: @unchecked Sendable {
     func octilinear(_ starts: [Point], _ ends: [Point]) -> [Point]? {
         geometry("routingOctilinear", starts, ends, offsets: Array(repeating: 0, count: starts.count))
     }
-    func parallel(_ starts: [Point], _ ends: [Point], offsets: [Double]) -> [Point]? {
+    func parallel(_ starts: [Point], _ ends: [Point], offsets: [Float]) -> [Point]? {
         geometry("routingParallel", starts, ends, offsets: offsets)
     }
-    func bus(_ hub: Point, others: [Point], coordinate: Double, horizontal: Bool) -> [Point]? {
+    func bus(_ hub: Point, others: [Point], coordinate: Float, horizontal: Bool) -> [Point]? {
         let starts = Array(repeating: hub, count: others.count * 2)
         let ends = others.flatMap { [$0, $0] }
         let offset = coordinate - (horizontal ? hub.y : hub.x)
         return geometry(horizontal ? "routingBusHorizontal" : "routingBusVertical", starts, ends, offsets: Array(repeating: offset, count: starts.count))
     }
-    private func geometry(_ function: String, _ a: [Point], _ b: [Point], offsets: [Double]) -> [Point]? {
+    private func geometry(_ function: String, _ a: [Point], _ b: [Point], offsets: [Float]) -> [Point]? {
         guard !a.isEmpty else { return [] }
         guard a.count >= minimumElements else { return nil }
         do {
             try Self.checkCancellation()
             let origin = a[0]
             let extent = (a + b).reduce(offsets.map(abs).max() ?? 0) { max($0, max(abs($1.x - origin.x), abs($1.y - origin.y))) }
-            guard Float(extent).isFinite, Double(Float(extent).ulp) * 32 <= tolerance else { throw LayoutExecutionError.precisionLimit }
-            let aa = a.map { SIMD2(Float($0.x - origin.x), Float($0.y - origin.y)) }, bb = b.map { SIMD2(Float($0.x - origin.x), Float($0.y - origin.y)) }
-            return try dispatchBlend(aa, bb, offsets.map(Float.init), function: function).map { Point(x: origin.x + Double($0.x), y: origin.y + Double($0.y)) }
+            guard extent.isFinite, extent.ulp * 32 <= tolerance else { throw LayoutExecutionError.precisionLimit }
+            let aa = a.map { SIMD2($0.x - origin.x, $0.y - origin.y) }, bb = b.map { SIMD2($0.x - origin.x, $0.y - origin.y) }
+            return try dispatchBlend(aa, bb, offsets, function: function).map { Point(x: origin.x + $0.x, y: origin.y + $0.y) }
         } catch { if failure == nil { failure = error }; return nil }
     }
-    /// Weighted-point geometry is computed on Metal. The caller retains original Double endpoints.
-    func blend(_ a: [Point], _ b: [Point], weights: [Double]) -> [Point]? {
+    /// Weighted-point geometry is computed on Metal. The caller retains original endpoints.
+    func blend(_ a: [Point], _ b: [Point], weights: [Float]) -> [Point]? {
         guard !a.isEmpty else { return [] }
         guard a.count >= minimumElements else { return nil }
         do {
             try Self.checkCancellation()
             let origin = a[0]
-            let extent = (a + b).reduce(0.0) { max($0, max(abs($1.x - origin.x), abs($1.y - origin.y))) }
-            guard Float(extent).isFinite, Double(Float(extent).ulp) * 16 <= tolerance else { throw LayoutExecutionError.precisionLimit }
-            let aa = a.map { SIMD2(Float($0.x - origin.x), Float($0.y - origin.y)) }
-            let bb = b.map { SIMD2(Float($0.x - origin.x), Float($0.y - origin.y)) }
-            let values = try dispatchBlend(aa, bb, weights.map(Float.init))
-            return values.map { Point(x: origin.x + Double($0.x), y: origin.y + Double($0.y)) }
+            let extent = (a + b).reduce(Float(0)) { max($0, max(abs($1.x - origin.x), abs($1.y - origin.y))) }
+            guard extent.isFinite, extent.ulp * 16 <= tolerance else { throw LayoutExecutionError.precisionLimit }
+            let aa = a.map { SIMD2($0.x - origin.x, $0.y - origin.y) }
+            let bb = b.map { SIMD2($0.x - origin.x, $0.y - origin.y) }
+            let values = try dispatchBlend(aa, bb, weights)
+            return values.map { Point(x: origin.x + $0.x, y: origin.y + $0.y) }
         } catch { if failure == nil { failure = error }; return nil }
     }
 #if canImport(Metal)

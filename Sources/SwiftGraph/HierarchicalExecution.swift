@@ -1,11 +1,11 @@
 import Foundation
 
 public struct HierarchicalLayoutConfiguration: Sendable {
-    public var layerSeparation: Double = 50
-    public var nodeSeparation: Double = 50
+    public var layerSeparation: Float = 50
+    public var nodeSeparation: Float = 50
     public var maxNodesPerRank: Int?
     public var routesEdges = true
-    public var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
+    public var rankSeparation: Float { get { layerSeparation } set { layerSeparation = newValue } }
     public init() {}
     func validate() throws {
         guard layerSeparation.isFinite, nodeSeparation.isFinite else {
@@ -15,7 +15,7 @@ public struct HierarchicalLayoutConfiguration: Sendable {
 }
 
 /// Rank construction stays on CPU. Metal performs ordering and weighted isotonic
-/// block decisions; Double reconstruction preserves the synchronous coordinate precision.
+/// block decisions; Float reconstruction preserves the synchronous coordinate precision.
 public final class HierarchicalLayoutOperation: LayoutExecutionReporting {
     public var configuration: HierarchicalLayoutConfiguration
     public let backend: LayoutBackend
@@ -151,15 +151,15 @@ struct HierarchyPlacementPlan: Sendable {
     var originalCount: Int
     var layers: [[Int]]
     var ranks: [Int]
-    var widths: [Double]
-    var heights: [Double]
+    var widths: [Float]
+    var heights: [Float]
     var incoming: [[Int]]
     var outgoing: [[Int]]
     var chains: [[Int]]
     /// Sign of each edge's rank change; nil for self-loops and edges outside the graph, which are not routed between ranks.
     var flows: [Int?]
-    var nodeSeparation: Double
-    var layerSeparation: Double
+    var nodeSeparation: Float
+    var layerSeparation: Float
     var routesEdges: Bool
     init(_ graph: LayoutGraph, configuration: HierarchicalLayoutConfiguration) throws {
         let adjacency = Adjacency(graph)
@@ -192,21 +192,21 @@ struct HierarchyPlacementPlan: Sendable {
         nodeSeparation = configuration.nodeSeparation; layerSeparation = configuration.layerSeparation
         routesEdges = configuration.routesEdges
     }
-    func validateMetal(tolerance: Double) throws {
+    func validateMetal(tolerance: Float) throws {
         guard widths.count < 4_194_304,
               incoming.reduce(0, { $0 + $1.count }) < Int(UInt32.max),
               outgoing.reduce(0, { $0 + $1.count }) < Int(UInt32.max) else {
             throw LayoutExecutionError.invalidInput("Hierarchy exceeds Metal index capacity.")
         }
-        let bound = widths.reduce(0, +) + Double(widths.count) * abs(nodeSeparation)
+        let bound = widths.reduce(0, +) + Float(widths.count) * abs(nodeSeparation)
         // The kernel uses split Float arithmetic, not a single Float coordinate.
         // Bound accumulated error rather than rejecting wide ranks solely for the
         // high component's ULP. The same caller tolerance remains in force.
         let maximumDegree = incoming.indices.map { incoming[$0].count + outgoing[$0].count }.max() ?? 0
         guard maximumDegree < 16_777_216 else { throw LayoutExecutionError.invalidInput("Hierarchy degree exceeds precise Metal count capacity") }
-        let errorBound = bound * Double(max(1, widths.count, maximumDegree)) * 1e-13
-        guard bound.isFinite, Float(bound).isFinite, errorBound <= tolerance,
-              widths.allSatisfy({ Float($0).isFinite }), Float(nodeSeparation).isFinite else {
+        let errorBound = bound * Float(max(1, widths.count, maximumDegree)) * 1e-13
+        guard bound.isFinite, errorBound <= tolerance,
+              widths.allSatisfy(\.isFinite), nodeSeparation.isFinite else {
             throw LayoutExecutionError.precisionLimit
         }
     }
@@ -222,28 +222,28 @@ struct HierarchyPlacementPlan: Sendable {
             guard next.allSatisfy({ ranks[$0] == rank }) else { throw OrganicLayoutError.metalFailure("Invalid hierarchy rank") }
             ordered.append(next); cursor += layer.count
         }
-        var xs = Array(repeating: 0.0, count: widths.count)
+        var xs = Array(repeating: Float(0), count: widths.count)
         for layer in ordered {
-            let total = layer.reduce(0.0) { $0 + widths[$1] } + Double(max(0, layer.count - 1)) * nodeSeparation
+            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + Float(max(0, layer.count - 1)) * nodeSeparation
             var x = -total / 2
             for vertex in layer { xs[vertex] = x + widths[vertex] / 2; x += widths[vertex] + nodeSeparation }
         }
-        // Reconstruct exactly from GPU decisions. The KKT checks reject Float decisions
-        // that would change the Double projection, allowing automatic CPU fallback.
+        // Reconstruct from GPU decisions. The KKT checks reject Float decisions
+        // that would violate isotonic projection, allowing automatic CPU fallback.
         for pass in 0..<3 {
             for rank in (pass % 2 == 0 ? Array(ordered.indices) : Array(ordered.indices.reversed())) {
                 try Task.checkCancellation()
                 let layer = ordered[rank]
-                var desired: [Double] = [], shifts: [Double] = [], distance = 0.0
+                var desired: [Float] = [], shifts: [Float] = [], distance: Float = 0
                 for (position, vertex) in layer.enumerated() {
                     if position > 0 { distance += (widths[layer[position - 1]] + widths[vertex]) / 2 + nodeSeparation }
                     shifts.append(distance)
                     let neighbors = incoming[vertex] + outgoing[vertex]
-                    desired.append((neighbors.isEmpty ? xs[vertex] : neighbors.reduce(0.0) { $0 + xs[$1] } / Double(neighbors.count)) - distance)
+                    desired.append((neighbors.isEmpty ? xs[vertex] : neighbors.reduce(Float(0)) { $0 + xs[$1] } / Float(neighbors.count)) - distance)
                 }
-                var blocks: [(start: Int, end: Int, sum: Double, weight: Double)] = []
+                var blocks: [(start: Int, end: Int, sum: Float, weight: Float)] = []
                 for position in layer.indices {
-                    let weight = layer[position] < originalCount ? 1.0 : 4.0
+                    let weight: Float = layer[position] < originalCount ? 1.0 : 4.0
                     blocks.append((position, position, desired[position] * weight, weight))
                     let merges = Int(output.mergeCounts[pass * widths.count + layer[position]])
                     guard merges < blocks.count else { throw OrganicLayoutError.metalFailure("Invalid hierarchy merge history") }
@@ -252,17 +252,17 @@ struct HierarchyPlacementPlan: Sendable {
                         blocks.append((previous.start, last.end, previous.sum + last.sum, previous.weight + last.weight))
                     }
                 }
-                var previous = -Double.infinity
+                var previous = -Float.infinity
                 for block in blocks {
                     let position = block.start, end = block.end, mean = block.sum / block.weight
                     let previousAllowance = max(abs(mean), previous.isFinite ? abs(previous) : 0).ulp * 16
                     guard mean.isFinite, mean + previousAllowance >= previous else { throw LayoutExecutionError.precisionLimit }
-                    var prefix = 0.0, prefixWeight = 0.0
+                    var prefix: Float = 0, prefixWeight: Float = 0
                     for p in position...end {
                         guard output.blockEnds[pass * widths.count + layer[p]] == UInt32(end) else { throw OrganicLayoutError.metalFailure("Inconsistent hierarchy fitted block") }
-                        let w = layer[p] < originalCount ? 1.0 : 4.0
+                        let w: Float = layer[p] < originalCount ? 1.0 : 4.0
                         prefix += desired[p] * w; prefixWeight += w
-                        // PAV's merged blocks use a binary merge summation. A tiny Double
+                        // PAV's merged blocks use a binary merge summation. A tiny
                         // rounding allowance avoids rejecting the same optimum solely for
                         // different association; meaningful grouping differences still fail.
                         let allowance = max(abs(prefix), abs(mean * prefixWeight)).ulp * 16

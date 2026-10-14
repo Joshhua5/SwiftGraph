@@ -12,7 +12,7 @@ private func defaultLabelProvider(_ edge: LayoutEdge) -> String? {
 private func labelSize(_ edge: LayoutEdge, text: String?, provider: (LayoutEdge, String) -> Size?) -> Size {
     if let text, let measured = provider(edge, text), measured.width > 0, measured.height > 0 { return measured }
     if edge.labelBounds.width > 0 && edge.labelBounds.height > 0 { return edge.labelBounds.size }
-    return Size(width: Double((text?.count ?? 0) * 8 + 10), height: 20)
+    return Size(width: Float((text?.count ?? 0) * 8 + 10), height: 20)
 }
 
 public final class LabelPlacementAlgorithm {
@@ -57,16 +57,16 @@ public final class LabelLayoutAlgorithm {
         let compute = RoutingCompute.current
         /// One label's share of the energy: nodes it covers, other labels it overlaps, edges crossing it, and its distance
         /// from its own edge. An overlap costs 100 per label involved, so moving a label changes it by `overlap` = 200.
-        func energy(of e: LayoutEdge, rect: Rect, others: [Rect], flags: [UInt32]?, flagOffset: Int, overlap: Double) -> Double {
-            var result = Double(obstacles.indices.filter { (flags?[flagOffset + $0] ?? 1) != 0 && obstacles[$0].intersects(rect) }.count) * 1000
-            result += Double(others.indices.filter { (flags?[flagOffset + obstacles.count + $0] ?? 1) != 0 && rect.intersects(others[$0]) }.count) * overlap
-            result += Double(segments.hits(rect, except: e)) * 10
+        func energy(of e: LayoutEdge, rect: Rect, others: [Rect], flags: [UInt32]?, flagOffset: Int, overlap: Float) -> Float {
+            var result = Float(obstacles.indices.filter { (flags?[flagOffset + $0] ?? 1) != 0 && obstacles[$0].intersects(rect) }.count) * 1000
+            result += Float(others.indices.filter { (flags?[flagOffset + obstacles.count + $0] ?? 1) != 0 && rect.intersects(others[$0]) }.count) * overlap
+            result += Float(segments.hits(rect, except: e)) * 10
             if e.path.count >= 2 { result += LabelCollisionRepair.distance(rect.center, to: e.path) * 0.1 }
             return result
         }
-        var random = SeededRandom(state: 123), temperature = 100.0
+        var random = SeededRandom(state: 123), temperature: Float = 100.0
         _ = compute?.candidates(edges.map(\.labelBounds), obstacles + edges.map(\.labelBounds))
-        var current = edges.indices.reduce(0.0) { i, idx in
+        var current = edges.indices.reduce(Float(0)) { i, idx in
             let others = edges.indices.filter { $0 != idx }.map { edges[$0].labelBounds }
             return i + energy(of: edges[idx], rect: edges[idx].labelBounds, others: others, flags: nil, flagOffset: 0, overlap: 100)
         }
@@ -76,14 +76,14 @@ public final class LabelLayoutAlgorithm {
             if RoutingCompute.isCancelled { return }
             let moved = Int(random.next() * Double(edges.count)), edge = edges[moved], old = edge.labelBounds
             let others = edges.indices.filter { $0 != moved }.map { edges[$0].labelBounds }
-            edge.labelBounds.x += (random.next() - 0.5) * temperature; edge.labelBounds.y += (random.next() - 0.5) * temperature
+            edge.labelBounds.x += (Float(random.next()) - 0.5) * temperature; edge.labelBounds.y += (Float(random.next()) - 0.5) * temperature
             let proposed = edge.labelBounds
             let targets = obstacles + others
             let pairFlags = (step % gpuStride == 0) ? compute?.candidates([old, proposed], targets) : nil
             let before = energy(of: edge, rect: old, others: others, flags: pairFlags, flagOffset: 0, overlap: 200)
             let after = energy(of: edge, rect: proposed, others: others, flags: pairFlags, flagOffset: targets.count, overlap: 200)
             let candidate = current - before + after
-            if candidate < current || random.next() <= exp((current - candidate) / max(temperature, 1e-12)) { current = candidate }
+            if candidate < current || Float(random.next()) <= exp((current - candidate) / max(temperature, 1e-6)) { current = candidate }
             else { edge.labelBounds = old }
             if current < best { best = current; bestBounds = edges.map(\.labelBounds) }
             temperature *= 0.95
@@ -115,7 +115,7 @@ private struct SegmentIndex {
 private enum LabelCollisionRepair {
     static func midpoint(_ path: [Point]) -> Point {
         let segments = Array(zip(path, path.dropFirst()))
-        var remaining = segments.reduce(0.0) { $0 + ($1.1 - $1.0).length } / 2
+        var remaining = segments.reduce(Float(0)) { $0 + ($1.1 - $1.0).length } / 2
         for (a, b) in segments {
             let length = (b - a).length
             if length > 0 && remaining <= length { return a + (b - a) * (remaining / length) }
@@ -123,7 +123,7 @@ private enum LabelCollisionRepair {
         }
         return path.first ?? .zero
     }
-    static func distance(_ point: Point, to path: [Point]) -> Double {
+    static func distance(_ point: Point, to path: [Point]) -> Float {
         zip(path, path.dropFirst()).map { a, b in
             let delta = b - a
             let t = delta.lengthSquared > 0 ? max(0, min(1, ((point.x - a.x) * delta.x + (point.y - a.y) * delta.y) / delta.lengthSquared)) : 0
@@ -148,11 +148,11 @@ private enum LabelCollisionRepair {
                 var candidates = [original]
                 for (a, b) in zip(edge.path, edge.path.dropFirst()) {
                     let delta = b - a
-                    guard delta.length > 1e-9 else { continue }
+                    guard delta.length > 1e-6 else { continue }
                     let normal = Point(x: -delta.y, y: delta.x) / delta.length
                     let clearance = abs(normal.x) * original.width / 2 + abs(normal.y) * original.height / 2 + 4
-                    for t in [0.5, 0.25, 0.75] {
-                        for offset in [0.0, 1, -1, 2, -2, 3, -3] {
+                    for t: Float in [0.5, 0.25, 0.75] {
+                        for offset: Float in [0.0, 1, -1, 2, -2, 3, -3] {
                             let center = a + delta * t + normal * (offset * clearance)
                             candidates.append(Rect(x: center.x - original.width / 2, y: center.y - original.height / 2, width: original.width, height: original.height))
                         }
@@ -162,11 +162,11 @@ private enum LabelCollisionRepair {
                 let combinedFlags = RoutingCompute.current?.candidates(candidates, combinedTargets)
                 dispatched = true
                 let stride = combinedTargets.count
-                func score(_ i: Int) -> [Double] {
+                func score(_ i: Int) -> [Float] {
                     let rect = candidates[i], base = i * stride
-                    return [Double(obstacles.indices.filter { j in (combinedFlags?[base + j] ?? 1) != 0 && obstacles[j].intersects(rect) }.count),
-                            Double(edges.indices.filter { j in j != index && (combinedFlags?[base + obstacles.count + j] ?? 1) != 0 && labelRects[j].intersects(rect) }.count),
-                            Double(segments.hits(rect, except: edge)),
+                    return [Float(obstacles.indices.filter { j in (combinedFlags?[base + j] ?? 1) != 0 && obstacles[j].intersects(rect) }.count),
+                            Float(edges.indices.filter { j in j != index && (combinedFlags?[base + obstacles.count + j] ?? 1) != 0 && labelRects[j].intersects(rect) }.count),
+                            Float(segments.hits(rect, except: edge)),
                             distance(rect.center, to: edge.path), (rect.center - original.center).lengthSquared]
                 }
                 var best = original, bestScore = score(0)

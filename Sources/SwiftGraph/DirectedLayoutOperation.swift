@@ -5,19 +5,19 @@ public enum DirectedLayoutMode: Hashable, Sendable { case fresh, incremental, ro
 
 public struct DirectedLayoutConfiguration: Hashable, Sendable {
     public var mode: DirectedLayoutMode = .fresh
-    public var canvasAspectRatio: Double = 1.6
-    public var nodeSpacing: Double = 32
-    public var layerSpacing: Double = 100
-    public var componentSpacing: Double = 60
-    public var portSpacing: Double = 12
-    public var clearance: Double = 10
+    public var canvasAspectRatio: Float = 1.6
+    public var nodeSpacing: Float = 32
+    public var layerSpacing: Float = 100
+    public var componentSpacing: Float = 60
+    public var portSpacing: Float = 12
+    public var clearance: Float = 10
     /// Preferred separation between parallel edge runs. Strokes never touch below it, but parallel
     /// runs closer than this are avoided, tracks keep this spacing, and compaction never goes below it.
-    public var edgeSpacing: Double = 10
+    public var edgeSpacing: Float = 10
     public var candidateCount: Int = 5
     /// Indices into the original edge array. A fresh layout ranks and routes these as reversed edges between the ranks.
     public var feedbackEdges: Set<Int> = []
-    public var edgeWidths: [Double] = []
+    public var edgeWidths: [Float] = []
     public var fixedNodeIDs: Set<String> = []
     public var previousPaths: [Int: [Point]] = [:]
     public var previousBounds: [String: Rect] = [:]
@@ -35,8 +35,8 @@ public struct DirectedLayoutDiagnostics: Sendable {
     /// Near-parallel route pairs closer than `edgeSpacing`.
     public var proximateRuns = 0
     public var bends = 0
-    public var routeLength = 0.0
-    public var displacement = 0.0
+    public var routeLength: Float = 0.0
+    public var displacement: Float = 0.0
     public var cachedComponents = 0
     public var feedbackEdgeIndices: [Int] = []
     public var bounds = Rect()
@@ -163,13 +163,13 @@ public struct DirectedLayoutOperation {
             sideCounts[edge.source, default: [:]][sides.0, default: 0] += 1
             sideCounts[edge.target, default: [:]][sides.1, default: 0] += 1
         }
-        let widest = configuration.edgeWidths.max() ?? 1
+        let widest: Float = configuration.edgeWidths.max() ?? 1
         let pitch = max(configuration.portSpacing, widest * 2.5 + 6)
         for node in nodes {
             let c = sideCounts[node] ?? [:]
             let center = configuration.previousBounds[node.id]?.center ?? node.center
-            node.height = max(node.height, Double(max(c[.left] ?? 0, c[.right] ?? 0) - 1) * pitch + 24)
-            node.width = max(node.width, Double(max(c[.top] ?? 0, c[.bottom] ?? 0) - 1) * pitch + 24)
+            node.height = max(node.height, Float(max(c[.left] ?? 0, c[.right] ?? 0) - 1) * pitch + 24)
+            node.width = max(node.width, Float(max(c[.top] ?? 0, c[.bottom] ?? 0) - 1) * pitch + 24)
             node.center = center
         }
         var diagnostics = DirectedLayoutDiagnostics()
@@ -222,9 +222,9 @@ public struct DirectedLayoutOperation {
         }
     }
 
-    func placeIncrementally(_ nodes: [LayoutNode], edges: [LayoutEdge], pitch: Double) {
+    func placeIncrementally(_ nodes: [LayoutNode], edges: [LayoutEdge], pitch: Float) {
         var placed = nodes.filter { configuration.previousBounds[$0.id] != nil }
-        let widest = configuration.edgeWidths.max() ?? 1
+        let widest: Float = configuration.edgeWidths.max() ?? 1
         let routeClearance = max(configuration.clearance, (widest * 2.5 + 4) / 2 + 2)
         // Both endpoints need an escape segment. Body separation alone can leave
         // a new node's entry point inside its neighbour's routing obstacle.
@@ -235,13 +235,13 @@ public struct DirectedLayoutOperation {
                 let other = e.source === node ? e.target : (e.target === node ? e.source : nil)
                 return other.flatMap { configuration.previousBounds[$0.id]?.center }
             }
-            let origin = configuration.insertionOrigins[node.id] ?? (neighbors.isEmpty ? .zero : neighbors.reduce(.zero, +) / Double(neighbors.count))
+            let origin = configuration.insertionOrigins[node.id] ?? (neighbors.isEmpty ? .zero : neighbors.reduce(.zero, +) / Float(neighbors.count))
             let dx = node.width + configuration.nodeSpacing, dy = node.height + configuration.nodeSpacing
             var found = false
             for ring in 0...max(16, nodes.count) {
                 for row in -ring...ring {
                     for col in -ring...ring where abs(row) == ring || abs(col) == ring {
-                        node.center = origin + Point(x: Double(col) * dx, y: Double(row) * dy)
+                        node.center = origin + Point(x: Float(col) * dx, y: Float(row) * dy)
                         if !placed.contains(where: { $0.bounds.inflated(by: insertionGap).intersects(node.bounds) }) { found = true; break }
                     }
                     if found { break }
@@ -257,7 +257,7 @@ public struct DirectedLayoutOperation {
     /// virtual-node tracks, as long as that reduces the misses and their total distance.
     func straightenDoglegs(_ nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>) {
         var incident: [LayoutNode: [LayoutEdge]] = [:]
-        var tracks: [Double: [Double]] = [:]
+        var tracks: [Float: [Float]] = [:]
         for edge in edges where !feedback.contains(edge) && edge.source !== edge.target {
             if edge.path.count == 2 && edge.source.center.x != edge.target.center.x {
                 incident[edge.source, default: []].append(edge); incident[edge.target, default: []].append(edge)
@@ -265,17 +265,17 @@ public struct DirectedLayoutOperation {
             for p in edge.path.dropFirst().dropLast() { tracks[p.x, default: []].append(p.y) }
         }
         let ranks = Dictionary(grouping: nodes, by: { $0.center.x })
-        let reach = configuration.nodeSpacing, margin = 4.0
+        let reach = configuration.nodeSpacing, margin: Float = 4.0
         for _ in 0..<8 {
             var moved = false
             for node in nodes.sorted(by: { ($0.center.x, $0.center.y, $0.id) < ($1.center.x, $1.center.y, $1.id) }) {
                 guard let list = incident[node] else { continue }
-                func range(_ n: LayoutNode, _ shift: Double = 0) -> (lo: Double, hi: Double) {
+                func range(_ n: LayoutNode, _ shift: Float = 0) -> (lo: Float, hi: Float) {
                     let r = DirectedRouter.sideRange(n.bounds); return (r.lo + shift, r.hi + shift)
                 }
                 // (edges that miss, total miss distance): a slide must improve this pair, so passes terminate.
-                func cost(_ shift: Double) -> (Int, Double) {
-                    list.reduce((0, 0.0)) { total, edge in
+                func cost(_ shift: Float) -> (Int, Float) {
+                    list.reduce((0, Float(0))) { total, edge in
                         let a = range(node, shift), b = range(edge.source === node ? edge.target : edge.source)
                         let gap = max(a.lo, b.lo) - min(a.hi, b.hi)
                         return gap > 0 ? (total.0 + 1, total.1 + gap) : total
@@ -283,7 +283,7 @@ public struct DirectedLayoutOperation {
                 }
                 let current = cost(0)
                 guard current.0 > 0 else { continue }
-                var below = Double.infinity, above = -Double.infinity
+                var below = Float.infinity, above = -Float.infinity
                 for other in ranks[node.center.x] ?? [] where other !== node {
                     if other.center.y < node.center.y { above = max(above, other.bounds.bottom + configuration.nodeSpacing) }
                     else { below = min(below, other.bounds.top - configuration.nodeSpacing) }
@@ -292,7 +292,7 @@ public struct DirectedLayoutOperation {
                     if y < node.center.y { above = max(above, y + 4 + configuration.nodeSpacing / 2) }
                     else { below = min(below, y - 4 - configuration.nodeSpacing / 2) }
                 }
-                var best: (shift: Double, cost: (Int, Double))?
+                var best: (shift: Float, cost: (Int, Float))?
                 for edge in list {
                     let a = range(node), b = range(edge.source === node ? edge.target : edge.source)
                     guard max(a.lo, b.lo) > min(a.hi, b.hi) else { continue }
@@ -320,10 +320,10 @@ public struct DirectedLayoutOperation {
             if a != b { for rank in min(a, b)..<max(a, b) { traffic[rank] += 1 } }
         }
         let widths = ranks.map { x in nodes.filter { $0.center.x == x }.map(\.width).max() ?? 0 }
-        let trackPitch = max(6, (configuration.edgeWidths.max() ?? 1) + 3)
+        let trackPitch: Float = max(6, (configuration.edgeWidths.max() ?? 1) + 3)
         var coordinates = [ranks[0]]
         for i in traffic.indices {
-            let gap = max(configuration.layerSpacing, Double(traffic[i] + 1) * trackPitch + configuration.clearance * 2)
+            let gap = max(configuration.layerSpacing, Float(traffic[i] + 1) * trackPitch + configuration.clearance * 2)
             coordinates.append(coordinates[i] + widths[i] / 2 + gap + widths[i + 1] / 2)
         }
         for node in nodes { node.center = Point(x: coordinates[rankIndex[node.center.x]!], y: node.center.y) }
@@ -336,12 +336,12 @@ public struct DirectedLayoutOperation {
         guard configuration.mode == .fresh else { return }
         let drawings = plan.drawings
         let gap = configuration.componentSpacing
-        let area = drawings.reduce(0.0) { $0 + ($1.bounds.width + gap) * ($1.bounds.height + gap) }
+        let area = drawings.reduce(Float(0)) { $0 + ($1.bounds.width + gap) * ($1.bounds.height + gap) }
         let target = max(drawings.map { $0.bounds.width }.max() ?? 0, sqrt(area * max(0.25, configuration.canvasAspectRatio)))
         let order = drawings.indices.sorted {
             drawings[$0].bounds.height == drawings[$1].bounds.height ? $0 < $1 : drawings[$0].bounds.height > drawings[$1].bounds.height
         }
-        var x = 0.0, y = 0.0, rowHeight = 0.0
+        var x: Float = 0, y: Float = 0, rowHeight: Float = 0
         for i in order {
             let b = drawings[i].bounds
             if x > 0 && x + b.width > target { x = 0; y += rowHeight + gap; rowHeight = 0 }

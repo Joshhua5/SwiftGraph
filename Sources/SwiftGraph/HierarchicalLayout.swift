@@ -2,9 +2,9 @@ import Foundation
 
 /// Sugiyama layering with virtual nodes, deterministic median ordering and weighted PAV placement.
 public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
-    public var layerSeparation: Double = 50
-    public var nodeSeparation: Double = 50
-    public var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
+    public var layerSeparation: Float = 50
+    public var nodeSeparation: Float = 50
+    public var rankSeparation: Float { get { layerSeparation } set { layerSeparation = newValue } }
     public var maxNodesPerRank: Int?
     /// Disable provisional routing when another router runs after packing or group placement.
     public var routesEdges = true
@@ -46,11 +46,11 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             var changed = false
             for rank in indices {
                 let old = layers[rank]
-                var medians: [Int: Double] = [:]
+                var medians: [Int: Float] = [:]
                 for i in old {
                     let values = (forward ? incoming[i] : outgoing[i]).map { order[$0] }.sorted()
-                    if values.isEmpty { medians[i] = Double(order[i]) }
-                    else { medians[i] = Double(values[(values.count - 1) / 2] + values[values.count / 2]) / 2 }
+                    if values.isEmpty { medians[i] = Float(order[i]) }
+                    else { medians[i] = Float(values[(values.count - 1) / 2] + values[values.count / 2]) / 2 }
                 }
                 layers[rank].sort {
                     let l = medians[$0]!, r = medians[$1]!
@@ -63,9 +63,9 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
         }
         let heights = layers.map { layer in layer.map { $0 < count ? a.nodes[$0].height : 0 }.max() ?? 0 }
         let ys = offsets(heights, gap: layerSeparation)
-        var xs = Array(repeating: 0.0, count: widths.count)
+        var xs = Array(repeating: Float(0), count: widths.count)
         for layer in layers {
-            let total = layer.reduce(0.0) { $0 + widths[$1] } + Double(max(0, layer.count - 1)) * nodeSeparation
+            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + Float(max(0, layer.count - 1)) * nodeSeparation
             var x = -total / 2
             for i in layer { xs[i] = x + widths[i] / 2; x += widths[i] + nodeSeparation }
         }
@@ -73,12 +73,12 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             try Task.checkCancellation()
             for rank in (pass % 2 == 0 ? Array(layers.indices) : Array(layers.indices.reversed())) {
                 let layer = layers[rank]
-                var desired: [Double] = [], shift: [Double] = [], weights: [Double] = [], distance = 0.0
+                var desired: [Float] = [], shift: [Float] = [], weights: [Float] = [], distance: Float = 0
                 for (position, i) in layer.enumerated() {
                     if position > 0 { distance += (widths[layer[position - 1]] + widths[i]) / 2 + nodeSeparation }
                     shift.append(distance)
                     let neighbors = incoming[i] + outgoing[i]
-                    desired.append((neighbors.isEmpty ? xs[i] : neighbors.reduce(0.0) { $0 + xs[$1] } / Double(neighbors.count)) - distance)
+                    desired.append((neighbors.isEmpty ? xs[i] : neighbors.reduce(Float(0)) { $0 + xs[$1] } / Float(neighbors.count)) - distance)
                     weights.append(i < count ? 1 : 4)
                 }
                 let fitted = isotonic(desired, weights: weights)
@@ -101,7 +101,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
 /// a node (including edges spanning more ranks than get virtual nodes) is detoured. `chains[i]` are the virtual-node
 /// points of `graph.edges[i]` and `flows[i]` the sign of its rank change; nil entries are drawn centre to centre.
 func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) throws {
-    struct End { var edge: Int; var isSource: Bool; var key: Double }
+    struct End { var edge: Int; var isSource: Bool; var key: Float }
     struct Face: Hashable { var node: LayoutNode; var side: PortConstraint }
     var faces: [Face: [End]] = [:]
     for (i, e) in graph.edges.enumerated() {
@@ -116,7 +116,7 @@ func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) 
     for (face, ends) in faces {
         let r = face.node.bounds, sorted = ends.sorted { ($0.key, $0.edge, $0.isSource ? 0 : 1) < ($1.key, $1.edge, $1.isSource ? 0 : 1) }
         for (k, end) in sorted.enumerated() {
-            let f = Double(k + 1) / Double(sorted.count + 1)
+            let f = Float(k + 1) / Float(sorted.count + 1)
             let p: Point
             switch face.side {
             case .top: p = Point(x: r.left + r.width * f, y: r.top)
@@ -150,8 +150,8 @@ func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) 
         e.path = compactPath(path)
     }
 }
-private func isotonic(_ values: [Double], weights: [Double]) -> [Double] {
-    var blocks: [(start: Int, end: Int, sum: Double, weight: Double)] = []
+private func isotonic(_ values: [Float], weights: [Float]) -> [Float] {
+    var blocks: [(start: Int, end: Int, sum: Float, weight: Float)] = []
     for i in values.indices {
         blocks.append((i, i, values[i] * weights[i], weights[i]))
         while blocks.count > 1 {

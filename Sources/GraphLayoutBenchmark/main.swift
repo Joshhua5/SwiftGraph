@@ -35,9 +35,9 @@ func milliseconds(_ duration: Duration) -> Double {
 func fixture(_ count: Int) -> LayoutGraph {
     let graph = LayoutGraph()
     for i in 0..<count {
-        let n = LayoutNode(id: "n\(i)", width: 30 + Double(i % 4) * 5, height: 20 + Double(i % 3) * 5)
+        let n = LayoutNode(id: "n\(i)", width: 30 + Float(i % 4) * 5, height: 20 + Float(i % 3) * 5)
         // A reproducible, dense 1000×1000 cloud, independent of backend initialization.
-        n.center = Point(x: Double((i * 137 + 29) % 997) * coordinateSpread, y: Double((i * 263 + 47) % 991) * coordinateSpread)
+        n.center = Point(x: Float((i * 137 + 29) % 997) * Float(coordinateSpread), y: Float((i * 263 + 47) % 991) * Float(coordinateSpread))
         graph.addNode(n)
     }
     if count > 1 {
@@ -100,9 +100,9 @@ for count in sizes {
         for algorithm in algorithms where algorithm.backend != .cpuExact {
             guard let points = outputs[algorithm.backend] else { continue }
             // Remove global translation when comparing shape.
-            let centroidA = exact.reduce(Point.zero, +) / Double(count)
-            let centroidB = points.reduce(Point.zero, +) / Double(count)
-            let distances = zip(exact, points).map { (($0 - centroidA) - ($1 - centroidB)).length }
+            let centroidA = exact.reduce(Point.zero, +) / Float(count)
+            let centroidB = points.reduce(Point.zero, +) / Float(count)
+            let distances = zip(exact, points).map { Double((($0 - centroidA) - ($1 - centroidB)).length) }
             comparisons.append(Comparison(nodes: count, rmsDisplacementFromExact: sqrt(distances.reduce(0) { $0 + $1 * $1 } / Double(count)),
                                           maxDisplacementFromExact: distances.max() ?? 0, backend: algorithm.backend.rawValue))
         }

@@ -7,8 +7,8 @@ public extension LayoutBuilder {
     @discardableResult func useEdgeBundlingPattern(backend: LayoutBackend, executor: LayoutExecutor = .shared) -> Self {
         routePolyline(backend: backend, executor: executor).routeWithBundling(backend: backend, executor: executor)
     }
-    @discardableResult func wrapWithComponentHandling(_ core: any AsyncLayoutAlgorithm, componentSpacing: Double = 20,
-                                                       preferredAspectRatio: Double = 1) -> Self {
+    @discardableResult func wrapWithComponentHandling(_ core: any AsyncLayoutAlgorithm, componentSpacing: Float = 20,
+                                                       preferredAspectRatio: Float = 1) -> Self {
         let operation = ComponentLayoutOperation(core)
         operation.componentSpacing = componentSpacing; operation.preferredAspectRatio = preferredAspectRatio
         return useAsyncAlgorithm(operation)
@@ -19,7 +19,7 @@ public extension LayoutBuilder {
         let operation = RecursiveGroupLayoutOperation(core); configure(operation); return useAsyncAlgorithm(operation)
     }
     @_disfavoredOverload
-    @discardableResult func wrapWithFullComposition(_ core: any AsyncLayoutAlgorithm, componentSpacing: Double = 20,
+    @discardableResult func wrapWithFullComposition(_ core: any AsyncLayoutAlgorithm, componentSpacing: Float = 20,
         configure: (RecursiveGroupLayoutOperation) -> Void = { _ in }) -> Self {
         let operation = ComponentLayoutOperation(core); operation.componentSpacing = componentSpacing
         let groups = RecursiveGroupLayoutOperation(operation); configure(groups); return useAsyncAlgorithm(groups)
@@ -69,7 +69,7 @@ public extension LayoutBuilder {
         configure(operation); return useAsyncAlgorithm(operation)
     }
     @discardableResult func wrapWithFullComposition(_ core: any AsyncLayoutAlgorithm, backend: LayoutBackend,
-        executor: LayoutExecutor = .shared, componentSpacing: Double = 20,
+        executor: LayoutExecutor = .shared, componentSpacing: Float = 20,
         configure: (RecursiveGroupLayoutOperation) -> Void = { _ in }) -> Self {
         let operation = ComponentLayoutOperation(core, backend: backend, executor: executor); operation.componentSpacing = componentSpacing
         let groups = RecursiveGroupLayoutOperation(operation, backend: backend, executor: executor)
@@ -91,7 +91,7 @@ public extension LayoutBuilder {
 
 public extension LayoutBuilder {
     @discardableResult func wrapWithComponentHandling(_ core: any AsyncLayoutAlgorithm, backend: LayoutBackend,
-        executor: LayoutExecutor = .shared, componentSpacing: Double = 20, preferredAspectRatio: Double = 1) -> Self {
+        executor: LayoutExecutor = .shared, componentSpacing: Float = 20, preferredAspectRatio: Float = 1) -> Self {
         let operation = ComponentLayoutOperation(core, backend: backend, executor: executor)
         operation.componentSpacing = componentSpacing; operation.preferredAspectRatio = preferredAspectRatio
         return useAsyncAlgorithm(operation)

@@ -69,8 +69,8 @@ private final class RecordingOrganic: AsyncLayoutAlgorithm {
 private func productionGraph(_ count: Int, kind: String) -> LayoutGraph {
     let graph = LayoutGraph()
     for i in 0..<count {
-        let node = LayoutNode(id: "n\(i)", width: 20 + Double(i % 4) * 5, height: 20)
-        node.center = Point(x: Double((i * 137 + 29) % 997), y: Double((i * 263 + 47) % 991))
+        let node = LayoutNode(id: "n\(i)", width: 20 + Float(i % 4) * 5, height: 20)
+        node.center = Point(x: Float((i * 137 + 29) % 997), y: Float((i * 263 + 47) % 991))
         if kind == "pinned" && i % 16 == 0 { node.metadata[GraphMetadataKeys.fixed] = true }
         if kind == "subset" { node.metadata[GraphMetadataKeys.layoutSubset] = i % 3 == 0 }
         graph.addNode(node)

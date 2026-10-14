@@ -428,10 +428,10 @@ public enum BackendBenchmarkEvaluation {
         for id in commonNodeIDs {
             let a = cpuNodes[id]!.bounds
             let b = metalNodes[id]!.bounds
-            let d = (a.center - b.center).length
+            let d = Double((a.center - b.center).length)
             rawSquaredSum += d * d
             rawMax = max(rawMax, d)
-            let bDelta = max(abs(a.x - b.x), abs(a.y - b.y), abs(a.width - b.width), abs(a.height - b.height))
+            let bDelta = Double(max(abs(a.x - b.x), abs(a.y - b.y), abs(a.width - b.width), abs(a.height - b.height)))
             maxBoundsDelta = max(maxBoundsDelta, bDelta)
             cpuCentroid = cpuCentroid + a.center
             metalCentroid = metalCentroid + b.center
@@ -439,15 +439,15 @@ public enum BackendBenchmarkEvaluation {
 
         let nCount = Double(max(1, commonNodeIDs.count))
         let rawRMS = sqrt(rawSquaredSum / nCount)
-        cpuCentroid = cpuCentroid / nCount
-        metalCentroid = metalCentroid / nCount
+        cpuCentroid = cpuCentroid / Float(nCount)
+        metalCentroid = metalCentroid / Float(nCount)
 
         var alignedSquaredSum = 0.0
         var alignedMax = 0.0
         for id in commonNodeIDs {
             let aRel = cpuNodes[id]!.bounds.center - cpuCentroid
             let bRel = metalNodes[id]!.bounds.center - metalCentroid
-            let d = (aRel - bRel).length
+            let d = Double((aRel - bRel).length)
             alignedSquaredSum += d * d
             alignedMax = max(alignedMax, d)
         }
@@ -472,18 +472,18 @@ public enum BackendBenchmarkEvaluation {
             if !pa.isEmpty && !pb.isEmpty {
                 if pa.count == pb.count {
                     for (p, q) in zip(pa, pb) {
-                        let d = (p - q).length
+                        let d = Double((p - q).length)
                         maxEdgeDev = max(maxEdgeDev, d)
                         totalEdgeDev += d
                         totalComparedPoints += 1
                     }
                 } else {
                     // Compare endpoints + resampled midpoint when bend count differs
-                    let startDev = (pa.first! - pb.first!).length
-                    let endDev = (pa.last! - pb.last!).length
+                    let startDev = Double((pa.first! - pb.first!).length)
+                    let endDev = Double((pa.last! - pb.last!).length)
                     let midA = pa[pa.count / 2]
                     let midB = pb[pb.count / 2]
-                    let midDev = (midA - midB).length
+                    let midDev = Double((midA - midB).length)
                     maxEdgeDev = max(maxEdgeDev, startDev, endDev, midDev)
                     totalEdgeDev += startDev + endDev + midDev
                     totalComparedPoints += 3

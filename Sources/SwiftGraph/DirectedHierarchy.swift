@@ -2,13 +2,13 @@ import Foundation
 
 /// Sugiyama layering with virtual nodes, deterministic median ordering and weighted PAV placement.
 final class DirectedHierarchy: LayoutAlgorithm {
-    var layerSeparation: Double = 50
-    var nodeSeparation: Double = 50
-    var rankSeparation: Double { get { layerSeparation } set { layerSeparation = newValue } }
+    var layerSeparation: Float = 50
+    var nodeSeparation: Float = 50
+    var rankSeparation: Float { get { layerSeparation } set { layerSeparation = newValue } }
     var maxNodesPerRank: Int?
     var retainBestSweep = true
     /// Spacing of the ports on one side of a node; targets then aim at the neighbour's port, not its centre.
-    var portPitch: Double = 0
+    var portPitch: Float = 0
     static let maxVirtualNodes = 20_000
     /// Feedback edges laid out against their direction: they rank, order and get virtual chains as target-to-source edges.
     var reversed: Set<LayoutEdge> = []
@@ -88,11 +88,11 @@ final class DirectedHierarchy: LayoutAlgorithm {
             var changed = false
             for rank in indices {
                 let old = layers[rank]
-                var medians: [Int: Double] = [:]
+                var medians: [Int: Float] = [:]
                 for i in old {
                     let values = (forward ? incoming[i] : outgoing[i]).map { order[$0] }.sorted()
-                    if values.isEmpty { medians[i] = Double(order[i]) }
-                    else { medians[i] = Double(values[(values.count - 1) / 2] + values[values.count / 2]) / 2 }
+                    if values.isEmpty { medians[i] = Float(order[i]) }
+                    else { medians[i] = Float(values[(values.count - 1) / 2] + values[values.count / 2]) / 2 }
                 }
                 layers[rank].sort {
                     let l = medians[$0]!, r = medians[$1]!
@@ -129,9 +129,9 @@ final class DirectedHierarchy: LayoutAlgorithm {
         }
         let heights = layers.map { layer in layer.map { $0 < count ? a.nodes[$0].height : 0 }.max() ?? 0 }
         let ys = offsets(heights, gap: layerSeparation)
-        var xs = Array(repeating: 0.0, count: widths.count)
+        var xs = Array(repeating: Float(0), count: widths.count)
         for layer in layers {
-            let total = layer.reduce(0.0) { $0 + widths[$1] } + Double(max(0, layer.count - 1)) * nodeSeparation
+            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + Float(max(0, layer.count - 1)) * nodeSeparation
             var x = -total / 2
             for i in layer { xs[i] = x + widths[i] / 2; x += widths[i] + nodeSeparation }
         }
@@ -140,14 +140,14 @@ final class DirectedHierarchy: LayoutAlgorithm {
         for i in incoming.indices {
             sortedIn[i].sort { order[$0] < order[$1] }; sortedOut[i].sort { order[$0] < order[$1] }
         }
-        func portOffsets(_ list: [Int], of i: Int) -> [Double] {
+        func portOffsets(_ list: [Int], of i: Int) -> [Float] {
             guard i < count, list.count > 1 else { return Array(repeating: 0, count: list.count) }
-            let step = min(portPitch, max(0, widths[i] - 24) / Double(list.count - 1))
-            return list.indices.map { (Double($0) - Double(list.count - 1) / 2) * step }
+            let step = min(portPitch, max(0, widths[i] - 24) / Float(list.count - 1))
+            return list.indices.map { (Float($0) - Float(list.count - 1) / 2) * step }
         }
         let inOffsets = sortedIn.indices.map { portOffsets(sortedIn[$0], of: $0) }, outOffsets = sortedOut.indices.map { portOffsets(sortedOut[$0], of: $0) }
         // For each vertex, (neighbour, neighbour's port offset, own port offset) over all its edges.
-        var attachments = Array(repeating: [(Int, Double, Double)](), count: widths.count)
+        var attachments = Array(repeating: [(Int, Float, Float)](), count: widths.count)
         var inSlots: [[Int]: [Int]] = [:]
         for v in sortedIn.indices { for (j, u) in sortedIn[v].enumerated() { inSlots[[u, v], default: []].append(j) } }
         for u in sortedOut.indices {
@@ -163,12 +163,12 @@ final class DirectedHierarchy: LayoutAlgorithm {
             try Task.checkCancellation()
             for rank in (pass % 2 == 0 ? Array(layers.indices) : Array(layers.indices.reversed())) {
                 let layer = layers[rank]
-                var desired: [Double] = [], shift: [Double] = [], weights: [Double] = [], distance = 0.0
+                var desired: [Float] = [], shift: [Float] = [], weights: [Float] = [], distance: Float = 0
                 for (position, i) in layer.enumerated() {
                     if position > 0 { distance += (widths[layer[position - 1]] + widths[i]) / 2 + nodeSeparation }
                     shift.append(distance)
                     let targets = attachments[i].map { xs[$0.0] + $0.1 - $0.2 }
-                    desired.append((targets.isEmpty ? xs[i] : targets.reduce(0.0, +) / Double(targets.count)) - distance)
+                    desired.append((targets.isEmpty ? xs[i] : targets.reduce(Float(0), +) / Float(targets.count)) - distance)
                     weights.append(i < count ? 1 : 4)
                 }
                 let fitted = isotonicFit(desired, weights: weights)
@@ -183,8 +183,8 @@ final class DirectedHierarchy: LayoutAlgorithm {
         }
     }
 }
-func isotonicFit(_ values: [Double], weights: [Double]) -> [Double] {
-    var blocks: [(start: Int, end: Int, sum: Double, weight: Double)] = []
+func isotonicFit(_ values: [Float], weights: [Float]) -> [Float] {
+    var blocks: [(start: Int, end: Int, sum: Float, weight: Float)] = []
     for i in values.indices {
         blocks.append((i, i, values[i] * weights[i], weights[i]))
         while blocks.count > 1 {

@@ -25,7 +25,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
     /// Reused indexed search storage: a generation stamp avoids clearing the whole scene for every edge.
     private final class SearchStorage {
         var generation: UInt32 = 0
-        var seen: [UInt32], closed: [UInt32], costs: [Double], previous: [Int]
+        var seen: [UInt32], closed: [UInt32], costs: [Float], previous: [Int]
         init(count: Int) {
             seen = Array(repeating: 0, count: count); closed = seen
             costs = Array(repeating: 0, count: count); previous = Array(repeating: -1, count: count)
@@ -40,7 +40,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
         func cell(_ i: Int) -> Cell { Cell(x: bounds.minX + i % width, y: bounds.minY + i / width) }
     }
     /// A node side as a search endpoint: the boundary point, and the first free cell straight out from it.
-    private struct Port { var point: Point; var entry: Cell; var axis: Int; var cost: Double }
+    private struct Port { var point: Point; var entry: Cell; var axis: Int; var cost: Float }
     private struct Lattice {
         var grid: Int, origin: Point
         var groups: [(node: LayoutNode, rect: GridRect)] = [], usage: [Cell: Usage] = [:]
@@ -53,15 +53,15 @@ public final class ChannelEdgeRouter: EdgeRouter {
         func usageAt(_ c: Cell) -> Usage? { if let indexed, let i = indexed.index(c) { return indexed.usage[i] }; return usage[c] }
         /// Cells covered by any node: beyond it the lattice is empty, so the search only needs a few cells of slack.
         var extent = GridRect(minX: 0, minY: 0, maxX: 0, maxY: 0)
-        func cell(_ p: Point) -> Cell { Cell(x: Int(floor((p.x - origin.x) / Double(grid))), y: Int(floor((p.y - origin.y) / Double(grid)))) }
-        func centre(_ c: Cell) -> Point { Point(x: origin.x + (Double(c.x) + 0.5) * Double(grid), y: origin.y + (Double(c.y) + 0.5) * Double(grid)) }
+        func cell(_ p: Point) -> Cell { Cell(x: Int(floor((p.x - origin.x) / Float(grid))), y: Int(floor((p.y - origin.y) / Float(grid)))) }
+        func centre(_ c: Cell) -> Point { Point(x: origin.x + (Float(c.x) + 0.5) * Float(grid), y: origin.y + (Float(c.y) + 0.5) * Float(grid)) }
         /// Cells a rectangle overlaps; touching a cell boundary (to within `tolerance`) does not occupy the next cell.
         func cover(_ r: Rect) -> GridRect {
-            let g = Double(grid), e = Self.tolerance / g, minX = Int(floor((r.left - origin.x) / g + e)), minY = Int(floor((r.top - origin.y) / g + e))
+            let g = Float(grid), e = Self.tolerance / g, minX = Int(floor((r.left - origin.x) / g + e)), minY = Int(floor((r.top - origin.y) / g + e))
             return GridRect(minX: minX, minY: minY, maxX: max(minX, Int(ceil((r.right - origin.x) / g - e)) - 1), maxY: max(minY, Int(ceil((r.bottom - origin.y) / g - e)) - 1))
         }
         /// Geometry differing by less than this (as GPU layouts do) must not change which cells a node occupies.
-        static let tolerance = 0.05
+        static let tolerance: Float = 0.05
     }
     private struct Scene { var graph: LayoutGraph; var leaves: QuadTree<LayoutNode>; var vertical: Bool }
 
@@ -131,7 +131,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
     /// neighbouring lines so edges sharing a side can spread out instead of stacking on one point.
     private func ports(_ node: LayoutNode, _ other: LayoutNode, _ active: PortConstraint, _ candidates: [PortConstraint], _ lattice: Lattice, _ walls: [GridRect], _ scene: Scene) -> [Port] {
         let sides = OrthogonalPorts.ranked(node, other: other, active: active, candidates: candidates, vertical: scene.vertical)
-        let r = node.bounds, g = Double(lattice.grid), cover = lattice.cover(r)
+        let r = node.bounds, g = Float(lattice.grid), cover = lattice.cover(r)
         var result: [Port] = []
         for (rank, side) in sides.enumerated() {
             let vertical = OrthogonalPorts.isVertical(side), raw = OrthogonalPorts.point(node, side: side, toward: other.bounds)
@@ -146,7 +146,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
             for k in lines {
                 if accepted >= Self.portLines { break }
                 var p = raw
-                if let k { let snapped = o + (Double(k) + 0.5) * g; if vertical { p.x = snapped } else { p.y = snapped } }
+                if let k { let snapped = o + (Float(k) + 0.5) * g; if vertical { p.x = snapped } else { p.y = snapped } }
                 var entry = lattice.cell(p)
                 switch side {
                 case .top: entry.y = cover.minY - 1
@@ -162,29 +162,29 @@ public final class ChannelEdgeRouter: EdgeRouter {
                 // Each crossing of a route already at this node costs a quarter bend, like a side rank: more drives routes round the long way.
                 // It is judged on the likely route: out along the stub, level with the other node, then in.
                 let guess = [p, tip, vertical ? Point(x: other.center.x, y: tip.y) : Point(x: tip.x, y: other.center.y), other.center]
-                let cost = Double(rank * bendPenalty) / 4 + 0.25 * Double(abs((k ?? preferred) - preferred)) + congestion(lattice.usageAt(entry), vertical ? 2 : 1)
-                    + Double(bendPenalty) / 4 * Double(Self.crossings(guess, attached[ObjectIdentifier(node)] ?? []))
+                let cost = Float(rank * bendPenalty) / 4 + 0.25 * Float(abs((k ?? preferred) - preferred)) + congestion(lattice.usageAt(entry), vertical ? 2 : 1)
+                    + Float(bendPenalty) / 4 * Float(Self.crossings(guess, attached[ObjectIdentifier(node)] ?? []))
                 result.append(Port(point: p, entry: entry, axis: vertical ? 2 : 1, cost: cost)); accepted += 1
             }
         }
         return result
     }
     private static func crossings(_ path: [Point], _ routes: [[Point]]) -> Int {
-        func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
+        func cross(_ a: Point, _ b: Point) -> Float { a.x * b.y - a.y * b.x }
         var count = 0
         for (a, b) in zip(path, path.dropFirst()) { for route in routes { for (c, d) in zip(route, route.dropFirst()) {
             let u = b - a, v = d - c, denominator = cross(u, v)
-            guard abs(denominator) > 1e-12 else { continue }
+            guard abs(denominator) > 1e-6 else { continue }
             let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
-            if t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9 { count += 1 }
+            if t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5 { count += 1 }
         } } }
         return count
     }
     /// Running along an occupied cell costs the full penalty; crossing it, half.
-    private func congestion(_ usage: Usage?, _ axis: Int) -> Double {
+    private func congestion(_ usage: Usage?, _ axis: Int) -> Float {
         guard congestionPenalty > 0, let u = usage else { return 0 }
         let along = axis == 1 ? u.horizontal : u.vertical, across = axis == 1 ? u.vertical : u.horizontal
-        return Double(along * congestionPenalty + across * max(1, congestionPenalty / 2))
+        return Float(along * congestionPenalty + across * max(1, congestionPenalty / 2))
     }
     private func search(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ walls: [GridRect], relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
         if congestionPenalty == 0, let compressed = compressedSearch(starts, ends, lattice, walls) { return compressed }
@@ -215,15 +215,15 @@ public final class ChannelEdgeRouter: EdgeRouter {
         var goals: [Int: Port] = [:], sources: [Int: Port] = [:]
         for e in ends { let i = vertex(e.entry); if goals[i].map({ e.cost < $0.cost }) ?? true { goals[i] = e } }
         for s in starts { sources[vertex(s.entry) * 3 + s.axis - 1] = s }
-        var heuristicCache = Array(repeating: -1.0, count: blocked.count)
-        func heuristic(_ i: Int) -> Double {
+        var heuristicCache = Array(repeating: Float(-1), count: blocked.count)
+        func heuristic(_ i: Int) -> Float {
             if heuristicCache[i] >= 0 { return heuristicCache[i] }
             let c = cell(i)
-            var value = Double.infinity
-            for end in ends { value = min(value, Double(abs(end.entry.x - c.x) + abs(end.entry.y - c.y)) + end.cost) }
+            var value = Float.infinity
+            for end in ends { value = min(value, Float(abs(end.entry.x - c.x) + abs(end.entry.y - c.y)) + end.cost) }
             heuristicCache[i] = value; return value
         }
-        var costs = Array(repeating: Double.infinity, count: blocked.count * 3), previous = Array(repeating: -1, count: blocked.count * 3), closed = Array(repeating: false, count: blocked.count * 3), queue = RoutingPriorityQueue<Int>()
+        var costs = Array(repeating: Float.infinity, count: blocked.count * 3), previous = Array(repeating: -1, count: blocked.count * 3), closed = Array(repeating: false, count: blocked.count * 3), queue = RoutingPriorityQueue<Int>()
         for port in starts {
             let state = vertex(port.entry) * 3 + port.axis - 1
             if sources[state]!.cost == port.cost && port.cost < costs[state] { costs[state] = port.cost; queue.push(state, priority: port.cost + heuristic(state / 3)) }
@@ -236,7 +236,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
             if axis == 3 { finish = current; break }
             let row = index / width, column = index % width, from = cell(index)
             if let goal = goals[index] {
-                let done = index * 3 + 2, cost = costs[current] + goal.cost + Double(axis != goal.axis ? bendPenalty : 0)
+                let done = index * 3 + 2, cost = costs[current] + goal.cost + Float(axis != goal.axis ? bendPenalty : 0)
                 if cost < costs[done] { costs[done] = cost; previous[done] = current; queue.push(done, priority: cost) }
             }
             for (dx, dy, direction) in [(0, 1, 2), (0, -1, 2), (1, 0, 1), (-1, 0, 1)] {
@@ -248,7 +248,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                 // Positive congestion requires materialized per-cell usage. Reject oversized jumps before either
                 // scanning their usage or expanding them; callers receive the normal explicit fallback diagnostic.
                 if congestionPenalty > 0 && length > 1_000_000 { continue }
-                var cost = costs[current] + Double(length) + Double(axis != direction ? bendPenalty : 0)
+                var cost = costs[current] + Float(length) + Float(axis != direction ? bendPenalty : 0)
                 if congestionPenalty > 0 && !lattice.usage.isEmpty {
                     for step in 1...length { cost += congestion(lattice.usage[Cell(x: from.x + dx * step, y: from.y + dy * step)], direction) }
                 }
@@ -291,7 +291,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                         let low = Cell(x: min(lattice.extent.minX, entries.map(\.x).min()!) - slack, y: min(lattice.extent.minY, entries.map(\.y).min()!) - slack)
                         let high = Cell(x: max(lattice.extent.maxX, entries.map(\.x).max()!) + slack, y: max(lattice.extent.maxY, entries.map(\.y).max()!) + slack)
                         let goalLow = Cell(x: ends.map(\.entry.x).min()!, y: ends.map(\.entry.y).min()!), goalHigh = Cell(x: ends.map(\.entry.x).max()!, y: ends.map(\.entry.y).max()!)
-                        func heuristic(_ c: Cell) -> Double { Double(max(goalLow.x - c.x, 0, c.x - goalHigh.x) + max(goalLow.y - c.y, 0, c.y - goalHigh.y)) }
+                        func heuristic(_ c: Cell) -> Float { Float(max(goalLow.x - c.x, 0, c.x - goalHigh.x) + max(goalLow.y - c.y, 0, c.y - goalHigh.y)) }
                         var queue = RoutingPriorityQueue<Int>()
                         for port in starts {
                             guard let i = indexed.index(port.entry) else { continue }
@@ -310,7 +310,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                             if direction == 3 { finish = current; break }
                             let cell = indexed.cell(index), currentCost = costs[current]
                             if let goal = goals[index] {
-                                let done = index * 3 + 2, cost = currentCost + goal.cost + Double(direction != goal.axis ? bendPenalty : 0)
+                                let done = index * 3 + 2, cost = currentCost + goal.cost + Float(direction != goal.axis ? bendPenalty : 0)
                                 if seen[done] != generation || cost < costs[done] {
                                     seen[done] = generation; costs[done] = cost; previous[done] = current; queue.push(done, priority: cost)
                                 }
@@ -320,7 +320,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                                 guard c.x >= low.x, c.x <= high.x, c.y >= low.y, c.y <= high.y, let i = indexed.index(c), !indexed.blocked[i], !walls.contains(where: { $0.contains(c) }) else { continue }
                                 let next = i * 3 + axis - 1
                                 if closed[next] == generation { continue }
-                                let cost = currentCost + 1 + Double(direction != axis ? bendPenalty : 0) + congestion(indexed.usage[i], axis)
+                                let cost = currentCost + 1 + Float(direction != axis ? bendPenalty : 0) + congestion(indexed.usage[i], axis)
                                 if seen[next] != generation || cost < costs[next] {
                                     seen[next] = generation; costs[next] = cost; previous[next] = current
                                     queue.push(next, priority: cost + heuristic(c))
@@ -345,8 +345,8 @@ public final class ChannelEdgeRouter: EdgeRouter {
         var pts = centres
         if pts.count == 1 { pts.append(pts[0]) }
         let n = pts.count, startVertical = start.axis == 2, endVertical = end.axis == 2
-        func coordinate(_ p: Point, _ vertical: Bool) -> Double { vertical ? p.x : p.y }
-        func set(_ p: inout Point, _ vertical: Bool, _ value: Double) { if vertical { p.x = value } else { p.y = value } }
+        func coordinate(_ p: Point, _ vertical: Bool) -> Float { vertical ? p.x : p.y }
+        func set(_ p: inout Point, _ vertical: Bool, _ value: Float) { if vertical { p.x = value } else { p.y = value } }
         var ks = 0, ke = n - 1
         while ks + 1 < n && coordinate(pts[ks + 1], startVertical) == coordinate(pts[0], startVertical) { ks += 1 }
         while ke > 0 && coordinate(pts[ke - 1], endVertical) == coordinate(pts[n - 1], endVertical) { ke -= 1 }
@@ -384,7 +384,7 @@ enum OrthogonalPorts {
     }
     /// Dominant direction of travel along the edges, by centre displacement; `direction` is nil unless most of it points one way.
     static func flow(_ graph: LayoutGraph) -> (vertical: Bool, direction: Point?) {
-        var sx = 0.0, sy = 0.0, ax = 0.0, ay = 0.0
+        var sx: Float = 0, sy: Float = 0, ax: Float = 0, ay: Float = 0
         for e in graph.edges where e.source !== e.target {
             let d = e.target.center - e.source.center; sx += d.x; sy += d.y; ax += abs(d.x); ay += abs(d.y)
         }
@@ -423,12 +423,12 @@ enum OrthogonalPorts {
 /// Last resorts for orthogonal routers when their own search fails: an orthogonal L/Z between side ports if one is
 /// clear, otherwise an obstacle-aware polyline between those ports, then the least bad L/Z, and only then a straight line.
 enum RoutingFallback {
-    static func route(_ edge: LayoutEdge, _ graph: LayoutGraph, padding: Double = 10) -> [Point] {
+    static func route(_ edge: LayoutEdge, _ graph: LayoutGraph, padding: Float = 10) -> [Point] {
         let flow = OrthogonalPorts.flow(graph).vertical
         let from = OrthogonalPorts.ranked(edge.source, other: edge.target, active: edge.sourcePort, candidates: edge.sourcePortCandidates, vertical: flow).prefix(2)
         let to = OrthogonalPorts.ranked(edge.target, other: edge.source, active: edge.targetPort, candidates: edge.targetPortCandidates, vertical: flow).prefix(2)
         let obstacles = ObstaclePolyline.obstacles(edge, graph)
-        let ends = [edge.source.bounds, edge.target.bounds].filter { $0.width > 0 && $0.height > 0 }.map { $0.inflated(by: -1e-6) }
+        let ends = [edge.source.bounds, edge.target.bounds].filter { $0.width > 0 && $0.height > 0 }.map { $0.inflated(by: -1e-5) }
         var lz: [[Point]] = [], combos: [(Point, Point, Point, Point)] = []
         for a in from { for b in to {
             let ps = OrthogonalPorts.point(edge.source, side: a, toward: edge.target.bounds), pt = OrthogonalPorts.point(edge.target, side: b, toward: edge.source.bounds)
@@ -455,14 +455,14 @@ enum RoutingFallback {
         let sv = ds.x == 0, tv = dt.x == 0
         if sv != tv {
             let corner = sv ? Point(x: ps.x, y: pt.y) : Point(x: pt.x, y: ps.y)
-            return (corner - ps).x * ds.x + (corner - ps).y * ds.y > 1e-6 && (corner - pt).x * dt.x + (corner - pt).y * dt.y > 1e-6 ? compactPath([ps, corner, pt]) : nil
+            return (corner - ps).x * ds.x + (corner - ps).y * ds.y > 1e-5 && (corner - pt).x * dt.x + (corner - pt).y * dt.y > 1e-5 ? compactPath([ps, corner, pt]) : nil
         }
         let along = sv ? Point(x: 0, y: 1) : Point(x: 1, y: 0)
-        func at(_ p: Point) -> Double { p.x * along.x + p.y * along.y }
-        func place(_ q: Point, _ v: Double) -> Point { sv ? Point(x: q.x, y: v) : Point(x: v, y: q.y) }
+        func at(_ p: Point) -> Float { p.x * along.x + p.y * along.y }
+        func place(_ q: Point, _ v: Float) -> Point { sv ? Point(x: q.x, y: v) : Point(x: v, y: q.y) }
         let sign = ds.x + ds.y
         if ds.x == -dt.x && ds.y == -dt.y {
-            guard (at(pt) - at(ps)) * sign > 1e-6 else { return nil }
+            guard (at(pt) - at(ps)) * sign > 1e-5 else { return nil }
             let mid = (at(ps) + at(pt)) / 2
             return compactPath([ps, place(ps, mid), place(pt, mid), pt])
         }
@@ -474,8 +474,8 @@ enum RoutingFallback {
 /// Quaternary min-heap with priority-only tie handling, like System.Collections.Generic.PriorityQueue.
 /// Router tie handling matters: equally short paths become inputs to later congestion/bundling passes.
 struct RoutingPriorityQueue<Value> {
-    private var items: [(Value, Double)] = []
-    mutating func push(_ value: Value, priority: Double) {
+    private var items: [(Value, Float)] = []
+    mutating func push(_ value: Value, priority: Float) {
         var i = items.count; items.append((value, priority))
         while i > 0 {
             let p = (i - 1) / 4

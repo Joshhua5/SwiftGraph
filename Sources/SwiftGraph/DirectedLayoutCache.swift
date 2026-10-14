@@ -23,7 +23,7 @@ public final class DirectedLayoutCache: @unchecked Sendable {
 }
 
 struct DirectedComponentKey: Hashable {
-    struct Node: Hashable { var id: String; var width: Double; var height: Double }
+    struct Node: Hashable { var id: String; var width: Float; var height: Float }
     struct Edge: Hashable { var source: String; var target: String; var sourcePort: PortConstraint; var targetPort: PortConstraint; var index: Int }
     var nodes: [Node]
     var edges: [Edge]

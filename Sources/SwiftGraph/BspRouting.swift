@@ -8,11 +8,11 @@ import Foundation
 /// without port constraints, then drawn as an obstacle-aware polyline or an orthogonal L/Z, and reported.
 public final class BspEdgeRouter: EdgeRouter {
     /// Clearance between the outermost nodes and the outer routing frame.
-    public var margin: Double = 20
+    public var margin: Float = 20
     /// Extra cost per bend, so straight and single-bend routes beat equal-length staircases.
-    public var bendPenalty: Double = 40
+    public var bendPenalty: Float = 40
     /// Lane spacing for edges sharing a channel; 0 leaves them merged.
-    public var edgeSpacing: Double = 10
+    public var edgeSpacing: Float = 10
     /// Edges with no route through the partition: a polyline, L/Z or straight line was drawn instead.
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
@@ -29,7 +29,7 @@ public final class BspEdgeRouter: EdgeRouter {
         let base = segments.isEmpty ? nil : BspVisibilityGraph(segments)
         for edge in graph.edges where edge.source !== edge.target {
             if RoutingCompute.isCancelled { return }
-            let obstacles = blockers.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: -1e-6) }
+            let obstacles = blockers.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: -1e-5) }
             var path = base.flatMap { orthogonalRoute(edge, $0, segments, obstacles, flow: flow, constrained: true) }
             if path == nil, edge.sourcePort != .none || edge.targetPort != .none || !edge.sourcePortCandidates.isEmpty || !edge.targetPortCandidates.isEmpty {
                 path = base.flatMap { orthogonalRoute(edge, $0, segments, obstacles, flow: flow, constrained: false) }
@@ -43,12 +43,12 @@ public final class BspEdgeRouter: EdgeRouter {
         }
     }
     /// Moves the frame out by `amount`, extending every segment that ended on it.
-    private static func expand(_ segments: [(start: Point, end: Point)], frame: Rect, by amount: Double) -> [(start: Point, end: Point)] {
+    private static func expand(_ segments: [(start: Point, end: Point)], frame: Rect, by amount: Float) -> [(start: Point, end: Point)] {
         let outer = frame.inflated(by: amount)
         func move(_ p: Point) -> Point {
             var q = p
-            if abs(p.x - frame.left) < 1e-6 { q.x = outer.left } else if abs(p.x - frame.right) < 1e-6 { q.x = outer.right }
-            if abs(p.y - frame.top) < 1e-6 { q.y = outer.top } else if abs(p.y - frame.bottom) < 1e-6 { q.y = outer.bottom }
+            if abs(p.x - frame.left) < 1e-5 { q.x = outer.left } else if abs(p.x - frame.right) < 1e-5 { q.x = outer.right }
+            if abs(p.y - frame.top) < 1e-5 { q.y = outer.top } else if abs(p.y - frame.bottom) < 1e-5 { q.y = outer.bottom }
             return q
         }
         return segments.map { (move($0.start), move($0.end)) }
@@ -58,7 +58,7 @@ public final class BspEdgeRouter: EdgeRouter {
         return allowed.isEmpty ? nil : Set(allowed)
     }
     /// Cost of using a side: nothing when it follows the flow, half a bend sideways, a bend against it.
-    private func sideCost(_ side: PortConstraint, desired: Point?) -> Double {
+    private func sideCost(_ side: PortConstraint, desired: Point?) -> Float {
         guard let desired else { return 0 }
         let d = portDirection(side), dot = d.x * desired.x + d.y * desired.y
         return dot > 0 ? 0 : dot < 0 ? bendPenalty : bendPenalty / 2
@@ -77,7 +77,7 @@ public final class BspEdgeRouter: EdgeRouter {
         for p in path {
             if result.count >= 2 {
                 let a = result[result.count - 2], b = result[result.count - 1]
-                if abs((b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x)) < 1e-9 { result[result.count - 1] = p; continue }
+                if abs((b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x)) < 1e-5 { result[result.count - 1] = p; continue }
             }
             result.append(p)
         }
@@ -86,28 +86,28 @@ public final class BspEdgeRouter: EdgeRouter {
     /// Candidate ports on each side (its middle, and positions aligned with the other node), each joined by an
     /// unobstructed perpendicular ray to the first channel it meets.
     private static func ports(_ r: Rect, facing other: Rect, _ segments: [(start: Point, end: Point)], _ obstacles: [Rect]) -> [(port: Point, hit: Point, side: PortConstraint)] {
-        func positions(_ lo: Double, _ hi: Double, _ otherLo: Double, _ otherHi: Double) -> [Double] {
+        func positions(_ lo: Float, _ hi: Float, _ otherLo: Float, _ otherHi: Float) -> [Float] {
             let inset = min(10, (hi - lo) / 4)
-            func clamp(_ v: Double) -> Double { min(max(v, lo + inset), hi - inset) }
+            func clamp(_ v: Float) -> Float { min(max(v, lo + inset), hi - inset) }
             var values = [(lo + hi) / 2, clamp((otherLo + otherHi) / 2)]
             if max(lo, otherLo) < min(hi, otherHi) { values.append(clamp((max(lo, otherLo) + min(hi, otherHi)) / 2)) }
-            return values.reduce(into: []) { result, v in if !result.contains(where: { abs($0 - v) < 1e-6 }) { result.append(v) } }
+            return values.reduce(into: []) { result, v in if !result.contains(where: { abs($0 - v) < 1e-5 }) { result.append(v) } }
         }
         var result: [(port: Point, hit: Point, side: PortConstraint)] = []
         let horizontal = positions(r.left, r.right, other.left, other.right), vertical = positions(r.top, r.bottom, other.top, other.bottom)
         let sides = horizontal.map { (Point(x: $0, y: r.top), Point(x: 0, y: -1), PortConstraint.top) } + horizontal.map { (Point(x: $0, y: r.bottom), Point(x: 0, y: 1), PortConstraint.bottom) }
             + vertical.map { (Point(x: r.left, y: $0), Point(x: -1, y: 0), PortConstraint.left) } + vertical.map { (Point(x: r.right, y: $0), Point(x: 1, y: 0), PortConstraint.right) }
         for (port, direction, side) in sides {
-            var best: Point?, distance = Double.infinity
+            var best: Point?, distance = Float.infinity
             for s in segments {
                 let along = direction.x == 0
                 // A ray along y meets horizontal segments spanning the port's x, and vice versa.
-                guard along ? abs(s.start.y - s.end.y) < 1e-9 : abs(s.start.x - s.end.x) < 1e-9 else { continue }
+                guard along ? abs(s.start.y - s.end.y) < 1e-5 : abs(s.start.x - s.end.x) < 1e-5 else { continue }
                 let (lo, hi) = along ? (min(s.start.x, s.end.x), max(s.start.x, s.end.x)) : (min(s.start.y, s.end.y), max(s.start.y, s.end.y))
                 let coordinate = along ? port.x : port.y
-                guard coordinate >= lo - 1e-6 && coordinate <= hi + 1e-6 else { continue }
+                guard coordinate >= lo - 1e-5 && coordinate <= hi + 1e-5 else { continue }
                 let d = along ? (s.start.y - port.y) * direction.y : (s.start.x - port.x) * direction.x
-                if d > 1e-6 && d < distance { distance = d; best = port + direction * d }
+                if d > 1e-5 && d < distance { distance = d; best = port + direction * d }
             }
             if let hit = best {
                 let clear: Bool
@@ -126,7 +126,7 @@ public final class BspEdgeRouter: EdgeRouter {
 /// Quantize equality and hashing identically: tolerance-only equality severs segment chains.
 struct BspPointKey: Hashable {
     var x: Int64; var y: Int64
-    init(_ p: Point) { x = Int64(floor(p.x / 1e-4 + 0.5)); y = Int64(floor(p.y / 1e-4 + 0.5)) }
+    init(_ p: Point) { x = Int64(floor(Double(p.x) / 1e-4 + 0.5)); y = Int64(floor(Double(p.y) / 1e-4 + 0.5)) }
 }
 struct BspVisibilityGraph {
     private var points: [Point] = []
@@ -170,16 +170,16 @@ struct BspVisibilityGraph {
         }
         if BspPointKey(port) != BspPointKey(hit) { link(insert(port), h) }
     }
-    func path(from starts: [Point], to ends: [Point], bendPenalty: Double) -> [Point]? {
+    func path(from starts: [Point], to ends: [Point], bendPenalty: Float) -> [Point]? {
         path(from: starts.map { ($0, 0) }, to: ends.map { ($0, 0) }, bendPenalty: bendPenalty)
     }
     /// A* over (vertex, axis) states from any start to any end, charging `bendPenalty` per change of axis and each
     /// port's own cost for starting or finishing there.
-    func path(from starts: [(Point, Double)], to ends: [(Point, Double)], bendPenalty: Double) -> [Point]? {
-        var goals: [Int: Double] = [:]
+    func path(from starts: [(Point, Float)], to ends: [(Point, Float)], bendPenalty: Float) -> [Point]? {
+        var goals: [Int: Float] = [:]
         for (p, c) in ends { if let i = indices[BspPointKey(p)], c < goals[i, default: .infinity] { goals[i] = c } }
-        func estimate(_ p: Point) -> Double { ends.map { abs($0.0.x - p.x) + abs($0.0.y - p.y) }.min() ?? 0 }
-        var queue = RoutingPriorityQueue<Int>(), costs: [Int: Double] = [:], previous: [Int: Int] = [:]
+        func estimate(_ p: Point) -> Float { ends.map { abs($0.0.x - p.x) + abs($0.0.y - p.y) }.min() ?? 0 }
+        var queue = RoutingPriorityQueue<Int>(), costs: [Int: Float] = [:], previous: [Int: Int] = [:]
         for (start, cost) in starts {
             guard let a = indices[BspPointKey(start)], cost < costs[a * 3, default: .infinity] else { continue }
             costs[a * 3] = cost; queue.push(a * 3, priority: cost + estimate(start))

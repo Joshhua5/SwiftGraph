@@ -1,22 +1,22 @@
 import Foundation
 
 enum DirectedGeometry {
-    static let epsilon = 0.0001
+    static let epsilon: Float = 0.0001
     struct Segment {
         var a: Point, b: Point
         var horizontal: Bool { abs(a.y - b.y) < epsilon }
-        var length: Double { abs(a.x - b.x) + abs(a.y - b.y) }
+        var length: Float { abs(a.x - b.x) + abs(a.y - b.y) }
     }
     struct Score {
         var missing = 0, overlaps = 0, crossings = 0, shared = 0, proximity = 0, bends = 0
-        var length = 0.0, area = 0.0
+        var length: Float = 0.0, area: Float = 0.0
         /// Proximity ranks after sharing and, with crossings, ahead of bends. A proximate pair is
         /// weighed as `proximityWeight` crossings: a strict order would give up hundreds of
         /// crossings to remove one residual near-parallel pair in a dense component.
         static let proximityWeight = 4
         func precedes(_ b: Score) -> Bool {
-            let aValues = [Double(missing + overlaps), Double(shared), Double(crossings + Self.proximityWeight * proximity), Double(proximity), Double(bends), length, area]
-            let bValues = [Double(b.missing + b.overlaps), Double(b.shared), Double(b.crossings + Self.proximityWeight * b.proximity), Double(b.proximity), Double(b.bends), b.length, b.area]
+            let aValues = [Float(missing + overlaps), Float(shared), Float(crossings + Self.proximityWeight * proximity), Float(proximity), Float(bends), length, area]
+            let bValues = [Float(b.missing + b.overlaps), Float(b.shared), Float(b.crossings + Self.proximityWeight * b.proximity), Float(b.proximity), Float(b.bends), b.length, b.area]
             for (a, b) in zip(aValues, bValues) where a != b { return a < b }
             return false
         }
@@ -29,7 +29,7 @@ enum DirectedGeometry {
         }
         return abs(a.a.x - b.a.x) < epsilon && min(max(a.a.y, a.b.y), max(b.a.y, b.b.y)) - max(min(a.a.y, a.b.y), min(b.a.y, b.b.y)) > epsilon
     }
-    static func nearShared(_ a: Segment, _ b: Segment, spacing: Double, minimumLength: Double = 12) -> Bool {
+    static func nearShared(_ a: Segment, _ b: Segment, spacing: Float, minimumLength: Float = 12) -> Bool {
         guard a.horizontal == b.horizontal else { return false }
         if a.horizontal {
             return abs(a.a.y - b.a.y) < spacing - epsilon && min(max(a.a.x, a.b.x), max(b.a.x, b.b.x)) - max(min(a.a.x, a.b.x), min(b.a.x, b.b.x)) > minimumLength
@@ -46,7 +46,7 @@ enum DirectedGeometry {
     /// Crossing points, exactly shared pairs and near-parallel pairs (closer than `spacing`
     /// with overlap beyond the minimum run) between different routes. A pair that shares
     /// exactly is not also counted as proximate. The grid visits only neighbouring segments.
-    static func pairStatistics(_ lines: [[Segment]], spacing: Double) throws -> (crossings: Int, shared: Int, proximity: Int) {
+    static func pairStatistics(_ lines: [[Segment]], spacing: Float) throws -> (crossings: Int, shared: Int, proximity: Int) {
         let grid = DirectedSegmentGrid()
         for (i, line) in lines.enumerated() { for s in line { grid.insert(s, owner: i) } }
         var crossings = 0, sharedPairs = 0, proximity = 0
@@ -65,10 +65,10 @@ enum DirectedGeometry {
         }
         return (crossings, sharedPairs, proximity)
     }
-    static func proximity(edges: [LayoutEdge], spacing: Double) throws -> Int {
+    static func proximity(edges: [LayoutEdge], spacing: Float) throws -> Int {
         try pairStatistics(edges.map { segments($0.path) }, spacing: spacing).proximity
     }
-    static func measure(nodes: [LayoutNode], edges: [LayoutEdge], spacing: Double = 10) throws -> Score {
+    static func measure(nodes: [LayoutNode], edges: [LayoutEdge], spacing: Float = 10) throws -> Score {
         var score = Score()
         let lines = edges.map { segments($0.path) }
         for i in nodes.indices { for j in nodes.indices where j > i && nodes[i].bounds.intersects(nodes[j].bounds) { score.overlaps += 1 } }
@@ -118,13 +118,13 @@ enum DirectedGeometry {
 /// bucket overlaps the (margin-inflated) query box, so pair scans stay near-linear.
 final class DirectedSegmentGrid {
     private struct Cell: Hashable { var x: Int, y: Int }
-    private let size: Double
+    private let size: Float
     private(set) var segments: [DirectedGeometry.Segment] = []
     private var owners: [Int] = []
     private var cells: [Cell: [Int]] = [:]
     private var stamps: [Int] = []
     private var current = 0
-    init(cellSize: Double = 64) { size = cellSize }
+    init(cellSize: Float = 64) { size = cellSize }
 
     func removeAll() { segments.removeAll(keepingCapacity: true); owners.removeAll(keepingCapacity: true); cells.removeAll(keepingCapacity: true); stamps.removeAll(keepingCapacity: true) }
     func insert(_ segment: DirectedGeometry.Segment, owner: Int) {
@@ -133,13 +133,13 @@ final class DirectedSegmentGrid {
         let (xs, ys) = span(segment, margin: 0)
         for x in xs { for y in ys { cells[Cell(x: x, y: y), default: []].append(index) } }
     }
-    private func bucket(_ value: Double) -> Int { Int(max(-1e9, min(1e9, (value / size).rounded(.down)))) }
-    private func span(_ s: DirectedGeometry.Segment, margin: Double) -> (ClosedRange<Int>, ClosedRange<Int>) {
+    private func bucket(_ value: Float) -> Int { Int(max(-1e9, min(1e9, (value / size).rounded(.down)))) }
+    private func span(_ s: DirectedGeometry.Segment, margin: Float) -> (ClosedRange<Int>, ClosedRange<Int>) {
         (bucket(min(s.a.x, s.b.x) - margin)...bucket(max(s.a.x, s.b.x) + margin),
          bucket(min(s.a.y, s.b.y) - margin)...bucket(max(s.a.y, s.b.y) + margin))
     }
     /// Visits each indexed segment once whose bucket meets the query box. Callers apply the exact tests.
-    func forEach(near query: DirectedGeometry.Segment, margin: Double, _ body: (Int, DirectedGeometry.Segment) -> Void) {
+    func forEach(near query: DirectedGeometry.Segment, margin: Float, _ body: (Int, DirectedGeometry.Segment) -> Void) {
         let (xs, ys) = span(query, margin: max(margin, DirectedGeometry.epsilon * 2))
         if xs.count * ys.count > segments.count {
             for i in segments.indices { body(owners[i], segments[i]) }
@@ -158,21 +158,21 @@ final class DirectedSegmentGrid {
 final class DirectedRouter {
     typealias Ports = (Point, Point, Point, Point)
     let nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>
-    let edgeIndices: [LayoutEdge: Int], configuration: DirectedLayoutConfiguration, pitch: Double
+    let edgeIndices: [LayoutEdge: Int], configuration: DirectedLayoutConfiguration, pitch: Float
     var bodies: [Rect], obstacles: [Rect]
     let occupied = DirectedSegmentGrid()
     var ports: [LayoutEdge: Ports] = [:]
-    let clearance: Double
+    let clearance: Float
     /// Strokes must never touch: the hard floor beneath `edgeSpacing`.
-    let trackClearance: Double
+    let trackClearance: Float
     /// Preferred separation between parallel runs; routing relaxes to `trackClearance` only as a last resort.
-    let edgeSpacing: Double
-    private var spacing: Double
+    let edgeSpacing: Float
+    private var spacing: Float
     private var coordinated = false
     private var retained: Set<LayoutEdge> = []
-    private var costs: [Double] = [], previous: [Int] = [], closed: [Bool] = []
+    private var costs: [Float] = [], previous: [Int] = [], closed: [Bool] = []
 
-    init(nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>, edgeIndices: [LayoutEdge: Int], configuration: DirectedLayoutConfiguration, pitch: Double) {
+    init(nodes: [LayoutNode], edges: [LayoutEdge], feedback: Set<LayoutEdge>, edgeIndices: [LayoutEdge: Int], configuration: DirectedLayoutConfiguration, pitch: Float) {
         self.nodes = nodes; self.edges = edges; self.feedback = feedback; self.edgeIndices = edgeIndices
         self.configuration = configuration; self.pitch = pitch
         trackClearance = (configuration.edgeWidths.max() ?? 1) + 1
@@ -242,8 +242,8 @@ final class DirectedRouter {
             try Task.checkCancellation()
             load(excluding: edge)
             let others = nodes.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: clearance) }
-            func quality(_ path: [Point]) -> (crossings: Int, length: Double)? {
-                var crossings = 0, length = 0.0
+            func quality(_ path: [Point]) -> (crossings: Int, length: Float)? {
+                var crossings = 0, length: Float = 0.0
                 for segment in DirectedGeometry.segments(path) {
                     if !DirectedGeometry.clear(segment.a, segment.b, bodies: bodies)
                         || !DirectedGeometry.clear(segment.a, segment.b, bodies: others) { return nil }
@@ -298,7 +298,7 @@ final class DirectedRouter {
                 let original = edge.path
                 load(excluding: edge)
                 let nonEndpoints = nodes.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: clearance) }
-                func quality(_ path: [Point]) -> (crossings: Int, bends: Int, length: Double)? {
+                func quality(_ path: [Point]) -> (crossings: Int, bends: Int, length: Float)? {
                     let segments = DirectedGeometry.segments(path)
                     guard path.count >= 2, segments.allSatisfy({ DirectedGeometry.clear($0.a, $0.b, bodies: bodies)
                         && DirectedGeometry.clear($0.a, $0.b, bodies: nonEndpoints) }) else { return nil }
@@ -347,7 +347,7 @@ final class DirectedRouter {
     }
 
     /// Crossings of `path` with the loaded routes, or nil when it hits a body, shares a run or crowds one.
-    private func crossingCount(_ path: [Point], others: [Rect], spacing: Double? = nil) -> Int? {
+    private func crossingCount(_ path: [Point], others: [Rect], spacing: Float? = nil) -> Int? {
         let gap = spacing ?? edgeSpacing
         var count = 0
         for segment in DirectedGeometry.segments(path) {
@@ -364,7 +364,7 @@ final class DirectedRouter {
 
     /// An interior jog shorter than `microLength` is removed by moving one of its two neighbouring runs onto the
     /// other's coordinate (the end runs hold the ports, so they stay). The move must keep the route clear and add no crossing.
-    func removeMicroJogs(microLength: Double = 4) throws {
+    func removeMicroJogs(microLength: Float = 4) throws {
         for edge in edges.sorted(by: { edgeIndices[$0]! < edgeIndices[$1]! }) where !retained.contains(edge) && edge.path.count >= 5 {
             try Task.checkCancellation()
             var loaded = false, others: [Rect] = [], before = 0
@@ -413,7 +413,7 @@ final class DirectedRouter {
 
     /// The free span along `node`'s `side` around the port at `point`: bounded by the side and the neighbouring
     /// ports (their order, and so the crossings they were assigned for, is kept).
-    private func slideInterval(_ edge: LayoutEdge, node: LayoutNode, at point: Point, margin: Double = 8, spacing: Double? = nil) -> (lo: Double, hi: Double)? {
+    private func slideInterval(_ edge: LayoutEdge, node: LayoutNode, at point: Point, margin: Float = 8, spacing: Float? = nil) -> (lo: Float, hi: Float)? {
         let gap = spacing ?? edgeSpacing
         let side: PortConstraint = abs(point.x - node.bounds.left) < 0.001 ? .left : .right
         guard Self.onSide(point, side, of: node.bounds, margin: 0) else { return nil }
@@ -497,7 +497,7 @@ final class DirectedRouter {
                     for k in 1..<(path.count - 2) {
                         let a = path[k], b = path[k + 1], horizontal = abs(a.y - b.y) < DirectedGeometry.epsilon
                         guard horizontal || abs(a.x - b.x) < DirectedGeometry.epsilon else { continue }
-                        var targets: Set<Double> = []
+                        var targets: Set<Float> = []
                         occupied.forEach(near: DirectedGeometry.Segment(a: a, b: b), margin: edgeSpacing) { _, other in
                             guard other.horizontal == horizontal else { return }
                             let c = horizontal ? other.a.y : other.a.x
@@ -582,7 +582,7 @@ final class DirectedRouter {
             try Task.checkCancellation()
             if retained.contains(edge) || committed.contains(edge) { continue }
             let base = ports[edge]!
-            let fraction = (Double(trackIndex[edge]!) + 1) / Double(edges.count + 1)
+            let fraction = (Float(trackIndex[edge]!) + 1) / Float(edges.count + 1)
             var result: [Point]?, used = base, alternatives: [Ports]?
             levels: for floor in spacingLevels {
                 spacing = floor
@@ -601,10 +601,10 @@ final class DirectedRouter {
     }
 
     /// Preferred spacing first; the hard stroke floor is used only when nothing else routes.
-    private var spacingLevels: [Double] { edgeSpacing > trackClearance ? [edgeSpacing, trackClearance] : [edgeSpacing] }
+    private var spacingLevels: [Float] { edgeSpacing > trackClearance ? [edgeSpacing, trackClearance] : [edgeSpacing] }
 
     /// Candidate shapes, then the exact-coordinate repair, for one edge with fixed ports.
-    private func attempt(_ edge: LayoutEdge, _ ports: Ports, guide: [Point]?, fraction: Double) throws -> [Point]? {
+    private func attempt(_ edge: LayoutEdge, _ ports: Ports, guide: [Point]?, fraction: Float) throws -> [Point]? {
         let (start, end, sd, td) = ports
         let escape = start + sd * clearance, entry = end + td * clearance
         // Endpoints are never exempted from body validation (including self-loops).
@@ -625,7 +625,7 @@ final class DirectedRouter {
             for y in exteriorLanes(from: escape, to: entry) { add([escape, Point(x: escape.x, y: y), Point(x: entry.x, y: y), entry]) }
         }
         if !coordinated, let guided { candidates = [guided] }
-        var best: [Point]?, bestCost = Double.infinity
+        var best: [Point]?, bestCost = Float.infinity
         for candidate in candidates {
             let cost = pathCost(candidate)
             if cost < bestCost { best = candidate; bestCost = cost }
@@ -640,12 +640,12 @@ final class DirectedRouter {
 
     /// Only obstacles and occupied runs within this edge's horizontal span consume
     /// outer lanes. Unrelated edges elsewhere cannot push a feedback route outward.
-    private func exteriorLanes(from start: Point, to end: Point) -> [Double] {
+    private func exteriorLanes(from start: Point, to end: Point) -> [Float] {
         let left = min(start.x, end.x), right = max(start.x, end.x)
         let local = obstacles.filter { $0.right >= left && $0.left <= right }
         let top = min(start.y, end.y, local.map(\.top).min() ?? start.y) - clearance
         let bottom = max(start.y, end.y, local.map(\.bottom).max() ?? start.y) + clearance
-        return [(top, -1.0), (bottom, 1.0)].map { initial, direction in
+        return [(top, Float(-1.0)), (bottom, Float(1.0))].map { initial, direction in
             var y = initial
             for _ in 0...occupied.segments.count {
                 let line = DirectedGeometry.Segment(a: Point(x: left, y: y), b: Point(x: right, y: y))
@@ -683,7 +683,7 @@ final class DirectedRouter {
                 corridors[first + part, default: []].append(Transition(edge: edge, part: part, a: points[part], b: points[part + 1]))
             }
         }
-        var tracks: [LayoutEdge: [Int: Double]] = [:]
+        var tracks: [LayoutEdge: [Int: Float]] = [:]
         for rank in corridors.keys.sorted() {
             var list = corridors[rank]!.sorted {
                 let ad = $0.b.y >= $0.a.y, bd = $1.b.y >= $1.a.y
@@ -712,7 +712,7 @@ final class DirectedRouter {
                 }
             }
             for (i, transition) in list.enumerated() {
-                tracks[transition.edge, default: [:]][transition.part] = low + (high - low) * Double(i + 1) / Double(list.count + 1)
+                tracks[transition.edge, default: [:]][transition.part] = low + (high - low) * Float(i + 1) / Float(list.count + 1)
             }
         }
         var result: [LayoutEdge: [Point]] = [:]
@@ -727,8 +727,8 @@ final class DirectedRouter {
         return result
     }
 
-    private func pathCost(_ path: [Point], minimumRun: Double = 12) -> Double {
-        var value = Double(max(0, path.count - 2)) * 24
+    private func pathCost(_ path: [Point], minimumRun: Float = 12) -> Float {
+        var value = Float(max(0, path.count - 2)) * 24
         for segment in DirectedGeometry.segments(path) {
             value += segment.length
             var blocked = false
@@ -741,15 +741,15 @@ final class DirectedRouter {
         return value
     }
 
-    private struct End { var edge: LayoutEdge; var source: Bool; var neighbor: Point; var group = 3; var depth = 0.0; var want: Double? }
+    private struct End { var edge: LayoutEdge; var source: Bool; var neighbor: Point; var group = 3; var depth: Float = 0.0; var want: Float? }
     private struct SideKey: Hashable { var node: LayoutNode; var side: PortConstraint }
 
     /// The span of a left/right side where a port may sit: clear of the corners.
-    static func sideRange(_ r: Rect) -> (lo: Double, hi: Double) {
+    static func sideRange(_ r: Rect) -> (lo: Float, hi: Float) {
         r.height > 16 ? (r.top + 8, r.bottom - 8) : (r.center.y, r.center.y)
     }
 
-    static func onSide(_ point: Point, _ side: PortConstraint, of r: Rect, margin: Double) -> Bool {
+    static func onSide(_ point: Point, _ side: PortConstraint, of r: Rect, margin: Float) -> Bool {
         switch side {
         case .left: return abs(point.x - r.left) < 0.001 && point.y >= r.top + margin && point.y <= r.bottom - margin
         case .right: return abs(point.x - r.right) < 0.001 && point.y >= r.top + margin && point.y <= r.bottom - margin
@@ -760,8 +760,8 @@ final class DirectedRouter {
     }
 
     /// The nearest coordinate in [lo, hi] to `desired` that keeps `minimum` from every taken one.
-    static func nearestFree(_ desired: Double, taken: [Double], lo: Double, hi: Double, minimum: Double) -> Double? {
-        func free(_ t: Double) -> Bool { t >= lo - 0.0001 && t <= hi + 0.0001 && !taken.contains { abs($0 - t) < minimum - 0.0001 } }
+    static func nearestFree(_ desired: Float, taken: [Float], lo: Float, hi: Float, minimum: Float) -> Float? {
+        func free(_ t: Float) -> Bool { t >= lo - 0.0001 && t <= hi + 0.0001 && !taken.contains { abs($0 - t) < minimum - 0.0001 } }
         let wanted = min(hi, max(lo, desired))
         if free(wanted) { return wanted }
         let candidates = ([lo, hi] + taken.flatMap { [$0 - minimum, $0 + minimum] }).filter(free)
@@ -794,7 +794,7 @@ final class DirectedRouter {
             // a nearer arc's horizontal run. Groups: 0 left-going, 1 loop starts, 2 loop ends, 3 aligned, 4 right-going.
             if edge.source === edge.target {
                 let level = loops[edge.source, default: 0]; loops[edge.source] = level + 1
-                source.group = 1; source.depth = Double(level + 1); target.group = 2; target.depth = Double(level + 1)
+                source.group = 1; source.depth = Float(level + 1); target.group = 2; target.depth = Float(level + 1)
             } else {
                 for (end, node, other) in [(0, edge.source, edge.target), (1, edge.target, edge.source)] {
                     let dx = other.center.x - node.center.x
@@ -834,20 +834,20 @@ final class DirectedRouter {
                 return ai == bi ? $0.source && !$1.source : ai < bi
             }
             let r = key.node.bounds, extent = vertical ? r.height : r.width
-            let count = sorted.count, spacing = min(pitch, max(0, extent - 24) / Double(max(1, count - 1)))
+            let count = sorted.count, spacing = min(pitch, max(0, extent - 24) / Float(max(1, count - 1)))
             let middle = vertical ? r.center.y : r.center.x
-            var slots = (0..<count).map { middle + (Double($0) - Double(count - 1) / 2) * spacing }
+            var slots = (0..<count).map { middle + (Float($0) - Float(count - 1) / 2) * spacing }
             if vertical && sorted.contains(where: { $0.want != nil }) {
                 // Ordered ports as close to their wanted coordinates as the spacing and the side allow.
-                let range = Self.sideRange(r), step = count > 1 ? min(pitch, max(0, range.hi - range.lo) / Double(count - 1)) : 0
-                let fit = isotonicFit(sorted.enumerated().map { ($1.want ?? slots[$0]) - Double($0) * step }, weights: Array(repeating: 1, count: count))
-                let top = range.lo, bottom = range.hi - Double(count - 1) * step
-                slots = fit.enumerated().map { min(max($1, min(top, bottom)), max(top, bottom)) + Double($0) * step }
+                let range = Self.sideRange(r), step: Float = count > 1 ? min(pitch, max(0, range.hi - range.lo) / Float(count - 1)) : 0
+                let fit = isotonicFit(sorted.enumerated().map { ($1.want ?? slots[$0]) - Float($0) * step }, weights: Array(repeating: 1, count: count))
+                let top = range.lo, bottom = range.hi - Float(count - 1) * step
+                slots = fit.enumerated().map { min(max($1, min(top, bottom)), max(top, bottom)) + Float($0) * step }
             }
             // Prior ports stay where they are; a new end takes the nearest free gap, in order
             // between its neighbours. Only when no gap keeps the spacing is the side re-spread.
             if configuration.mode != .fresh {
-                var kept = [Double?](repeating: nil, count: count)
+                var kept = [Float?](repeating: nil, count: count)
                 for (i, end) in sorted.enumerated() {
                     guard let path = configuration.previousPaths[edgeIndices[end.edge]!], path.count >= 2 else { continue }
                     let point = end.source ? path[0] : path.last!
@@ -866,14 +866,14 @@ final class DirectedRouter {
                     if fits { slots = positions.map { $0! } }
                     else {
                         // No gap is wide enough: keep the order and move the prior ports as little as the spacing demands.
-                        let wanted = (0..<count).map { i -> Double in
+                        let wanted = (0..<count).map { i -> Float in
                             if let k = kept[i] { return k }
                             let before = kept[..<i].last(where: { $0 != nil }) ?? nil, after = kept[(i + 1)...].first(where: { $0 != nil }) ?? nil
                             return before.map { b in after.map { ($0 + b) / 2 } ?? b + spacing } ?? after.map { $0 - spacing } ?? slots[i]
                         }
-                        let fit = isotonicFit(wanted.enumerated().map { $1 - Double($0) * spacing }, weights: Array(repeating: 1, count: count))
-                        let first = lo, last = hi - Double(count - 1) * spacing
-                        slots = fit.enumerated().map { min(max($1, min(first, last)), max(first, last)) + Double($0) * spacing }
+                        let fit = isotonicFit(wanted.enumerated().map { $1 - Float($0) * spacing }, weights: Array(repeating: 1, count: count))
+                        let first = lo, last = hi - Float(count - 1) * spacing
+                        slots = fit.enumerated().map { min(max($1, min(first, last)), max(first, last)) + Float($0) * spacing }
                     }
                 }
             }
@@ -897,7 +897,7 @@ final class DirectedRouter {
     /// already in use. An edge whose assigned sides are blocked is tried here before it is dropped.
     private func alternatePorts(for edge: LayoutEdge) -> [Ports] {
         let current = ports[edge]!, loop = edge.source === edge.target
-        var options: [(distance: Double, order: Int, ports: Ports)] = []
+        var options: [(distance: Float, order: Int, ports: Ports)] = []
         for (s, source) in [PortConstraint.top, .bottom, .left, .right].enumerated() {
             for (t, target) in [PortConstraint.top, .bottom, .left, .right].enumerated() where !loop || source == target {
                 guard let sp = slot(on: edge.source, side: source, toward: edge.target.center, excluding: edge),
@@ -931,19 +931,19 @@ final class DirectedRouter {
 
     /// Rasterize exact-coordinate visibility links once per repair search. Obstacle and
     /// occupied-track costs are then O(1) per A* step, rather than scanning every edge.
-    private func prepareGrid(xs: [Double], ys: [Double], obstacles: [Rect]) throws -> (horizontal: [Double], vertical: [Double]) {
+    private func prepareGrid(xs: [Float], ys: [Float], obstacles: [Rect]) throws -> (horizontal: [Float], vertical: [Float]) {
         let width = xs.count, count = width * ys.count
-        var horizontal = Array(repeating: 0.0, count: count), vertical = horizontal
-        func lower(_ values: [Double], _ value: Double) -> Int {
+        var horizontal = Array(repeating: Float(0), count: count), vertical = horizontal
+        func lower(_ values: [Float], _ value: Float) -> Int {
             var low = 0, high = values.count
             while low < high { let mid = (low + high) / 2; if values[mid] < value { low = mid + 1 } else { high = mid } }
             return low
         }
-        func points(_ values: [Double], _ low: Double, _ high: Double) -> Range<Int> {
+        func points(_ values: [Float], _ low: Float, _ high: Float) -> Range<Int> {
             let first = lower(values, low + DirectedGeometry.epsilon)
             return first..<max(first, lower(values, high - DirectedGeometry.epsilon))
         }
-        func links(_ values: [Double], _ low: Double, _ high: Double) -> Range<Int> {
+        func links(_ values: [Float], _ low: Float, _ high: Float) -> Range<Int> {
             let first = max(0, lower(values, low + DirectedGeometry.epsilon) - 1)
             return first..<max(first, min(values.count - 1, lower(values, high - DirectedGeometry.epsilon)))
         }
@@ -984,7 +984,7 @@ final class DirectedRouter {
     /// narrower one fails; every grid is capped. `startAxis`/`endAxis` (1 horizontal, 2 vertical)
     /// seed the first direction and price a bend at the arrival, as the port approaches are fixed.
     private func search(from start: Point, to end: Point, startAxis: Int, endAxis: Int, occupiedCoordinates: Bool = false, visitLimit: Int? = nil) throws -> [Point]? {
-        let margins: [Double] = visitLimit == nil ? [96, 384, .infinity] : [.infinity]
+        let margins: [Float] = visitLimit == nil ? [96, 384, .infinity] : [.infinity]
         let cap = visitLimit == nil ? 262_144 : 65_536
         let box = Rect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(start.x - end.x), height: abs(start.y - end.y))
         var lastShape = (0, 0)
@@ -1008,7 +1008,7 @@ final class DirectedRouter {
         return nil
     }
 
-    private func search(xs: [Double], ys: [Double], obstacles local: [Rect], from start: Point, to end: Point, startAxis: Int, endAxis: Int, visitLimit: Int?) throws -> [Point]? {
+    private func search(xs: [Float], ys: [Float], obstacles local: [Rect], from start: Point, to end: Point, startAxis: Int, endAxis: Int, visitLimit: Int?) throws -> [Point]? {
         let width = xs.count, height = ys.count, cells = width * height, goal = cells * 3
         let first = ys.firstIndex(of: start.y)! * width + xs.firstIndex(of: start.x)!
         let last = ys.firstIndex(of: end.y)! * width + xs.firstIndex(of: end.x)!
@@ -1017,7 +1017,7 @@ final class DirectedRouter {
         self.costs = []; self.previous = []; self.closed = []
         defer { self.costs = costs; self.previous = previous; self.closed = closed }
         if costs.count < goal + 1 {
-            costs = [Double](repeating: .infinity, count: goal + 1); previous = [Int](repeating: -1, count: goal + 1); closed = [Bool](repeating: false, count: goal + 1)
+            costs = [Float](repeating: .infinity, count: goal + 1); previous = [Int](repeating: -1, count: goal + 1); closed = [Bool](repeating: false, count: goal + 1)
         } else {
             for i in 0...goal { costs[i] = .infinity; previous[i] = -1; closed[i] = false }
         }
@@ -1058,8 +1058,8 @@ final class DirectedRouter {
 }
 
 private struct DirectedMinHeap {
-    private var values: [(state: Int, priority: Double)] = []
-    mutating func push(_ state: Int, priority: Double) {
+    private var values: [(state: Int, priority: Float)] = []
+    mutating func push(_ state: Int, priority: Float) {
         values.append((state, priority)); var i = values.count - 1
         while i > 0 { let parent = (i - 1) / 2; guard less(i, parent) else { break }; values.swapAt(i, parent); i = parent }
     }

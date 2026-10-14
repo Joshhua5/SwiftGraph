@@ -8,28 +8,28 @@ public enum RoutingKind: String, CaseIterable, Sendable {
 }
 public struct RoutingConfiguration: Sendable {
     public var kind: RoutingKind
-    public var padding: Double = 10
-    public var edgeSpacing: Double = 10
+    public var padding: Float = 10
+    public var edgeSpacing: Float = 10
     public var gridSize: Int = 20
     public var channelBendPenalty: Int {
         get { Int(exactly: bendPenalty) ?? 0 }
-        set { bendPenalty = Double(newValue) }
+        set { bendPenalty = Float(newValue) }
     }
     public var congestionPenalty: Int = 2
-    public var busSpacing: Double = 20
-    public var margin: Double = 20
-    public var bendPenalty: Double = 40
-    public var bundleSpacing: Double = 10
-    public var obstacleMargin: Double = 10
-    public var parallelEdgeSpacing: Double {
+    public var busSpacing: Float = 20
+    public var margin: Float = 20
+    public var bendPenalty: Float = 40
+    public var bundleSpacing: Float = 10
+    public var obstacleMargin: Float = 10
+    public var parallelEdgeSpacing: Float {
         get { edgeSpacing }
         set { edgeSpacing = newValue }
     }
-    public var spacing: Double {
+    public var spacing: Float {
         get { edgeSpacing }
         set { edgeSpacing = newValue }
     }
-    public var loopSize: Double = 16
+    public var loopSize: Float = 16
     public var curveIterations: Int = 2
     public var labelIterations: Int = 200
     public var iterations: Int {
@@ -45,7 +45,7 @@ public struct RoutingConfiguration: Sendable {
         if kind == .parallelEdges { edgeSpacing = 20 }
     }
     func validate() throws {
-        let values: [Double]
+        let values: [Float]
         switch kind {
         case .polyline, .givenCoordinates: values = [padding, edgeSpacing]
         case .channel:
@@ -93,23 +93,23 @@ public final class RoutingLayoutOperation: AsyncLayoutAlgorithm, LayoutExecution
         let labelTexts = readsLabelText ? graph.edges.map(labelProvider) : Array<String?>(repeating: nil, count: graph.edges.count)
         let checkpoint = try RoutingCheckpoint(graph, labels: labelTexts)
         if configuration.kind == .bsp {
-            guard checkpoint.snapshot.hierarchy.allSatisfy({ [ $0.bounds.x, $0.bounds.y, $0.bounds.right, $0.bounds.bottom ].allSatisfy { abs($0) < Double(Int64.max) * 1e-4 / 8 } }) else {
+            guard checkpoint.snapshot.hierarchy.allSatisfy({ [ $0.bounds.x, $0.bounds.y, $0.bounds.right, $0.bounds.bottom ].allSatisfy { Double(abs($0)) < Double(Int64.max) * 1e-4 / 8 } }) else {
                 throw LayoutExecutionError.invalidInput("BSP coordinates exceed quantized indexing range.")
             }
         }
         if configuration.kind == .orthogonalGrouped || configuration.kind == .edgeSeparation {
             let coordinates = checkpoint.related.flatMap { [$0.x, $0.y, $0.bounds.right, $0.bounds.bottom] }
                 + graph.edges.flatMap { $0.path.flatMap { [$0.x, $0.y] } }
-            guard coordinates.allSatisfy({ abs($0) < Double(Int.max / 8) }) else {
+            guard coordinates.allSatisfy({ Double(abs($0)) < Double(Int.max / 8) }) else {
                 throw LayoutExecutionError.invalidInput("Routing coordinates exceed integer indexing range.")
             }
         }
         if configuration.kind == .channel, !graph.nodes.isEmpty {
             let origin = Point(x: graph.nodes.map(\.x).min()! - 50, y: graph.nodes.map(\.y).min()! - 50)
             let spans = graph.nodes.flatMap { [$0.x - origin.x, $0.bounds.right - origin.x, $0.y - origin.y, $0.bounds.bottom - origin.y] }
-            guard spans.allSatisfy({ $0.isFinite && abs($0) < Double(Int.max / 64) }),
+            guard spans.allSatisfy({ $0.isFinite && Double(abs($0)) < Double(Int.max / 64) }),
                   configuration.gridSize < Int.max / 1_024,
-                  abs(configuration.bendPenalty) < Double(Int.max / 64),
+                  Double(abs(configuration.bendPenalty)) < Double(Int.max / 64),
                   configuration.congestionPenalty < Int.max / max(64, graph.edges.count * 8) else {
                 throw LayoutExecutionError.invalidInput("Channel local grid or costs exceed integer indexing range.")
             }
@@ -265,7 +265,7 @@ final class RoutingComputeWorker: @unchecked Sendable {
             queue.async { self.solver?.releaseCachedBuffers(); self.updateStatistics(); continuation.resume() }
         }
     }
-    func run(_ snapshot: RoutingSnapshot, configuration: RoutingConfiguration, backend: LayoutBackend, enabled: Bool, tolerance: Double) async throws -> RoutingResult {
+    func run(_ snapshot: RoutingSnapshot, configuration: RoutingConfiguration, backend: LayoutBackend, enabled: Bool, tolerance: Float) async throws -> RoutingResult {
         let cancellation = RoutingCancellation()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -293,7 +293,7 @@ extension LayoutExecutor {
         return try await routingWorker!.run(snapshot, configuration: configuration, backend: backend, enabled: metalEnabled, tolerance: options.maximumCoordinateError)
     }
 }
-private func routingTransaction(_ snapshot: RoutingSnapshot, configuration: RoutingConfiguration, backend: LayoutBackend, enabled: Bool, tolerance: Double, makeCompute: () throws -> RoutingCompute) throws -> RoutingResult {
+private func routingTransaction(_ snapshot: RoutingSnapshot, configuration: RoutingConfiguration, backend: LayoutBackend, enabled: Bool, tolerance: Float, makeCompute: () throws -> RoutingCompute) throws -> RoutingResult {
     let start = ContinuousClock.now
     var actual = backend, reason: LayoutFallbackReason?
     if snapshot.geometry.edges.isEmpty { actual = .cpu; reason = .noWork }

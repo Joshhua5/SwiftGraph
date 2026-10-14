@@ -5,8 +5,8 @@ import Foundation
 public final class ComponentLayoutOperation: LayoutExecutionReporting {
     public private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
     public var coreLayout: any AsyncLayoutAlgorithm
-    public var componentSpacing: Double = 50
-    public var preferredAspectRatio: Double = 1
+    public var componentSpacing: Float = 50
+    public var preferredAspectRatio: Float = 1
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
     public init(_ coreLayout: any AsyncLayoutAlgorithm, backend: LayoutBackend = .cpu, executor: LayoutExecutor = .shared) {
@@ -43,8 +43,8 @@ public final class ComponentLayoutOperation: LayoutExecutionReporting {
             translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g); bounds.append(b)
         }
         let packingStart = ContinuousClock.now
-        let width = max(200, sqrt(bounds.reduce(0.0) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
-        var x = 0.0, y = 0.0, rowHeight = 0.0
+        let width = max(200, sqrt(bounds.reduce(Float(0)) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
+        var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
         for i in graphs.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height }) {
             if x > 0 && x + bounds[i].width > width { x = 0; y += rowHeight + componentSpacing; rowHeight = 0 }
             translate(graphs[i], by: Point(x: x, y: y))
@@ -58,9 +58,9 @@ public final class ComponentLayoutOperation: LayoutExecutionReporting {
 /// Cores must preserve topology and treat caller payloads/custom metadata as read-only.
 public final class MultiPageLayoutOperation: LayoutExecutionReporting {
     public private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
-    public var pageWidth: Double = 800
-    public var pageHeight: Double = 1100
-    public var pageSpacing: Double = 100
+    public var pageWidth: Float = 800
+    public var pageHeight: Float = 1100
+    public var pageSpacing: Float = 100
     public var coreLayout: any AsyncLayoutAlgorithm
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
@@ -93,8 +93,8 @@ public final class MultiPageLayoutOperation: LayoutExecutionReporting {
             lastExecutionMetrics += compositionCoreRecords(coreLayout, requested: backend, graph: g, start: coreStart)
             let packingStart = ContinuousClock.now
             let b = g.bounds
-            translate(g, by: Point(x: Double(i % 3) * (pageWidth + pageSpacing) + (pageWidth - b.width) / 2 - b.x,
-                                   y: Double(i / 3) * (pageHeight + pageSpacing) + (pageHeight - b.height) / 2 - b.y))
+            translate(g, by: Point(x: Float(i % 3) * (pageWidth + pageSpacing) + (pageWidth - b.width) / 2 - b.x,
+                                   y: Float(i / 3) * (pageHeight + pageSpacing) + (pageHeight - b.height) / 2 - b.y))
             if backend != .cpu { lastExecutionMetrics.append(compositionCPURecord(backend, count: g.nodes.count, start: packingStart, stages: ["page packing"])) }
         }
     }
@@ -130,7 +130,7 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
         try Task.checkCancellation()
         let g = subgraph(graph, nodes: graph.nodes.filter { selectedNodeIds.contains($0.id) })
         guard !g.nodes.isEmpty else { return }
-        func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Double(g.nodes.count) }
+        func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Float(g.nodes.count) }
         let initial = centroid()
         let coreStart = ContinuousClock.now
         try await coreLayout.applyLayoutAsync(g)
@@ -150,8 +150,8 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
             }
             let padded = obstacles.map { $0.inflated(by: 10) }
             if padded.contains(where: { $0.intersects(envelope) }) {
-                let xs = Set([0.0] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
-                let ys = Set([0.0] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
+                let xs = Set([Float(0)] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
+                let ys = Set([Float(0)] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
                 var best: Point?
                 for x in xs {
                     try Task.checkCancellation()
@@ -188,7 +188,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
     public private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
     public private(set) var unroutableEdges: [LayoutEdge] = []
     public var coreLayout: any AsyncLayoutAlgorithm
-    public var groupPadding: Double = 20
+    public var groupPadding: Float = 20
     /// Refine framed placement using incoming boundary connections after fitting the frames.
     public var optimizeIncomingEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any AsyncLayoutAlgorithm)?
@@ -256,12 +256,12 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
 public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
     public private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
     public var laneAssignment: [String: Int] = [:]
-    public var laneWidth: Double = 200
-    public var laneSpacing: Double = 20
-    public var laneInternalPadding: Double = 20
-    public var nodeVerticalSpacing: Double = 30
+    public var laneWidth: Float = 200
+    public var laneSpacing: Float = 20
+    public var laneInternalPadding: Float = 20
+    public var nodeVerticalSpacing: Float = 30
     public var subLayout: (any AsyncLayoutAlgorithm)?
-    public private(set) var computedLanes: [(laneId: Int, x: Double, width: Double)] = []
+    public private(set) var computedLanes: [(laneId: Int, x: Float, width: Float)] = []
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
     public init(backend: LayoutBackend = .cpu, executor: LayoutExecutor = .shared) { self.backend = backend; self.executor = executor }
@@ -347,11 +347,11 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
         }
         let heights = layers.map { $0.map { a.nodes[$0].height }.max() ?? 0 }
         let ys = offsets(heights, gap: nodeVerticalSpacing)
-        var x = 0.0
+        var x: Float = 0.0
         for id in lanes.keys.sorted() {
             try Task.checkCancellation()
             let nodes = lanes[id]!
-            let effectiveWidth: Double
+            let effectiveWidth: Float
             if let subLayout {
                 let g = subgraph(graph, nodes: nodes)
                 let coreStart = ContinuousClock.now
@@ -361,7 +361,7 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
                 translate(g, by: Point(x: x + effectiveWidth / 2 - b.center.x, y: laneInternalPadding - b.y))
             } else {
                 effectiveWidth = max(laneWidth, (nodes.map(\.width).max() ?? 0) + 2 * laneInternalPadding)
-                var bottom = 0.0
+                var bottom: Float = 0.0
                 for n in nodes.sorted(by: { rank[a.index[$0]!] == rank[a.index[$1]!] ? a.index[$0]! < a.index[$1]! : rank[a.index[$0]!] < rank[a.index[$1]!] }) {
                     n.y = max(bottom, ys[rank[a.index[n]!]] + laneInternalPadding)
                     n.x = x + (effectiveWidth - n.width) / 2; bottom = n.bounds.bottom + nodeVerticalSpacing
@@ -373,16 +373,16 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
     }
     private func placeLanesCPU(_ graph: LayoutGraph, adjacency a: Adjacency, layers: [[Int]], ranks rank: [Int], lanes: [Int: [LayoutNode]], coreAlreadyApplied: Bool) {
         let heights = layers.map { $0.map { a.nodes[$0].height }.max() ?? 0 }, ys = offsets(heights, gap: nodeVerticalSpacing)
-        var x = 0.0
+        var x: Float = 0.0
         for id in lanes.keys.sorted() {
-            let nodes = lanes[id]!, effectiveWidth: Double
+            let nodes = lanes[id]!, effectiveWidth: Float
             if coreAlreadyApplied {
                 let g = subgraph(graph, nodes: nodes), b = g.bounds
                 effectiveWidth = max(laneWidth, b.width + 2 * laneInternalPadding)
                 translate(g, by: Point(x: x + effectiveWidth / 2 - b.center.x, y: laneInternalPadding - b.y))
             } else {
                 effectiveWidth = max(laneWidth, (nodes.map(\.width).max() ?? 0) + 2 * laneInternalPadding)
-                var bottom = 0.0
+                var bottom: Float = 0.0
                 for n in nodes.sorted(by: { rank[a.index[$0]!] == rank[a.index[$1]!] ? a.index[$0]! < a.index[$1]! : rank[a.index[$0]!] < rank[a.index[$1]!] }) {
                     n.y = max(bottom, ys[rank[a.index[n]!]] + laneInternalPadding)
                     n.x = x + (effectiveWidth - n.width) / 2; bottom = n.bounds.bottom + nodeVerticalSpacing
@@ -405,8 +405,8 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
 }
 
 /// Membership/order planning is CPU-only; widths, offsets and placement are GPU math.
-private func swimlanePlacementState(_ graph: LayoutGraph, members: [[Int]], ranks: [Int], laneWidth: Double,
-                                   laneSpacing: Double, padding: Double, verticalSpacing: Double, hasCore: Bool) -> MetalPlacementState {
+private func swimlanePlacementState(_ graph: LayoutGraph, members: [[Int]], ranks: [Int], laneWidth: Float,
+                                   laneSpacing: Float, padding: Float, verticalSpacing: Float, hasCore: Bool) -> MetalPlacementState {
     let n = graph.nodes.count
     var bounds = graph.nodes.map(\.bounds), records = Array(repeating: SIMD4<Int32>.zero, count: n + members.count)
     if hasCore {
@@ -426,12 +426,12 @@ private func swimlanePlacementState(_ graph: LayoutGraph, members: [[Int]], rank
     for list in lists { children.append(contentsOf: list.map(UInt32.init)); offsets.append(UInt32(children.count)) }
     let size = bounds.map { max($0.width, $0.height) }.max() ?? 0
     let extent = bounds.map { max(abs($0.x) + $0.width, abs($0.y) + $0.height) }.max() ?? 0
-    let magnitude = max((size + abs(verticalSpacing)) * Double(max(1, n)),
-                        (max(abs(laneWidth), (hasCore ? extent : size) + 2 * abs(padding)) + abs(laneSpacing)) * Double(members.count)) * 4 + abs(padding)
+    let magnitude = max((size + abs(verticalSpacing)) * Float(max(1, n)),
+                        (max(abs(laneWidth), (hasCore ? extent : size) + 2 * abs(padding)) + abs(laneSpacing)) * Float(members.count)) * 4 + abs(padding)
     return MetalPlacementState(bounds: bounds, flags: (0..<bounds.count).map { $0 < n ? 8 : 24 },
         records: records, order: members.indices.map { UInt32(n + $0) }, childOffsets: offsets, children: children,
-        scalars: [laneWidth, laneSpacing, padding, verticalSpacing, Double(n)], mode: hasCore ? 11 : 10,
-        resource: "BasicLayouts", conservativeMagnitude: magnitude, serial: true, nodeCount: n)
+        scalars: [laneWidth, laneSpacing, padding, verticalSpacing, Float(n)], mode: hasCore ? 11 : 10,
+        resource: "BasicLayouts", conservativeMagnitude: Double(magnitude), serial: true, nodeCount: n)
 }
 
 private func compositionCPURecord(_ requested: LayoutBackend, count: Int, start: ContinuousClock.Instant, stages: [String]) -> LayoutExecutionMetrics {

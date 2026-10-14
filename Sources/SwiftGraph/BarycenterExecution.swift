@@ -2,7 +2,7 @@ import Foundation
 
 public struct BarycenterLayoutConfiguration: Sendable {
     public var iterations = 3
-    public var minSpacing: Double = 10
+    public var minSpacing: Float = 10
     public init() {}
     func validate() throws {
         guard iterations >= 0, iterations < Int.max / 16, minSpacing.isFinite, minSpacing >= 0 else {
@@ -79,13 +79,13 @@ extension LayoutExecutor {
                 guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
                     throw OrganicLayoutError.metalFailure("Non-finite barycenter output")
                 }
-                guard result.positions.allSatisfy({ Double(max(abs($0.x), abs($0.y)).ulp) <= options.maximumCoordinateError }) else {
+                guard result.positions.allSatisfy({ max(abs($0.x), abs($0.y)).ulp <= options.maximumCoordinateError }) else {
                     throw LayoutExecutionError.precisionLimit
                 }
                 gpuTime = result.gpuSeconds; device = metal!.deviceName
                 for i in graph.nodes.indices where !fixed[i] && !adjacency.neighbors[i].isEmpty {
-                    graph.nodes[i].center = Point(x: Double(result.positions[i].x) + prepared.origin.x,
-                                                 y: Double(result.positions[i].y) + prepared.origin.y)
+                    graph.nodes[i].center = Point(x: result.positions[i].x + prepared.origin.x,
+                                                 y: result.positions[i].y + prepared.origin.y)
                 }
                 _ = try separateOverlaps(graph.nodes, spacing: configuration.minSpacing, movable: fixed.map { !$0 })
             } catch LayoutExecutionError.precisionLimit where backend == .automatic {
@@ -111,15 +111,15 @@ extension LayoutExecutor {
 }
 
 extension GeometrySnapshot {
-    func prepareBarycenter(fixed: [Bool], neighbors: [[Int]], tolerance: Double) throws -> (state: ForceState, origin: Point) {
+    func prepareBarycenter(fixed: [Bool], neighbors: [[Int]], tolerance: Float) throws -> (state: ForceState, origin: Point) {
         let centers = nodes.map { $0.bounds.center }
         let minX = centers.map(\.x).min()!, maxX = centers.map(\.x).max()!
         let minY = centers.map(\.y).min()!, maxY = centers.map(\.y).max()!
         let origin = Point(x: minX + (maxX - minX) / 2, y: minY + (maxY - minY) / 2)
         let extent = max(maxX - minX, maxY - minY)
         let degree = neighbors.map(\.count).max() ?? 0
-        guard extent.isFinite, Float(extent).isFinite, Double(Float(extent).ulp) <= tolerance,
-              extent * Double(max(1, degree)) < Double(Float.greatestFiniteMagnitude) / 4 else {
+        guard extent.isFinite, extent.ulp <= tolerance,
+              Double(extent) * Double(max(1, degree)) < Double(Float.greatestFiniteMagnitude) / 4 else {
             throw LayoutExecutionError.precisionLimit
         }
         var flat: [UInt32] = [], offsets: [UInt32] = [0]
@@ -127,7 +127,7 @@ extension GeometrySnapshot {
             guard flat.count + adjacent.count < Int(UInt32.max) else { throw LayoutExecutionError.invalidInput("Too many barycenter neighbors.") }
             flat.append(contentsOf: adjacent.map(UInt32.init)); offsets.append(UInt32(flat.count))
         }
-        return (ForceState(positions: centers.map { SIMD2(Float($0.x - origin.x), Float($0.y - origin.y)) },
+        return (ForceState(positions: centers.map { SIMD2($0.x - origin.x, $0.y - origin.y) },
                            fixed: fixed.map { $0 ? 1 : 0 }, offsets: offsets, neighbors: flat), origin)
     }
 }

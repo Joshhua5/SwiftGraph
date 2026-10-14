@@ -2,8 +2,8 @@ import Foundation
 
 public final class ComponentLayout: LayoutAlgorithm {
     public var coreLayout: any LayoutAlgorithm
-    public var componentSpacing: Double = 50
-    public var preferredAspectRatio: Double = 1
+    public var componentSpacing: Float = 50
+    public var preferredAspectRatio: Float = 1
     public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
@@ -17,8 +17,8 @@ public final class ComponentLayout: LayoutAlgorithm {
             let b = g.bounds
             translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g); bounds.append(b)
         }
-        let width = max(200, sqrt(bounds.reduce(0.0) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
-        var x = 0.0, y = 0.0, rowHeight = 0.0
+        let width = max(200, sqrt(bounds.reduce(Float(0)) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
+        var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
         for i in graphs.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height }) {
             if x > 0 && x + bounds[i].width > width { x = 0; y += rowHeight + componentSpacing; rowHeight = 0 }
             translate(graphs[i], by: Point(x: x, y: y))
@@ -28,9 +28,9 @@ public final class ComponentLayout: LayoutAlgorithm {
 }
 
 public final class MultiPageLayoutAlgorithm: LayoutAlgorithm {
-    public var pageWidth: Double = 800
-    public var pageHeight: Double = 1100
-    public var pageSpacing: Double = 100
+    public var pageWidth: Float = 800
+    public var pageHeight: Float = 1100
+    public var pageSpacing: Float = 100
     public var coreLayout: any LayoutAlgorithm
     public init(_ coreLayout: (any LayoutAlgorithm)? = nil) { self.coreLayout = coreLayout ?? HierarchicalLayoutAlgorithm() }
     public func applyLayout(_ graph: LayoutGraph) throws {
@@ -41,8 +41,8 @@ public final class MultiPageLayoutAlgorithm: LayoutAlgorithm {
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
             try coreLayout.applyLayout(g)
             let b = g.bounds
-            translate(g, by: Point(x: Double(i % 3) * (pageWidth + pageSpacing) + (pageWidth - b.width) / 2 - b.x,
-                                   y: Double(i / 3) * (pageHeight + pageSpacing) + (pageHeight - b.height) / 2 - b.y))
+            translate(g, by: Point(x: Float(i % 3) * (pageWidth + pageSpacing) + (pageWidth - b.width) / 2 - b.x,
+                                   y: Float(i / 3) * (pageHeight + pageSpacing) + (pageHeight - b.height) / 2 - b.y))
         }
     }
 }
@@ -58,7 +58,7 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
         try Task.checkCancellation()
         let g = subgraph(graph, nodes: graph.nodes.filter { selectedNodeIds.contains($0.id) })
         guard !g.nodes.isEmpty else { return }
-        func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Double(g.nodes.count) }
+        func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Float(g.nodes.count) }
         let initial = centroid()
         try coreLayout.applyLayout(g)
         if preserveCentroid { translate(g, by: initial - centroid()) }
@@ -75,8 +75,8 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
             }
             let padded = obstacles.map { $0.inflated(by: 10) }
             if padded.contains(where: { $0.intersects(envelope) }) {
-                let xs = Set([0.0] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
-                let ys = Set([0.0] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
+                let xs = Set([Float(0)] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
+                let ys = Set([Float(0)] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
                 var best: Point?
                 for x in xs {
                     try Task.checkCancellation()
@@ -106,7 +106,7 @@ public enum GraphError: Error, Equatable { case cyclicGroupHierarchy }
 /// Fits nested frames bottom-up. Cores see sized ordinary-node proxies and must preserve topology.
 public final class RecursiveGroupLayout: LayoutAlgorithm {
     public var coreLayout: any LayoutAlgorithm
-    public var groupPadding: Double = 20
+    public var groupPadding: Float = 20
     /// Refine framed placement using incoming boundary connections after fitting the frames.
     public var optimizeIncomingEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any LayoutAlgorithm)?
@@ -142,12 +142,12 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
 
 public final class SwimlaneLayoutAlgorithm: LayoutAlgorithm {
     public var laneAssignment: [String: Int] = [:]
-    public var laneWidth: Double = 200
-    public var laneSpacing: Double = 20
-    public var laneInternalPadding: Double = 20
-    public var nodeVerticalSpacing: Double = 30
+    public var laneWidth: Float = 200
+    public var laneSpacing: Float = 20
+    public var laneInternalPadding: Float = 20
+    public var nodeVerticalSpacing: Float = 30
     public var subLayout: (any LayoutAlgorithm)?
-    public private(set) var computedLanes: [(laneId: Int, x: Double, width: Double)] = []
+    public private(set) var computedLanes: [(laneId: Int, x: Float, width: Float)] = []
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation(); computedLanes = []
@@ -163,11 +163,11 @@ public final class SwimlaneLayoutAlgorithm: LayoutAlgorithm {
         }
         let heights = layers.map { $0.map { a.nodes[$0].height }.max() ?? 0 }
         let ys = offsets(heights, gap: nodeVerticalSpacing)
-        var x = 0.0
+        var x: Float = 0.0
         for id in lanes.keys.sorted() {
             try Task.checkCancellation()
             let nodes = lanes[id]!
-            let effectiveWidth: Double
+            let effectiveWidth: Float
             if let subLayout {
                 let g = subgraph(graph, nodes: nodes)
                 try subLayout.applyLayout(g)
@@ -175,7 +175,7 @@ public final class SwimlaneLayoutAlgorithm: LayoutAlgorithm {
                 translate(g, by: Point(x: x + effectiveWidth / 2 - b.center.x, y: laneInternalPadding - b.y))
             } else {
                 effectiveWidth = max(laneWidth, (nodes.map(\.width).max() ?? 0) + 2 * laneInternalPadding)
-                var bottom = 0.0
+                var bottom: Float = 0.0
                 for n in nodes.sorted(by: { rank[a.index[$0]!] == rank[a.index[$1]!] ? a.index[$0]! < a.index[$1]! : rank[a.index[$0]!] < rank[a.index[$1]!] }) {
                     n.y = max(bottom, ys[rank[a.index[n]!]] + laneInternalPadding)
                     n.x = x + (effectiveWidth - n.width) / 2; bottom = n.bounds.bottom + nodeVerticalSpacing

@@ -17,7 +17,7 @@ public final class ImportanceLayoutOperation: LayoutExecutionReporting {
         try await analysis.applyAsync()
         let scalingStart = ContinuousClock.now
         for node in working.nodes {
-            let scale = 1 + 2 * (node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0)
+            let scale = Float(1 + 2 * (node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0))
             node.width *= scale; node.height *= scale
         }
         let scalingSeconds = scalingStart.duration(to: .now).seconds
@@ -67,8 +67,8 @@ public final class ClusterLayoutOperation: LayoutExecutionReporting {
             packingSeconds += normalizationStart.duration(to: .now).seconds
         }
         let packingStart = ContinuousClock.now
-        let width = max(400, sqrt(graphs.reduce(0.0) { $0 + $1.bounds.width * $1.bounds.height }) * 1.5)
-        var x = 0.0, y = 0.0, rowHeight = 0.0
+        let width = max(400, sqrt(graphs.reduce(Float(0)) { $0 + $1.bounds.width * $1.bounds.height }) * 1.5)
+        var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
         for group in graphs {
             try Task.checkCancellation()
             let bounds = group.bounds
