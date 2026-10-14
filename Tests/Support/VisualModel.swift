@@ -51,6 +51,8 @@ struct VisualEdge: Codable, Equatable, Sendable {
     var labelBounds: Rect
     var width: Double = 1.5
     var fallback = false
+    // Optional so existing v1 snapshots without this field still decode.
+    var bidirectional: Bool? = nil
 }
 
 struct VisualSnapshot: Codable, Equatable, Sendable {
@@ -80,7 +82,8 @@ struct VisualSnapshot: Codable, Equatable, Sendable {
             VisualEdge(id: "e\(index)", source: edge.source.id, target: edge.target.id,
                        path: edge.path, label: edge.data as? String, labelBounds: edge.labelBounds,
                        width: drawing.edgeWidths.indices.contains(index) ? drawing.edgeWidths[index] : 1.5,
-                       fallback: drawing.fallbackEdges.contains(index))
+                       fallback: drawing.fallbackEdges.contains(index),
+                       bidirectional: drawing.bidirectionalEdges.contains(index) ? true : nil)
         }
         previousBounds = drawing.previousBounds; fixedCenters = drawing.fixedCenters
         reportedMetrics = drawing.reportedMetrics; notes = drawing.notes
@@ -106,6 +109,7 @@ struct VisualDrawing {
     var reportedMetrics: [String: Double] = [:]
     var notes: [String] = []
     var additionalFailures: [VisualFinding] = []
+    var bidirectionalEdges: Set<Int> = []
 }
 
 struct VisualCase {

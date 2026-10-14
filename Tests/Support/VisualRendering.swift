@@ -41,7 +41,7 @@ struct VisualScene {
     var primitives: [VisualPrimitive]
     var bounds: Rect
     init(primitives: [VisualPrimitive], bounds: Rect) { self.primitives = primitives; self.bounds = bounds }
-    init(snapshot: VisualSnapshot, tint: String? = nil) {
+    init(snapshot: VisualSnapshot, tint: String? = nil, crossingJumps: Bool = true) {
         primitives = []; bounds = Rect()
         let palette = ["#2563eb", "#b45309", "#7c3aed", "#087f8c", "#be185d", "#4d7c0f"]
         let groups = snapshot.nodes.filter(\.group).sorted { a, b in
@@ -59,7 +59,7 @@ struct VisualScene {
         for (i, edge) in snapshot.edges.enumerated() where edge.path.count >= 2 {
             let color = tint ?? (edge.fallback ? "#dc2626" : palette[i % palette.count])
             let segs = VisualGeometry.segments(edge.path)
-            if tint == nil {
+            if tint == nil && crossingJumps {
                 for (a, b) in segs {
                     let len = (b - a).length
                     guard len > 8 else { continue }
@@ -82,7 +82,13 @@ struct VisualScene {
                 let base = end - unit * length, side = Point(x: -unit.y, y: unit.x) * (length / 2)
                 primitives.append(.polygon([end, base + side, base - side], color: color))
             }
-            drawnSegments.append(contentsOf: segs)
+            if edge.bidirectional == true, let start = edge.path.first,
+               let from = edge.path.dropFirst().first(where: { ($0 - start).length > 1e-6 }) {
+                let unit = (start - from) / (start - from).length, length = 2.5 * edge.width + 4
+                let base = start - unit * length, side = Point(x: -unit.y, y: unit.x) * (length / 2)
+                primitives.append(.polygon([start, base + side, base - side], color: color))
+            }
+            if crossingJumps { drawnSegments.append(contentsOf: segs) }
         }
         for node in snapshot.nodes where !node.group {
             primitives.append(.box(node.bounds, fill: tint == nil ? "#ffffff" : "none", stroke: tint ?? "#334155", width: 1.5))
@@ -111,14 +117,14 @@ struct VisualScene {
         return VisualScene(primitives: a.primitives + b.primitives, bounds: a.bounds.union(b.bounds))
     }
 
-    static func contactSheet(_ snapshots: [VisualSnapshot]) -> VisualScene {
+    static func contactSheet(_ snapshots: [VisualSnapshot], crossingJumps: Bool = true) -> VisualScene {
         var primitives: [VisualPrimitive] = []
         let width = 420.0, height = 300.0
         for (index, snapshot) in snapshots.enumerated() {
             let x = Double(index % 3) * width, y = Double(index / 3) * height
             primitives.append(.box(Rect(x: x + 4, y: y + 4, width: width - 8, height: height - 8), fill: "#ffffff", stroke: "#cbd5e1", width: 1))
             primitives.append(.text(snapshot.id, Rect(x: x + 12, y: y + 10, width: width - 24, height: 22), size: 13, color: "#0f172a"))
-            let scene = VisualScene(snapshot: snapshot)
+            let scene = VisualScene(snapshot: snapshot, crossingJumps: crossingJumps)
             let scale = min((width - 24) / scene.bounds.width, (height - 50) / scene.bounds.height)
             let offset = Point(x: x + width / 2 - scene.bounds.center.x * scale, y: y + 38 + (height - 50) / 2 - scene.bounds.center.y * scale)
             primitives += scene.primitives.map { $0.transformed(scale: scale, offset: offset) }

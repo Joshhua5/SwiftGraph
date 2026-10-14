@@ -13,3 +13,5 @@ Tests/Fixtures/VisualBaselines/
 
 docs/
 *.profraw
+
+.agents/teamwork/

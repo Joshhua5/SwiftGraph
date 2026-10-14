@@ -22,13 +22,17 @@ public final class LayoutNode: Hashable {
     public weak var parent: LayoutNode?
     public var tags: Set<String> = []
     public var metadata: [String: Any] = [:]
-    public init(id: String, width: Double, height: Double, data: Any? = nil) {
+    public init(id: String, width: Float, height: Float, data: Any? = nil) {
         self.id = id; name = id; bounds = Rect(width: width, height: height); self.data = data
     }
-    public var x: Double { get { bounds.x } set { bounds.x = newValue } }
-    public var y: Double { get { bounds.y } set { bounds.y = newValue } }
-    public var width: Double { get { bounds.width } set { bounds.width = newValue } }
-    public var height: Double { get { bounds.height } set { bounds.height = newValue } }
+    @_disfavoredOverload
+    public convenience init(id: String, width: Double, height: Double, data: Any? = nil) {
+        self.init(id: id, width: Float(width), height: Float(height), data: data)
+    }
+    public var x: Float { get { bounds.x } set { bounds.x = newValue } }
+    public var y: Float { get { bounds.y } set { bounds.y = newValue } }
+    public var width: Float { get { bounds.width } set { bounds.width = newValue } }
+    public var height: Float { get { bounds.height } set { bounds.height = newValue } }
     public var center: Point {
         get { bounds.center }
         set { bounds.x = newValue.x - width / 2; bounds.y = newValue.y - height / 2 }

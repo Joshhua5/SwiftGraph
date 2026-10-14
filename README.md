@@ -266,6 +266,41 @@ open .build/visual/run-01/index.html
 See [visual evaluation and agent iteration](docs/VISUAL-EVALUATION.md) for case
 selection, baselines, comparison commands, and optional Metal cases.
 
+Render the topology supplied in `docs/graph-topology.json` in every supported
+`LayoutPatternType` preset (macOS):
+
+```sh
+SWIFTGRAPH_RENDER_TOPOLOGY=1 swift test -c release --filter GraphTopologyRenderingTests
+```
+
+The test bundles a copy in `Tests/Fixtures/graph-topology.json`, so it also runs
+in a clean checkout. It prints the retained output directory under
+`.build/visual/topology-<run-id>`. Open its `contact-sheet.png` for an overview or
+an individual `<preset>.png` for agent inspection. Each preset also exports a
+zoomable SVG and geometry JSON; `report.md` links all artifacts. The test checks
+finite geometry, preserved graph membership, routes, and decodable PNG output.
+Visual quality remains available for agent review.
+Rendering this dense graph is opt-in so routine test runs stay fast; the loader
+and direction tests run normally. Release mode avoids debug routing overhead.
+The render test runs at most four presets concurrently, each on a fresh graph.
+
+To render a new file in the same format, set the input and optionally a new or
+empty output directory:
+
+```sh
+SWIFTGRAPH_TOPOLOGY_INPUT=docs/graph-topology.json \
+SWIFTGRAPH_TOPOLOGY_OUTPUT=.build/visual/topology-review \
+SWIFTGRAPH_RENDER_TOPOLOGY=1 \
+swift test -c release --filter GraphTopologyRenderingTests/rendersTopologyInEverySupportedPreset
+```
+
+The JSON contains `nodes` (objects with an optional `parent` index) and `edges`
+(objects with `source`, `target`, and `bidirectional`). Indices are zero-based
+positions in `nodes`. Referenced parents become groups; each edge record remains
+one layout edge, with two arrowheads when bidirectional. Missing node sizes use
+80 × 32 graph units and labels use node indices. The dense fixture disables
+crossing jump decoration while retaining every node, edge, and route.
+
 ```sh
 swift test
 swift test --filter GraphPort

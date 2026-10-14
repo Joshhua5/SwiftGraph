@@ -39,7 +39,8 @@ enum VisualComparison {
         for id in Set(aEdges.keys).union(bEdges.keys).sorted() {
             guard let a = aEdges[id], let b = bEdges[id] else { diff.changedEdges.append(id); continue }
             if a.source != b.source || a.target != b.target || a.path.count != b.path.count || !zip(a.path, b.path).allSatisfy({ equal($0, $1) })
-                || a.label != b.label || !equal(a.labelBounds, b.labelBounds) || !equal(a.width, b.width) { diff.changedEdges.append(id) }
+                || a.label != b.label || !equal(a.labelBounds, b.labelBounds) || !equal(a.width, b.width)
+                || (a.bidirectional ?? false) != (b.bidirectional ?? false) { diff.changedEdges.append(id) }
         }
         // Reference fixtures describe raw geometry, not the visual tool's recipe metadata.
         diff.configurationChanged = after.family != "reference" && (before.configuration != after.configuration || before.contracts != after.contracts)
