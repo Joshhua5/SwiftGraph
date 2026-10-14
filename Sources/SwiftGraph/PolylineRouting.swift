@@ -216,10 +216,12 @@ enum ObstaclePolyline {
         return Rect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
     }
     static func obstacles(_ edge: LayoutEdge, _ graph: LayoutGraph) -> [Rect] {
-        graph.nodes.filter {
+        let bodies = graph.nodes.filter {
             $0 !== edge.source && $0 !== edge.target &&
             !($0.isGroup && (isAncestor($0, of: edge.source) || isAncestor($0, of: edge.target)))
-        }.map(\.bounds).filter { $0.width > 0 && $0.height > 0 }
+        }.map(\.bounds)
+        let headers = graph.nodes.compactMap { $0.isGroup && $0 !== edge.source && $0 !== edge.target ? $0.groupHeaderBounds : nil }
+        return (bodies + headers).filter { $0.width > 0 && $0.height > 0 }
     }
     static func clear(_ path: [Point], _ obstacles: [Rect]) -> Bool {
         if let compute = RoutingCompute.current { return path.count >= 2 && compute.hits(path, obstacles).isEmpty }

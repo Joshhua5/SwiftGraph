@@ -17,8 +17,10 @@ extension VisualCatalogue {
 
     @discardableResult
     private static func addLeaf(_ graph: LayoutGraph, _ id: String, name: String? = nil, width: Double = 104, height: Double = 36, parent: LayoutNode? = nil) throws -> LayoutNode {
-        let node = LayoutNode(id: id, width: width, height: height)
-        node.name = name ?? id
+        let label = name ?? id
+        let minWidth = (Double(label.count) * 7.0 + 14).rounded(.up)
+        let node = LayoutNode(id: id, width: max(width, minWidth), height: height)
+        node.name = label
         try graph.addNode(node, to: parent)
         return node
     }
@@ -88,6 +90,7 @@ extension VisualCatalogue {
                 }
                 try layout.applyLayout(g)
                 EdgeEndpointClipper.clipToNodeBounds(g)
+                PortDistributor().routeEdges(g)
                 return VisualDrawing(
                     graph: g,
                     fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
@@ -163,6 +166,7 @@ extension VisualCatalogue {
                 layout.optimizeIncomingEdges = true
                 try layout.applyLayout(g)
                 EdgeEndpointClipper.clipToNodeBounds(g)
+                PortDistributor().routeEdges(g)
                 return VisualDrawing(
                     graph: g,
                     fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
@@ -238,6 +242,7 @@ extension VisualCatalogue {
                 layout.optimizeIncomingEdges = false
                 try layout.applyLayout(g)
                 EdgeEndpointClipper.clipToNodeBounds(g)
+                PortDistributor().routeEdges(g)
                 return VisualDrawing(
                     graph: g,
                     fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
@@ -375,7 +380,7 @@ extension VisualCatalogue {
                     link(g, layers[5][i], layers[5][i])
                 }
                 try await LayoutBuilder.create(g)
-                    .useHierarchical { $0.nodeSeparation = 55; $0.layerSeparation = 110 }
+                    .useHierarchical { $0.nodeSeparation = 42; $0.layerSeparation = 98; $0.maxNodesPerRank = 18 }
                     .removeOverlaps()
                     .routePolyline()
                     .separateEdges()
@@ -639,9 +644,10 @@ extension VisualCatalogue {
                 link(g, comp[0], refunded, label: "settled", labelSize: Size(width: 58, height: 16))
                 link(g, happy.last!, archived, label: "complete", labelSize: Size(width: 64, height: 16))
 
-                let h = HierarchicalLayoutAlgorithm(); h.nodeSeparation = 75; h.layerSeparation = 125
+                let h = HierarchicalLayoutAlgorithm(); h.nodeSeparation = 58; h.layerSeparation = 92
                 try h.applyLayout(g)
                 PolylineEdgeRouter().routeEdges(g)
+                EdgeSeparator().routeEdges(g)
                 SelfLoopRouter().routeEdges(g)
                 EdgeEndpointClipper.clipToNodeBounds(g)
                 PortDistributor().routeEdges(g)
@@ -702,6 +708,7 @@ extension VisualCatalogue {
                 let layout = RecursiveGroupLayout(LoopAwareLayout(HierarchicalLayoutAlgorithm()))
                 try layout.applyLayout(g)
                 EdgeEndpointClipper.clipToNodeBounds(g)
+                PortDistributor().routeEdges(g)
                 return VisualDrawing(
                     graph: g,
                     fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
@@ -756,6 +763,7 @@ extension VisualCatalogue {
                 EdgeSeparator().routeEdges(g)
                 SelfLoopRouter().routeEdges(g)
                 EdgeEndpointClipper.clipToNodeBounds(g)
+                PortDistributor().routeEdges(g)
                 return VisualDrawing(
                     graph: g,
                     fallbackEdges: VisualCatalogue.fallbacks(router, g),
@@ -803,6 +811,7 @@ extension VisualCatalogue {
                 let swim = SwimlaneLayoutAlgorithm()
                 swim.laneAssignment = lanes; swim.laneWidth = 210; swim.laneSpacing = 44; swim.nodeVerticalSpacing = 42
                 try swim.applyLayout(g)
+                for e in g.edges { e.sourcePort = .none; e.targetPort = .none }
                 PolylineEdgeRouter().routeEdges(g)
                 EdgeSeparator().routeEdges(g)
                 SelfLoopRouter().routeEdges(g)
@@ -934,8 +943,8 @@ extension VisualCatalogue {
                 }
                 link(g, modNodes[0][2], modNodes[0][2]) // org hierarchy self-reference
 
-                let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 90; core.layerSeparation = 140
-                let comp = ComponentLayout(core); comp.componentSpacing = 90
+                let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 72; core.layerSeparation = 128
+                let comp = ComponentLayout(core); comp.componentSpacing = 70; comp.preferredAspectRatio = 1.35
                 try comp.applyLayout(g)
                 let bsp = BspEdgeRouter(); bsp.routeEdges(g)
                 SelfLoopRouter().routeEdges(g)
@@ -1136,7 +1145,7 @@ extension VisualCatalogue {
                 }
                 let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 48; core.layerSeparation = 90
                 let mp = MultiPageLayoutAlgorithm(core)
-                mp.pageWidth = 2200; mp.pageHeight = 900; mp.pageSpacing = 180
+                mp.pageWidth = 1150; mp.pageHeight = 1020; mp.pageSpacing = 120
                 try mp.applyLayout(g)
                 PolylineEdgeRouter().routeEdges(g)
                 EdgeSeparator().routeEdges(g)

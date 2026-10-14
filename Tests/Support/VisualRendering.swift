@@ -55,14 +55,34 @@ struct VisualScene {
                 primitives.append(.text(group.name, header, size: 11, color: tint ?? "#475569"))
             }
         }
+        var drawnSegments: [(Point, Point)] = []
         for (i, edge) in snapshot.edges.enumerated() where edge.path.count >= 2 {
             let color = tint ?? (edge.fallback ? "#dc2626" : palette[i % palette.count])
+            let segs = VisualGeometry.segments(edge.path)
+            if tint == nil {
+                for (a, b) in segs {
+                    let len = (b - a).length
+                    guard len > 8 else { continue }
+                    let u = (b - a) / len
+                    for (c, d) in drawnSegments where VisualGeometry.crossing(a, b, c, d) {
+                        let v = d - c, denom = VisualGeometry.cross(b - a, v)
+                        guard abs(denom) > VisualGeometry.epsilon else { continue }
+                        let t = VisualGeometry.cross(c - a, v) / denom
+                        let hit = a + (b - a) * t
+                        let half = min(3.0, min(t * len, (1 - t) * len) * 0.45)
+                        if half > 0.8 {
+                            primitives.append(.line([hit - u * half, hit + u * half], color: "#ffffff", width: edge.width + 3.2, dashed: false))
+                        }
+                    }
+                }
+            }
             primitives.append(.line(edge.path, color: color, width: edge.width, dashed: edge.fallback))
             if let end = edge.path.last, let from = edge.path.dropLast().last(where: { ($0 - end).length > 1e-6 }) {
                 let unit = (end - from) / (end - from).length, length = 2.5 * edge.width + 4
                 let base = end - unit * length, side = Point(x: -unit.y, y: unit.x) * (length / 2)
                 primitives.append(.polygon([end, base + side, base - side], color: color))
             }
+            drawnSegments.append(contentsOf: segs)
         }
         for node in snapshot.nodes where !node.group {
             primitives.append(.box(node.bounds, fill: tint == nil ? "#ffffff" : "none", stroke: tint ?? "#334155", width: 1.5))
@@ -126,7 +146,9 @@ enum VisualRenderer {
             case let .line(p, color, width, dashed): body.append("<polyline points=\"\(points(p))\" fill=\"none\" stroke=\"\(color)\" stroke-width=\"\(number(width))\" stroke-linejoin=\"round\" \(dashed ? "stroke-dasharray=\"6 4\"" : "")/>")
             case let .polygon(p, color): body.append("<polygon points=\"\(points(p))\" fill=\"\(color)\"/>")
             case let .text(text, r, size, color):
-                body.append("<defs><clipPath id=\"t\(i)\"><rect \(rect(r))/></clipPath></defs><text x=\"\(number(r.center.x))\" y=\"\(number(r.center.y + size * 0.35))\" text-anchor=\"middle\" font-family=\"Helvetica, sans-serif\" font-size=\"\(number(size))\" fill=\"\(color)\" clip-path=\"url(#t\(i))\">\(escape(text))</text>")
+                let estWidth = max(1, Double(text.count) * size * 0.56)
+                let fitSize = r.width > 0 && estWidth > r.width ? max(size * 0.65, size * (r.width / estWidth)) : size
+                body.append("<defs><clipPath id=\"t\(i)\"><rect \(rect(r))/></clipPath></defs><text x=\"\(number(r.center.x))\" y=\"\(number(r.center.y + fitSize * 0.35))\" text-anchor=\"middle\" font-family=\"Helvetica, sans-serif\" font-size=\"\(number(fitSize))\" fill=\"\(color)\" clip-path=\"url(#t\(i))\">\(escape(text))</text>")
             }
         }
         body.append("</svg>"); return body.joined(separator: "\n") + "\n"
@@ -182,11 +204,19 @@ enum VisualRenderer {
                 }
             case let .text(text, r, size, c):
                 ctx.clip(to: rect(r))
-                let font = CTFontCreateWithName("Helvetica" as CFString, size, nil)
-                let attributes: [NSAttributedString.Key: Any] = [NSAttributedString.Key(kCTFontAttributeName as String): font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): color(c)]
-                let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
-                var ascent: CGFloat = 0, descent: CGFloat = 0
-                let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+                func makeLine(_ fontSize: Double) -> (CTLine, Double, CGFloat, CGFloat) {
+                    let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
+                    let attrs: [NSAttributedString.Key: Any] = [NSAttributedString.Key(kCTFontAttributeName as String): font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): color(c)]
+                    let ctLine = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
+                    var asc: CGFloat = 0, desc: CGFloat = 0
+                    let w = CTLineGetTypographicBounds(ctLine, &asc, &desc, nil)
+                    return (ctLine, w, asc, desc)
+                }
+                var (line, width, ascent, descent) = makeLine(size)
+                if width > r.width && r.width > 0 {
+                    let scaled = max(size * 0.65, size * (r.width / width) * 0.96)
+                    (line, width, ascent, descent) = makeLine(scaled)
+                }
                 ctx.translateBy(x: r.center.x - width / 2, y: r.center.y + (ascent - descent) / 2)
                 ctx.scaleBy(x: 1, y: -1); ctx.textMatrix = .identity; ctx.textPosition = .zero
                 CTLineDraw(line, ctx)

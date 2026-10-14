@@ -75,6 +75,31 @@ public final class PortDistributor: EdgeRouter {
                 }!
                 undo(kept[worst]); kept.remove(at: worst)
             }
+            for end in all {
+                let p = end.start ? end.edge.path : Array(end.edge.path.reversed())
+                guard p.count >= 2 else { continue }
+                let here = Self.along(p[0], k.side)
+                guard here < low + 3.2 || here > high - 3.2 else { continue }
+                let clamp = min(max(here, low + min(margin, 4.0)), high - min(margin, 4.0))
+                let old = end.edge.path, before = scene.count(of: end.edge)
+                if let moved = candidate(end.edge, start: end.start, side: k.side, to: clamp, orthogonal: orthogonal, jog: 0.5, graph) {
+                    end.edge.path = moved; scene.update(end.edge)
+                    let after = scene.count(of: end.edge)
+                    if after.all <= before.all && after.pair <= before.pair { continue }
+                    end.edge.path = old; scene.update(end.edge)
+                }
+                let span = (p[1] - p[0]).length
+                guard !orthogonal, span > 20 else { continue }
+                let knee = p[0] + (p[1] - p[0]) * min(0.25, 12.0 / span)
+                let q = [Self.with(p[0], k.side, along: clamp), knee] + p.dropFirst()
+                let blocks = ObstaclePolyline.obstacles(end.edge, graph) + [end.edge.source, end.edge.target].map { $0.bounds.inflated(by: -1e-6) }.filter { $0.width > 0 && $0.height > 0 }
+                guard ObstaclePolyline.clear(Array(q.prefix(3)), blocks) else { continue }
+                end.edge.path = end.start ? q : Array(q.reversed()); scene.update(end.edge)
+                let after = scene.count(of: end.edge)
+                if after.all > before.all || after.pair > before.pair {
+                    end.edge.path = old; scene.update(end.edge)
+                }
+            }
         }
     }
     private struct Move { var edge: LayoutEdge, old: [Point], new: [Point], before: Crossings.Count }
@@ -83,11 +108,11 @@ public final class PortDistributor: EdgeRouter {
     /// (corners aside); otherwise they are pushed apart as little as possible, evenly spaced when they coincide.
     private func slots(_ along: [Double], low: Double, high: Double) -> [Double]? {
         let n = along.count, lo = low + margin, hi = high - margin
-        guard n > 1 else { return along.map { min(max($0, lo), hi) } }
+        let held = along.map { min(max($0, lo), hi) }
+        guard n > 1 else { return held }
         let even = (high - low) / Double(n + 1), fit = (hi - lo) / Double(n - 1), floor = min(edgeSpacing, even)
         // Crowded faces keep what they have rather than being crammed below the minimum lane spacing.
-        guard fit >= floor - 1e-9 else { return nil }
-        let held = along.map { min(max($0, lo), hi) }
+        guard fit >= floor - 1e-9 else { return held }
         if zip(held, held.dropFirst()).allSatisfy({ $1 - $0 >= floor - 1e-9 }) { return held }
         // Least squares with gaps of at least `pitch`: pool adjacent violators on the positions less their rank offset.
         let pitch = min(even, fit)
@@ -112,14 +137,18 @@ public final class PortDistributor: EdgeRouter {
         let p = path[0]
         guard let q = path.dropFirst().first(where: { ($0 - p).length > 1e-9 }) else { return nil }
         let d = q - p
-        var best: (side: PortConstraint, outward: Double)?
+        var best: (side: PortConstraint, offset: Double, outward: Double)?
         for (side, offset, within, outward) in [
-            (PortConstraint.top, p.y - r.top, p.x >= r.left - tolerance && p.x <= r.right + tolerance, -d.y),
-            (.bottom, p.y - r.bottom, p.x >= r.left - tolerance && p.x <= r.right + tolerance, d.y),
-            (.left, p.x - r.left, p.y >= r.top - tolerance && p.y <= r.bottom + tolerance, -d.x),
-            (.right, p.x - r.right, p.y >= r.top - tolerance && p.y <= r.bottom + tolerance, d.x)]
-        where abs(offset) <= tolerance && within && outward > 1e-9 && (best == nil || outward > best!.outward + 1e-9) {
-            best = (side, outward)
+            (PortConstraint.top, abs(p.y - r.top), p.x >= r.left - tolerance && p.x <= r.right + tolerance, -d.y),
+            (.bottom, abs(p.y - r.bottom), p.x >= r.left - tolerance && p.x <= r.right + tolerance, d.y),
+            (.left, abs(p.x - r.left), p.y >= r.top - tolerance && p.y <= r.bottom + tolerance, -d.x),
+            (.right, abs(p.x - r.right), p.y >= r.top - tolerance && p.y <= r.bottom + tolerance, d.x)]
+        where offset <= tolerance && within && outward > 1e-9 {
+            if let b = best {
+                if offset > b.offset + 1e-6 { continue }
+                if abs(offset - b.offset) <= 1e-6 && outward <= b.outward + 1e-9 { continue }
+            }
+            best = (side, offset, outward)
         }
         guard let found = best?.side, constraint == .none || constraint == found else { return nil }
         return found

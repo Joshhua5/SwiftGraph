@@ -263,6 +263,7 @@ extension GroupLayoutEngine {
         // Existing fallback/custom paths must not prevent unrelated improvements, but a move
         // may not obstruct any previously clear path, including paths it does not reroute.
         var clearEdges = graph.edges.filter { $0.path.count >= 2 && initialScene.clear($0.path, $0) }
+        var anyChanged = false
         for _ in 0..<2 {
             var changed = false
             for group in groups.reversed() {
@@ -345,7 +346,7 @@ extension GroupLayoutEngine {
                            crossing.allSatisfy({ scene.clear($0.path, $0) }),
                            clearEdges.allSatisfy({ scene.clear($0.path, $0) }) {
                             clearEdges = graph.edges.filter { $0.path.count >= 2 && scene.clear($0.path, $0) }
-                            changed = true
+                            changed = true; anyChanged = true
                             break
                         }
                         restore()
@@ -353,6 +354,29 @@ extension GroupLayoutEngine {
                 }
             }
             if !changed { break }
+        }
+        if anyChanged && boundary.count > 1 {
+            let scene = ObstaclePolyline.Scene(obstacles().nodes)
+            let saved = boundary.map { ($0, $0.path, $0.labelBounds, scene.clear($0.path, $0)) }
+            let separator = EdgeSeparator(); separator.spacing = 6
+            separator.separate(boundary, scene)
+            for (edge, oldPath, oldLabel, wasClear) in saved where edge.path != oldPath {
+                let owners = groups.filter { $0 !== graph.root && (ownedEdges[$0] ?? []).contains(edge) }
+                for owner in owners {
+                    guard let c = owner.groupContentBounds else { continue }
+                    edge.path = edge.path.map { Point(x: min(max($0.x, c.left), c.right), y: min(max($0.y, c.top), c.bottom)) }
+                }
+                centerLabels(on: [edge])
+                let clearOK = !wasClear || scene.clear(edge.path, edge)
+                let ownerOK = owners.allSatisfy { owner in
+                    guard let content = owner.groupContentBounds else { return false }
+                    return edge.path.allSatisfy { contains(content, Rect(x: $0.x, y: $0.y)) } &&
+                        (edge.labelBounds.width <= 0 || edge.labelBounds.height <= 0 || contains(content, edge.labelBounds))
+                }
+                if !clearOK || !ownerOK {
+                    edge.path = oldPath; edge.labelBounds = oldLabel
+                }
+            }
         }
     }
 }

@@ -347,13 +347,14 @@ final class DirectedRouter {
     }
 
     /// Crossings of `path` with the loaded routes, or nil when it hits a body, shares a run or crowds one.
-    private func crossingCount(_ path: [Point], others: [Rect]) -> Int? {
+    private func crossingCount(_ path: [Point], others: [Rect], spacing: Double? = nil) -> Int? {
+        let gap = spacing ?? edgeSpacing
         var count = 0
         for segment in DirectedGeometry.segments(path) {
             guard DirectedGeometry.clear(segment.a, segment.b, bodies: bodies), DirectedGeometry.clear(segment.a, segment.b, bodies: others) else { return nil }
             var rejected = false
-            occupied.forEach(near: segment, margin: edgeSpacing) { _, other in
-                if DirectedGeometry.shared(segment, other) || DirectedGeometry.nearShared(segment, other, spacing: edgeSpacing) { rejected = true }
+            occupied.forEach(near: segment, margin: gap) { _, other in
+                if DirectedGeometry.shared(segment, other) || DirectedGeometry.nearShared(segment, other, spacing: gap) { rejected = true }
                 else if DirectedGeometry.crossing(segment, other) != nil { count += 1 }
             }
             if rejected { return nil }
@@ -369,7 +370,8 @@ final class DirectedRouter {
             var loaded = false, others: [Rect] = [], before = 0
             for _ in 0..<4 {
                 let path = edge.path
-                guard let k = (1..<(path.count - 2)).first(where: { (path[$0 + 1] - path[$0]).length < microLength && (path[$0 + 1] - path[$0]).length > DirectedGeometry.epsilon }) else { break }
+                guard path.count >= 5,
+                      let k = (1..<(path.count - 2)).first(where: { (path[$0 + 1] - path[$0]).length < microLength && (path[$0 + 1] - path[$0]).length > DirectedGeometry.epsilon }) else { break }
                 if !loaded {
                     load(excluding: edge); loaded = true
                     others = nodes.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: clearance) }
@@ -378,16 +380,31 @@ final class DirectedRouter {
                 }
                 let vertical = abs(path[k].x - path[k + 1].x) < DirectedGeometry.epsilon
                 var changed = false
-                for candidate in [k + 1, k] {
+                let candidates = [k + 1, k].sorted { a, b in
+                    let fa = a == k + 1 ? k + 1 : k - 1, fb = b == k + 1 ? k + 1 : k - 1
+                    let ia = fa >= 1 && fa + 1 <= path.count - 2, ib = fb >= 1 && fb + 1 <= path.count - 2
+                    return ia && !ib
+                }
+                for candidate in candidates {
                     // Moves the run that starts (after) or ends (before) at the jog onto the jog's far coordinate.
                     let first = candidate == k + 1 ? k + 1 : k - 1, second = first + 1
-                    guard first >= 1, second <= path.count - 2 else { continue }
-                    var next = path
                     let target = candidate == k + 1 ? path[k] : path[k + 1]
+                    let isPortSlide = first < 1 || second > path.count - 2
+                    let gap = isPortSlide ? min(edgeSpacing, 8) : edgeSpacing
+                    if isPortSlide {
+                        guard vertical, first == 0 || second == path.count - 1 else { continue }
+                        let atStart = first == 0
+                        let node = atStart ? edge.source : edge.target, port = path[atStart ? 0 : path.count - 1]
+                        guard let span = slideInterval(edge, node: node, at: port, margin: 6, spacing: gap),
+                              target.y >= span.lo - DirectedGeometry.epsilon, target.y <= span.hi + DirectedGeometry.epsilon else { continue }
+                    }
+                    var next = path
                     for i in [first, second] { if vertical { next[i].y = target.y } else { next[i].x = target.x } }
                     next = DirectedGeometry.compact(next)
-                    guard let count = crossingCount(next, others: others), count <= before, next.count < path.count else { continue }
-                    edge.path = next; before = count; changed = true; break
+                    guard let count = crossingCount(next, others: others, spacing: gap), count <= before, next.count < path.count else { continue }
+                    edge.path = next; before = count; changed = true
+                    if var p = ports[edge] { p.0 = next[0]; p.1 = next[next.count - 1]; ports[edge] = p }
+                    break
                 }
                 if !changed { break }
             }
@@ -396,14 +413,15 @@ final class DirectedRouter {
 
     /// The free span along `node`'s `side` around the port at `point`: bounded by the side and the neighbouring
     /// ports (their order, and so the crossings they were assigned for, is kept).
-    private func slideInterval(_ edge: LayoutEdge, node: LayoutNode, at point: Point) -> (lo: Double, hi: Double)? {
+    private func slideInterval(_ edge: LayoutEdge, node: LayoutNode, at point: Point, margin: Double = 8, spacing: Double? = nil) -> (lo: Double, hi: Double)? {
+        let gap = spacing ?? edgeSpacing
         let side: PortConstraint = abs(point.x - node.bounds.left) < 0.001 ? .left : .right
         guard Self.onSide(point, side, of: node.bounds, margin: 0) else { return nil }
-        var (lo, hi) = Self.sideRange(node.bounds)
+        var (lo, hi) = node.bounds.height > 2 * margin ? (node.bounds.top + margin, node.bounds.bottom - margin) : (node.bounds.center.y, node.bounds.center.y)
         for other in edges where other !== edge {
             for (end, owner) in [(other.path.first, other.source), (other.path.last, other.target)] where owner === node {
                 guard let end, Self.onSide(end, side, of: node.bounds, margin: 0) else { continue }
-                if end.y < point.y { lo = max(lo, end.y + edgeSpacing) } else { hi = min(hi, end.y - edgeSpacing) }
+                if end.y < point.y { lo = max(lo, end.y + gap) } else { hi = min(hi, end.y - gap) }
             }
         }
         return (lo, hi)
