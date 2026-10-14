@@ -1,4 +1,5 @@
 import Foundation
+import GraphEvaluationSupport
 import SwiftGraph
 
 struct Row: Codable {
@@ -52,6 +53,10 @@ func median(_ values: [Double]) -> Double { let v = values.sorted(); return v[v.
 let args = Array(CommandLine.arguments.dropFirst())
 func option(_ name: String) -> String? {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }; return args[i + 1]
+}
+if args.contains("--compare-catalogue") {
+    let forward = ["benchmark"] + args.filter { $0 != "--compare-catalogue" }
+    exit(await VisualTool.run(forward))
 }
 if args.contains("--production") {
     try await runProductionBenchmark(args)

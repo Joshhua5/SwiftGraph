@@ -10,9 +10,44 @@ private final class LoopAwareLayout: LayoutAlgorithm {
     }
 }
 
+private final class LoopAwareAsyncLayout: LayoutExecutionReporting {
+    let base: any LayoutExecutionReporting
+    let backend: LayoutBackend
+    let executor: LayoutExecutor
+    private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
+    init(_ base: any LayoutExecutionReporting, backend: LayoutBackend, executor: LayoutExecutor) {
+        self.base = base; self.backend = backend; self.executor = executor
+    }
+    func applyLayoutAsync(_ graph: LayoutGraph) async throws {
+        lastExecutionMetrics = []
+        try await base.applyLayoutAsync(graph)
+        let loops = RoutingLayoutOperation(.selfLoops, backend: backend, executor: executor)
+        try await loops.applyLayoutAsync(graph)
+        lastExecutionMetrics = base.lastExecutionMetrics + loops.lastExecutionMetrics
+    }
+}
+
+enum SEBackendContext {
+    @TaskLocal static var active: (backend: LayoutBackend, executor: LayoutExecutor)?
+    final class Recorder: @unchecked Sendable {
+        var metrics: [LayoutExecutionMetrics] = []
+    }
+    @TaskLocal static var recorder: Recorder?
+}
+
 extension VisualCatalogue {
     static func softwareEngineeringCases() -> [VisualCase] {
         architectureCases() + dependencyCases() + callGraphCases() + stateMachineCases() + pipelineAndDataFlowCases() + schemaAndConstrainedCases()
+    }
+
+    static func runSoftwareEngineering(_ item: VisualCase, backend: LayoutBackend, executor: LayoutExecutor) async throws -> (VisualDrawing, [LayoutExecutionMetrics]) {
+        let recorder = SEBackendContext.Recorder()
+        let drawing = try await SEBackendContext.$active.withValue((backend, executor)) {
+            try await SEBackendContext.$recorder.withValue(recorder) {
+                try await item.run()
+            }
+        }
+        return (drawing, recorder.metrics)
     }
 
     @discardableResult
@@ -80,20 +115,43 @@ extension VisualCatalogue {
                 link(g, orders, pgPrimary); link(g, inventory, pgReplica); link(g, auth, redis)
                 link(g, pgPrimary, pgReplica); link(g, billing, stripe); link(g, gw, gw)
 
-                let layout = RecursiveGroupLayout(LoopAwareLayout(HierarchicalLayoutAlgorithm()))
-                layout.groupLayoutSelector = { group in
-                    if group === coreTier {
-                        let c = CircularLayoutAlgorithm(); c.radius = 120; return LoopAwareLayout(c)
+                let fallbacks: [Int]
+                if let ctx = SEBackendContext.active {
+                    let defaultCore = LoopAwareAsyncLayout(HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor), backend: ctx.backend, executor: ctx.executor)
+                    let layout = RecursiveGroupLayoutOperation(defaultCore, backend: ctx.backend, executor: ctx.executor)
+                    layout.groupLayoutSelector = { group in
+                        if group === coreTier {
+                            var c = BasicLayoutConfiguration(style: .circular); c.radius = 120
+                            return LoopAwareAsyncLayout(BasicLayoutOperation(style: .circular, backend: ctx.backend, executor: ctx.executor, configuration: c), backend: ctx.backend, executor: ctx.executor)
+                        }
+                        if group === dataTier {
+                            return LoopAwareAsyncLayout(TreeLayoutOperation(style: .tree, backend: ctx.backend, executor: ctx.executor), backend: ctx.backend, executor: ctx.executor)
+                        }
+                        return LoopAwareAsyncLayout(HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor), backend: ctx.backend, executor: ctx.executor)
                     }
-                    if group === dataTier { return LoopAwareLayout(TreeLayoutAlgorithm()) }
-                    return LoopAwareLayout(HierarchicalLayoutAlgorithm())
+                    try await layout.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += layout.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                } else {
+                    let layout = RecursiveGroupLayout(LoopAwareLayout(HierarchicalLayoutAlgorithm()))
+                    layout.groupLayoutSelector = { group in
+                        if group === coreTier {
+                            let c = CircularLayoutAlgorithm(); c.radius = 120; return LoopAwareLayout(c)
+                        }
+                        if group === dataTier { return LoopAwareLayout(TreeLayoutAlgorithm()) }
+                        return LoopAwareLayout(HierarchicalLayoutAlgorithm())
+                    }
+                    try layout.applyLayout(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
                 }
-                try layout.applyLayout(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
                 return VisualDrawing(
                     graph: g,
-                    fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
+                    fallbackEdges: fallbacks,
                     reportedMetrics: ["scaleTier": 1, "groupCount": 4, "leafCount": 12],
                     notes: ["Small cloud architecture with 2-level nested frames, mixed layout selectors, reciprocal auth call, and self-loop health check."]
                 )
@@ -162,14 +220,27 @@ extension VisualCatalogue {
                 link(g, aServices[0], obsNodes[0]); link(g, bServices[0], obsNodes[0])
                 link(g, aStores[2], obsNodes[0]); link(g, bStores[2], obsNodes[0])
 
-                let layout = RecursiveGroupLayout(HierarchicalLayoutAlgorithm())
-                layout.optimizeIncomingEdges = true
-                try layout.applyLayout(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let fallbacks: [Int]
+                if let ctx = SEBackendContext.active {
+                    let layout = RecursiveGroupLayoutOperation(HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor), backend: ctx.backend, executor: ctx.executor)
+                    layout.optimizeIncomingEdges = true
+                    try await layout.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += layout.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                } else {
+                    let layout = RecursiveGroupLayout(HierarchicalLayoutAlgorithm())
+                    layout.optimizeIncomingEdges = true
+                    try layout.applyLayout(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                }
                 return VisualDrawing(
                     graph: g,
-                    fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
+                    fallbackEdges: fallbacks,
                     reportedMetrics: ["scaleTier": 2, "groupCount": 9, "leafCount": Double(g.nodes.filter { !$0.isGroup }.count)],
                     notes: ["Medium 3-level Multi-AZ cloud architecture with cross-AZ replication links, empty standby frame with minimum bounds, and incoming-edge alignment."]
                 )
@@ -238,14 +309,27 @@ extension VisualCatalogue {
                 link(g, meshControl, entryNodes[0])
                 link(g, meshControl, entryNodes[4])
 
-                let layout = RecursiveGroupLayout(HierarchicalLayoutAlgorithm())
-                layout.optimizeIncomingEdges = false
-                try layout.applyLayout(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let fallbacks: [Int]
+                if let ctx = SEBackendContext.active {
+                    let layout = RecursiveGroupLayoutOperation(HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor), backend: ctx.backend, executor: ctx.executor)
+                    layout.optimizeIncomingEdges = false
+                    try await layout.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += layout.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                } else {
+                    let layout = RecursiveGroupLayout(HierarchicalLayoutAlgorithm())
+                    layout.optimizeIncomingEdges = false
+                    try layout.applyLayout(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                }
                 return VisualDrawing(
                     graph: g,
-                    fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
+                    fallbackEdges: fallbacks,
                     reportedMetrics: ["scaleTier": 3, "groupCount": Double(g.nodes.filter(\.isGroup).count), "leafCount": Double(g.nodes.filter { !$0.isGroup }.count)],
                     notes: ["Large 5-domain enterprise platform architecture (~160 leaves + 15 nested frames) testing hierarchical frame fitting and cross-domain obstacle routing."]
                 )
@@ -291,7 +375,15 @@ extension VisualCatalogue {
                 var widths: [Double] = []
                 for (s, t, w) in pairs { link(g, byID[s]!, byID[t]!); widths.append(w) }
                 var config = DirectedLayoutConfiguration(); config.edgeWidths = widths
-                let diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor, configuration: config)
+                    try await op.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     edgeWidths: widths,
@@ -338,7 +430,15 @@ extension VisualCatalogue {
                 link(g, u1, u2); link(g, u3, u4)
 
                 var config = DirectedLayoutConfiguration(); config.candidateCount = 2
-                let diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor, configuration: config)
+                    try await op.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 2, "godNodeHeight": god.height, "crossings": Double(diag.crossings), "bends": Double(diag.bends)],
@@ -379,15 +479,28 @@ extension VisualCatalogue {
                     link(g, layers[3][i], layers[2][i])
                     link(g, layers[5][i], layers[5][i])
                 }
-                try await LayoutBuilder.create(g)
-                    .useHierarchical { $0.nodeSeparation = 42; $0.layerSeparation = 98; $0.maxNodesPerRank = 18 }
-                    .removeOverlaps()
-                    .routePolyline()
-                    .separateEdges()
-                    .routeSelfLoops()
-                    .clipEdgeEndpoints()
-                    .distributePorts()
-                    .applyAsync()
+                if let ctx = SEBackendContext.active {
+                    let builder = LayoutBuilder.create(g)
+                        .useHierarchical(backend: ctx.backend, executor: ctx.executor) { $0.nodeSeparation = 42; $0.layerSeparation = 98; $0.maxNodesPerRank = 18 }
+                        .useRemoveOverlaps(backend: ctx.backend, executor: ctx.executor)
+                        .routePolyline(backend: ctx.backend, executor: ctx.executor)
+                        .separateEdges(backend: ctx.backend, executor: ctx.executor)
+                        .routeSelfLoops(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += builder.lastExecutionMetrics
+                } else {
+                    try await LayoutBuilder.create(g)
+                        .useHierarchical { $0.nodeSeparation = 42; $0.layerSeparation = 98; $0.maxNodesPerRank = 18 }
+                        .removeOverlaps()
+                        .routePolyline()
+                        .separateEdges()
+                        .routeSelfLoops()
+                        .clipEdgeEndpoints()
+                        .distributePorts()
+                        .applyAsync()
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 3, "layerCount": 8, "nodeCount": Double(g.nodes.count), "edgeCount": Double(g.edges.count)],
@@ -435,7 +548,15 @@ extension VisualCatalogue {
                     ("parsePrimary", "emitDiagnostic"), ("lexNextToken", "emitDiagnostic")
                 ]
                 for (s, t) in calls { link(g, byID[s]!, byID[t]!) }
-                let diag = try DirectedLayoutOperation().apply(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor)
+                    try await op.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation().apply(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 1, "feedbackEdges": Double(diag.feedbackEdgeIndices.count), "crossings": Double(diag.crossings)],
@@ -483,24 +604,46 @@ extension VisualCatalogue {
                 link(g, rows[6][5], rows[6][5])
                 link(g, rows[6][6], rows[4][6])
 
-                try await LayoutBuilder.create(g)
-                    .analyzePageRank()
-                    .transform { graph in
-                        for node in graph.nodes {
-                            let pr = node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0
-                            let scale = min(1.85, 1.0 + 3.5 * pr)
-                            node.width = (node.width * scale).rounded()
-                            node.height = (node.height * scale).rounded()
+                if let ctx = SEBackendContext.active {
+                    let builder = LayoutBuilder.create(g)
+                        .analyzePageRank(backend: ctx.backend, executor: ctx.executor)
+                        .transform { graph in
+                            for node in graph.nodes {
+                                let pr = node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0
+                                let scale = min(1.85, 1.0 + 3.5 * pr)
+                                node.width = (node.width * scale).rounded()
+                                node.height = (node.height * scale).rounded()
+                            }
                         }
-                    }
-                    .useHierarchical { $0.nodeSeparation = 64; $0.layerSeparation = 115 }
-                    .removeOverlaps()
-                    .routePolyline()
-                    .separateEdges()
-                    .routeSelfLoops()
-                    .clipEdgeEndpoints()
-                    .distributePorts()
-                    .applyAsync()
+                        .useHierarchical(backend: ctx.backend, executor: ctx.executor) { $0.nodeSeparation = 64; $0.layerSeparation = 115 }
+                        .removeOverlaps(backend: ctx.backend, executor: ctx.executor)
+                        .routePolyline(backend: ctx.backend, executor: ctx.executor)
+                        .separateEdges(backend: ctx.backend, executor: ctx.executor)
+                        .routeSelfLoops(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += builder.lastExecutionMetrics
+                } else {
+                    try await LayoutBuilder.create(g)
+                        .analyzePageRank()
+                        .transform { graph in
+                            for node in graph.nodes {
+                                let pr = node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0
+                                let scale = min(1.85, 1.0 + 3.5 * pr)
+                                node.width = (node.width * scale).rounded()
+                                node.height = (node.height * scale).rounded()
+                            }
+                        }
+                        .useHierarchical { $0.nodeSeparation = 64; $0.layerSeparation = 115 }
+                        .removeOverlaps()
+                        .routePolyline()
+                        .separateEdges()
+                        .routeSelfLoops()
+                        .clipEdgeEndpoints()
+                        .distributePorts()
+                        .applyAsync()
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 2, "stageCount": Double(stages.count), "maxNodeWidth": g.nodes.map(\.width).max() ?? 0],
@@ -537,12 +680,23 @@ extension VisualCatalogue {
                     link(g, clusters[s][8], clusters[s + 1][2])
                     link(g, clusters[s][15], clusters[s + 1][4])
                 }
-                try await LayoutBuilder.create(g)
-                    .applyClusterBased(HierarchicalLayoutAlgorithm())
-                    .separateEdges()
-                    .clipEdgeEndpoints()
-                    .distributePorts()
-                    .applyAsync()
+                if let ctx = SEBackendContext.active {
+                    let core = HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor)
+                    let builder = LayoutBuilder.create(g)
+                        .applyClusterBased(core, backend: ctx.backend, executor: ctx.executor)
+                        .separateEdges(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += builder.lastExecutionMetrics
+                } else {
+                    try await LayoutBuilder.create(g)
+                        .applyClusterBased(HierarchicalLayoutAlgorithm())
+                        .separateEdges()
+                        .clipEdgeEndpoints()
+                        .distributePorts()
+                        .applyAsync()
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 3, "subsystemCount": 5, "nodeCount": Double(g.nodes.count)],
@@ -599,8 +753,18 @@ extension VisualCatalogue {
                 }
                 var config = DirectedLayoutConfiguration()
                 config.nodeSpacing = 68; config.layerSpacing = 140
-                let diag = try DirectedLayoutOperation(configuration: config).apply(g)
-                LabelLayoutAlgorithm().applyLabelLayout(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor, configuration: config)
+                    try await op.applyLayoutAsync(g)
+                    let lbl = RoutingLayoutOperation(.labelLayout, backend: ctx.backend, executor: ctx.executor)
+                    try await lbl.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics + lbl.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                    LabelLayoutAlgorithm().applyLabelLayout(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 1, "crossings": Double(diag.crossings), "bends": Double(diag.bends)],
@@ -644,14 +808,27 @@ extension VisualCatalogue {
                 link(g, comp[0], refunded, label: "settled", labelSize: Size(width: 58, height: 16))
                 link(g, happy.last!, archived, label: "complete", labelSize: Size(width: 64, height: 16))
 
-                let h = HierarchicalLayoutAlgorithm(); h.nodeSeparation = 58; h.layerSeparation = 92
-                try h.applyLayout(g)
-                PolylineEdgeRouter().routeEdges(g)
-                EdgeSeparator().routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
-                LabelLayoutAlgorithm().applyLabelLayout(g)
+                if let ctx = SEBackendContext.active {
+                    let builder = LayoutBuilder.create(g)
+                        .useHierarchical(backend: ctx.backend, executor: ctx.executor) { $0.nodeSeparation = 58; $0.layerSeparation = 92 }
+                        .routePolyline(backend: ctx.backend, executor: ctx.executor)
+                        .separateEdges(backend: ctx.backend, executor: ctx.executor)
+                        .routeSelfLoops(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                        .layoutLabels(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += builder.lastExecutionMetrics
+                } else {
+                    let h = HierarchicalLayoutAlgorithm(); h.nodeSeparation = 58; h.layerSeparation = 92
+                    try h.applyLayout(g)
+                    PolylineEdgeRouter().routeEdges(g)
+                    EdgeSeparator().routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    LabelLayoutAlgorithm().applyLabelLayout(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 2, "stateCount": Double(g.nodes.count), "labeledEdges": Double(g.edges.filter { $0.data != nil }.count)],
@@ -705,13 +882,26 @@ extension VisualCatalogue {
                     link(g, exitStates[i], crashHandler)
                 }
 
-                let layout = RecursiveGroupLayout(LoopAwareLayout(HierarchicalLayoutAlgorithm()))
-                try layout.applyLayout(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let fallbacks: [Int]
+                if let ctx = SEBackendContext.active {
+                    let core = LoopAwareAsyncLayout(HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor), backend: ctx.backend, executor: ctx.executor)
+                    let layout = RecursiveGroupLayoutOperation(core, backend: ctx.backend, executor: ctx.executor)
+                    try await layout.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += layout.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                } else {
+                    let layout = RecursiveGroupLayout(LoopAwareLayout(HierarchicalLayoutAlgorithm()))
+                    try layout.applyLayout(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) }
+                }
                 return VisualDrawing(
                     graph: g,
-                    fallbackEdges: layout.unroutableEdges.compactMap { g.edges.firstIndex(of: $0) },
+                    fallbackEdges: fallbacks,
                     reportedMetrics: ["scaleTier": 3, "superStateCount": 6, "leafStateCount": Double(g.nodes.filter { !$0.isGroup }.count)],
                     notes: ["Large 162-node hierarchical statechart with 6 composite super-state frames, local cyclic transitions, internal self-loops, and global interrupt recovery."]
                 )
@@ -756,18 +946,40 @@ extension VisualCatalogue {
                     ("unit-tests", "unit-tests") // flaky retry self-loop
                 ]
                 for (s, t) in flow { link(g, byID[s]!, byID[t]!) }
-                let swim = SwimlaneLayoutAlgorithm()
-                swim.laneAssignment = lanes; swim.laneWidth = 220; swim.laneSpacing = 36; swim.nodeVerticalSpacing = 36
-                try swim.applyLayout(g)
-                let router = ChannelEdgeRouter(); router.routeEdges(g)
-                EdgeSeparator().routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let fallbacks: [Int]
+                let laneCount: Int
+                if let ctx = SEBackendContext.active {
+                    let swim = SwimlaneLayoutOperation(backend: ctx.backend, executor: ctx.executor)
+                    swim.laneAssignment = lanes; swim.laneWidth = 220; swim.laneSpacing = 36; swim.nodeVerticalSpacing = 36
+                    try await swim.applyLayoutAsync(g)
+                    let router = RoutingLayoutOperation(.channel, backend: ctx.backend, executor: ctx.executor)
+                    try await router.applyLayoutAsync(g)
+                    let sep = RoutingLayoutOperation(.edgeSeparation, backend: ctx.backend, executor: ctx.executor)
+                    try await sep.applyLayoutAsync(g)
+                    let loops = RoutingLayoutOperation(.selfLoops, backend: ctx.backend, executor: ctx.executor)
+                    try await loops.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += swim.lastExecutionMetrics + router.lastExecutionMetrics + sep.lastExecutionMetrics + loops.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = router.unroutableEdgeIndices
+                    laneCount = swim.computedLanes.count
+                } else {
+                    let swim = SwimlaneLayoutAlgorithm()
+                    swim.laneAssignment = lanes; swim.laneWidth = 220; swim.laneSpacing = 36; swim.nodeVerticalSpacing = 36
+                    try swim.applyLayout(g)
+                    let router = ChannelEdgeRouter(); router.routeEdges(g)
+                    EdgeSeparator().routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = VisualCatalogue.fallbacks(router, g)
+                    laneCount = swim.computedLanes.count
+                }
                 return VisualDrawing(
                     graph: g,
-                    fallbackEdges: VisualCatalogue.fallbacks(router, g),
-                    reportedMetrics: ["scaleTier": 1, "laneCount": Double(swim.computedLanes.count), "nodeCount": Double(g.nodes.count)],
+                    fallbackEdges: fallbacks,
+                    reportedMetrics: ["scaleTier": 1, "laneCount": Double(laneCount), "nodeCount": Double(g.nodes.count)],
                     notes: ["4-lane CI/CD swimlane workflow (Dev, CI Runner, Staging, Production) with parallel test gates and rollback loops."]
                 )
             },
@@ -808,18 +1020,36 @@ extension VisualCatalogue {
                 }
                 link(g, matrix[3][3], matrix[3][3]) // payment poll self-loop
 
-                let swim = SwimlaneLayoutAlgorithm()
-                swim.laneAssignment = lanes; swim.laneWidth = 210; swim.laneSpacing = 44; swim.nodeVerticalSpacing = 42
-                try swim.applyLayout(g)
-                for e in g.edges { e.sourcePort = .none; e.targetPort = .none }
-                PolylineEdgeRouter().routeEdges(g)
-                EdgeSeparator().routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let laneCount: Int
+                if let ctx = SEBackendContext.active {
+                    let swim = SwimlaneLayoutOperation(backend: ctx.backend, executor: ctx.executor)
+                    swim.laneAssignment = lanes; swim.laneWidth = 210; swim.laneSpacing = 44; swim.nodeVerticalSpacing = 42
+                    try await swim.applyLayoutAsync(g)
+                    for e in g.edges { e.sourcePort = .none; e.targetPort = .none }
+                    let builder = LayoutBuilder.create(g)
+                        .routePolyline(backend: ctx.backend, executor: ctx.executor)
+                        .separateEdges(backend: ctx.backend, executor: ctx.executor)
+                        .routeSelfLoops(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += swim.lastExecutionMetrics + builder.lastExecutionMetrics
+                    laneCount = swim.computedLanes.count
+                } else {
+                    let swim = SwimlaneLayoutAlgorithm()
+                    swim.laneAssignment = lanes; swim.laneWidth = 210; swim.laneSpacing = 44; swim.nodeVerticalSpacing = 42
+                    try swim.applyLayout(g)
+                    for e in g.edges { e.sourcePort = .none; e.targetPort = .none }
+                    PolylineEdgeRouter().routeEdges(g)
+                    EdgeSeparator().routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    laneCount = swim.computedLanes.count
+                }
                 return VisualDrawing(
                     graph: g,
-                    reportedMetrics: ["scaleTier": 2, "laneCount": Double(swim.computedLanes.count), "nodeCount": Double(g.nodes.count)],
+                    reportedMetrics: ["scaleTier": 2, "laneCount": Double(laneCount), "nodeCount": Double(g.nodes.count)],
                     notes: ["Medium 54-node, 6-lane distributed service choreography with cross-lane handoffs, skip-lane notifications, and obstacle-avoiding polyline lanes."]
                 )
             },
@@ -857,7 +1087,15 @@ extension VisualCatalogue {
 
                 var config = DirectedLayoutConfiguration()
                 config.candidateCount = 1; config.nodeSpacing = 28; config.layerSpacing = 96
-                let diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor, configuration: config)
+                    try await op.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 3, "stageCount": 10, "streamCount": 4, "crossings": Double(diag.crossings), "bends": Double(diag.bends)],
@@ -907,8 +1145,18 @@ extension VisualCatalogue {
                 }
                 var config = DirectedLayoutConfiguration()
                 config.nodeSpacing = 56; config.layerSpacing = 130
-                let diag = try DirectedLayoutOperation(configuration: config).apply(g)
-                LabelLayoutAlgorithm().applyLabelLayout(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor, configuration: config)
+                    try await op.applyLayoutAsync(g)
+                    let lbl = RoutingLayoutOperation(.labelLayout, backend: ctx.backend, executor: ctx.executor)
+                    try await lbl.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics + lbl.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                    LabelLayoutAlgorithm().applyLabelLayout(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 1, "tableCount": Double(g.nodes.count), "crossings": Double(diag.crossings)],
@@ -943,17 +1191,36 @@ extension VisualCatalogue {
                 }
                 link(g, modNodes[0][2], modNodes[0][2]) // org hierarchy self-reference
 
-                let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 72; core.layerSeparation = 128
-                let comp = ComponentLayout(core); comp.componentSpacing = 70; comp.preferredAspectRatio = 1.35
-                try comp.applyLayout(g)
-                let bsp = BspEdgeRouter(); bsp.routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let fallbacks: [Int]
+                if let ctx = SEBackendContext.active {
+                    var hc = HierarchicalLayoutConfiguration(); hc.nodeSeparation = 72; hc.layerSeparation = 128
+                    let core = HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor, configuration: hc)
+                    let comp = ComponentLayoutOperation(core, backend: ctx.backend, executor: ctx.executor)
+                    comp.componentSpacing = 70; comp.preferredAspectRatio = 1.35
+                    try await comp.applyLayoutAsync(g)
+                    let bsp = RoutingLayoutOperation(.bsp, backend: ctx.backend, executor: ctx.executor)
+                    try await bsp.applyLayoutAsync(g)
+                    let loops = RoutingLayoutOperation(.selfLoops, backend: ctx.backend, executor: ctx.executor)
+                    try await loops.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += comp.lastExecutionMetrics + bsp.lastExecutionMetrics + loops.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = bsp.unroutableEdgeIndices
+                } else {
+                    let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 72; core.layerSeparation = 128
+                    let comp = ComponentLayout(core); comp.componentSpacing = 70; comp.preferredAspectRatio = 1.35
+                    try comp.applyLayout(g)
+                    let bsp = BspEdgeRouter(); bsp.routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = VisualCatalogue.fallbacks(bsp, g)
+                }
                 return VisualDrawing(
                     graph: g,
-                    fallbackEdges: VisualCatalogue.fallbacks(bsp, g),
-                    reportedMetrics: ["scaleTier": 2, "tableCount": Double(g.nodes.count), "unroutable": Double(bsp.unroutableEdges.count)],
+                    fallbackEdges: fallbacks,
+                    reportedMetrics: ["scaleTier": 2, "tableCount": Double(g.nodes.count), "unroutable": Double(fallbacks.count)],
                     notes: ["56-table multi-tenant SaaS schema routed with orthogonal BspEdgeRouter around tall varying-height table boxes."]
                 )
             },
@@ -996,13 +1263,27 @@ extension VisualCatalogue {
                 var drawing = VisualDrawing(graph: g)
                 for h in hubs { drawing.fixedCenters[h.id] = h.center }
 
-                let organic = OrganicLayoutAlgorithm()
-                organic.scope = .subset; organic.iterations = 60; organic.initialization = .current
-                try organic.applyLayout(g)
-                PolylineEdgeRouter().routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                if let ctx = SEBackendContext.active {
+                    var oc = OrganicLayoutConfiguration()
+                    oc.scope = .subset; oc.iterations = 60; oc.initialization = .current
+                    let organic = OrganicLayoutOperation(backend: ctx.backend, executor: ctx.executor, configuration: oc)
+                    try await organic.applyLayoutAsync(g)
+                    let builder = LayoutBuilder.create(g)
+                        .routePolyline(backend: ctx.backend, executor: ctx.executor)
+                        .routeSelfLoops(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += organic.lastExecutionMetrics + builder.lastExecutionMetrics
+                } else {
+                    let organic = OrganicLayoutAlgorithm()
+                    organic.scope = .subset; organic.iterations = 60; organic.initialization = .current
+                    try organic.applyLayout(g)
+                    PolylineEdgeRouter().routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                }
                 drawing.reportedMetrics = ["scaleTier": 3, "pinnedHubs": 5, "totalNodes": Double(g.nodes.count)]
                 drawing.notes = ["Large 160-node enterprise ontology knowledge graph with 5 pinned core hubs and 155 organic-subset concept nodes."]
                 return drawing
@@ -1044,7 +1325,15 @@ extension VisualCatalogue {
                     link(g, anchor, n)
                     if i > 0 && i % 3 == 0 { link(g, inserted[i - 1], n) }
                 }
-                let diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                let diag: DirectedLayoutDiagnostics
+                if let ctx = SEBackendContext.active {
+                    let op = DirectedLayoutAsyncOperation(backend: ctx.backend, executor: ctx.executor, configuration: config)
+                    try await op.applyLayoutAsync(g)
+                    SEBackendContext.recorder?.metrics += op.lastExecutionMetrics
+                    diag = op.lastDiagnostics!
+                } else {
+                    diag = try DirectedLayoutOperation(configuration: config).apply(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     previousBounds: priorBounds,
@@ -1107,16 +1396,32 @@ extension VisualCatalogue {
                 link(g, leftGateways[0], leftGateways[0])
                 link(g, rightSinks[5], rightSinks[5])
 
-                try GivenCoordinatesLayoutAlgorithm().applyLayout(g)
-                let router = PolylineEdgeRouter(); router.routeEdges(g)
-                EdgeSeparator().routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                let fallbacks: [Int]
+                if let ctx = SEBackendContext.active {
+                    let given = RoutingLayoutOperation(.givenCoordinates, backend: ctx.backend, executor: ctx.executor)
+                    try await given.applyLayoutAsync(g)
+                    let sep = RoutingLayoutOperation(.edgeSeparation, backend: ctx.backend, executor: ctx.executor)
+                    try await sep.applyLayoutAsync(g)
+                    let loops = RoutingLayoutOperation(.selfLoops, backend: ctx.backend, executor: ctx.executor)
+                    try await loops.applyLayoutAsync(g)
+                    let clip = RoutingLayoutOperation(.endpointClipping, backend: ctx.backend, executor: ctx.executor)
+                    try await clip.applyLayoutAsync(g)
+                    PortDistributor().routeEdges(g)
+                    SEBackendContext.recorder?.metrics += given.lastExecutionMetrics + sep.lastExecutionMetrics + loops.lastExecutionMetrics + clip.lastExecutionMetrics
+                    fallbacks = given.unroutableEdgeIndices
+                } else {
+                    try GivenCoordinatesLayoutAlgorithm().applyLayout(g)
+                    let router = PolylineEdgeRouter(); router.routeEdges(g)
+                    EdgeSeparator().routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                    fallbacks = g.edges.indices.filter { idx in router.unroutableEdges.contains { $0 === g.edges[idx] } }
+                }
                 return VisualDrawing(
                     graph: g,
                     fixedCenters: fixedCenters,
-                    fallbackEdges: g.edges.indices.filter { idx in router.unroutableEdges.contains { $0 === g.edges[idx] } },
+                    fallbackEdges: fallbacks,
                     reportedMetrics: ["scaleTier": 2, "pinnedCount": Double(fixedCenters.count), "edgeCount": Double(g.edges.count)],
                     notes: ["42 pinned infrastructure nodes forming a tight corridor maze with cross-grid diagonals, duplicate/reciprocal lanes, and zero obstacle intersections."]
                 )
@@ -1143,15 +1448,31 @@ extension VisualCatalogue {
                     }
                     link(g, compNodes[0], compNodes[0])
                 }
-                let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 48; core.layerSeparation = 90
-                let mp = MultiPageLayoutAlgorithm(core)
-                mp.pageWidth = 1150; mp.pageHeight = 1020; mp.pageSpacing = 120
-                try mp.applyLayout(g)
-                PolylineEdgeRouter().routeEdges(g)
-                EdgeSeparator().routeEdges(g)
-                SelfLoopRouter().routeEdges(g)
-                EdgeEndpointClipper.clipToNodeBounds(g)
-                PortDistributor().routeEdges(g)
+                if let ctx = SEBackendContext.active {
+                    var hc = HierarchicalLayoutConfiguration(); hc.nodeSeparation = 48; hc.layerSeparation = 90
+                    let core = HierarchicalLayoutOperation(backend: ctx.backend, executor: ctx.executor, configuration: hc)
+                    let mp = MultiPageLayoutOperation(core, backend: ctx.backend, executor: ctx.executor)
+                    mp.pageWidth = 1150; mp.pageHeight = 1020; mp.pageSpacing = 120
+                    try await mp.applyLayoutAsync(g)
+                    let builder = LayoutBuilder.create(g)
+                        .routePolyline(backend: ctx.backend, executor: ctx.executor)
+                        .separateEdges(backend: ctx.backend, executor: ctx.executor)
+                        .routeSelfLoops(backend: ctx.backend, executor: ctx.executor)
+                        .clipEdgeEndpoints(backend: ctx.backend, executor: ctx.executor)
+                        .distributePorts(backend: ctx.backend, executor: ctx.executor)
+                    try await builder.applyAsync()
+                    SEBackendContext.recorder?.metrics += mp.lastExecutionMetrics + builder.lastExecutionMetrics
+                } else {
+                    let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = 48; core.layerSeparation = 90
+                    let mp = MultiPageLayoutAlgorithm(core)
+                    mp.pageWidth = 1150; mp.pageHeight = 1020; mp.pageSpacing = 120
+                    try mp.applyLayout(g)
+                    PolylineEdgeRouter().routeEdges(g)
+                    EdgeSeparator().routeEdges(g)
+                    SelfLoopRouter().routeEdges(g)
+                    EdgeEndpointClipper.clipToNodeBounds(g)
+                    PortDistributor().routeEdges(g)
+                }
                 return VisualDrawing(
                     graph: g,
                     reportedMetrics: ["scaleTier": 3, "componentCount": 9, "nodeCount": Double(g.nodes.count)],

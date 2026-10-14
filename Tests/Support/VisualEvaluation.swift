@@ -387,6 +387,38 @@ public enum VisualTool {
         do {
             let options = try VisualOptions(arguments)
             if options.command == "help" { print(VisualOptions.help); return 0 }
+            if options.command == "benchmark" {
+                let allComparative = BackendComparativeCatalogue.all(includePerformance1024: options.suite == "full")
+                let selected: [ComparativeDiagramCase]
+                if !options.ids.isEmpty {
+                    let unknown = Set(options.ids).subtracting(allComparative.map(\.id))
+                    guard unknown.isEmpty else {
+                        throw EvaluationError.message("Unknown comparative cases: \(unknown.sorted().joined(separator: ", "))")
+                    }
+                    selected = allComparative.filter { options.ids.contains($0.id) }
+                } else {
+                    switch options.suite {
+                    case "full": selected = allComparative
+                    case "smoke": selected = BackendComparativeCatalogue.smoke()
+                    case "engineering", "frames", "layouts", "presets", "routing", "directed", "organic-quality":
+                        selected = allComparative.filter { $0.family == options.suite }
+                    default:
+                        throw EvaluationError.message("Unknown benchmark suite: \(options.suite)")
+                    }
+                }
+                let trials = Int(options.values["--trials"] ?? "3") ?? 3
+                let renderImages = (options.values["--render-images"] ?? "false").lowercased() == "true"
+                let outURL = URL(fileURLWithPath: options.values["--output"] ?? ".build/visual/benchmark")
+                let report = try await BackendBenchmarkEvaluation.evaluate(
+                    cases: selected,
+                    trials: trials,
+                    outputDirectory: outURL,
+                    renderImages: renderImages
+                )
+                let regressions = report.cases.filter { $0.output.parityClassification == .qualityRegression }.count
+                print("Benchmarked \(report.totalCases) cases (\(trials) warm trials). Report: \(outURL.appendingPathComponent("benchmark-report.md").path)")
+                return regressions > 0 ? 1 : 0
+            }
             let catalogue = try VisualCatalogue.all()
             switch options.command {
             case "list":
@@ -418,7 +450,14 @@ struct VisualOptions {
     init(_ args: [String]) throws {
         command = args.first ?? "help"
         if command == "--help" || args.contains("--help") { command = "help"; return }
-        let allowed: [String: Set<String>] = ["list": ["--suite", "--case"], "render": ["--suite", "--case", "--output", "--baseline"], "compare": ["--before", "--after", "--output", "--case"], "baseline": ["--from", "--output", "--case"], "help": []]
+        let allowed: [String: Set<String>] = [
+            "list": ["--suite", "--case"],
+            "render": ["--suite", "--case", "--output", "--baseline"],
+            "compare": ["--before", "--after", "--output", "--case"],
+            "baseline": ["--from", "--output", "--case"],
+            "benchmark": ["--suite", "--case", "--trials", "--output", "--render-images"],
+            "help": []
+        ]
         guard let flags = allowed[command] else { throw EvaluationError.message("Unknown command '\(command)'. Use --help.") }
         var i = 1
         while i < args.count {
@@ -439,6 +478,7 @@ struct VisualOptions {
     graph-layout-visual render [--suite full|smoke|engineering|metal|performance] [--case ID ...] [--output DIR] [--baseline DIR]
     graph-layout-visual compare --before DIR --after DIR --output DIR [--case ID ...]
     graph-layout-visual baseline --from RUN --case ID [--case ID ...] [--output DIR]
+    graph-layout-visual benchmark [--suite full|smoke|engineering|frames|layouts|presets|routing|directed|organic-quality] [--case ID ...] [--trials N] [--output DIR] [--render-images true|false]
 
     Render defaults: full CPU suite, .build/visual/current, bundled baselines.
     --case overrides suite selection. Output directories must be new or empty.

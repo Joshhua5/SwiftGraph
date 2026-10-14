@@ -25,7 +25,7 @@ let package = Package(
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
-        .executableTarget(name: "GraphLayoutBenchmark", dependencies: ["SwiftGraph"]),
+        .executableTarget(name: "GraphLayoutBenchmark", dependencies: ["SwiftGraph", "GraphEvaluationSupport"]),
         .target(
             name: "GraphEvaluationSupport",
             dependencies: ["SwiftGraph"],

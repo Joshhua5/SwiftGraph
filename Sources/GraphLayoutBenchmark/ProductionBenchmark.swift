@@ -1,4 +1,5 @@
 import Foundation
+import GraphEvaluationSupport
 import SwiftGraph
 
 private struct ProductionRow: Codable {
@@ -23,6 +24,8 @@ private struct ProductionRow: Codable {
     var qualitySolverMilliseconds: Double?
     var qualityEvaluationMilliseconds: Double?
     var solverIterations: Int = 0
+    var submittedBatches: Int = 0
+    var completedBatches: Int = 0
     var bufferAllocations: Int = 0
     var bufferReuses: Int = 0
     var cachedBufferBytes: Int = 0
@@ -30,11 +33,24 @@ private struct ProductionRow: Codable {
     var skipped: String?
 }
 
+private struct ProductionComparison: Codable {
+    var operation: String
+    var fixture: String
+    var nodes: Int
+    var edges: Int
+    var cpuWarmMedianMilliseconds: Double
+    var metalWarmMedianMilliseconds: Double
+    var warmSpeedupRatio: Double
+    var gpuUtilizationFraction: Double
+    var outputComparison: OutputComparisonSummary
+}
+
 private struct ProductionReport: Codable {
     var os: String
     var processorCount: Int
     var routing: String
     var rows: [ProductionRow]
+    var comparisons: [ProductionComparison] = []
     var notes: [String]
 }
 
@@ -110,9 +126,11 @@ func runProductionBenchmark(_ arguments: [String]) async throws {
     }
     if arguments.contains("--require-metal") && !LayoutExecutor.isMetalAvailable { throw OrganicLayoutError.metalUnavailable }
     var rows: [ProductionRow] = []
+    var comparisons: [ProductionComparison] = []
     for size in sizes {
         for fixture in fixtures {
             for operation in operations {
+                var finalGraphs: [LayoutBackend: LayoutGraph] = [:]
                 for requested in backends {
                     let backend = LayoutBackend(rawValue: requested)!, executor = LayoutExecutor()
                     for trial in 0..<trials {
@@ -202,18 +220,51 @@ func runProductionBenchmark(_ arguments: [String]) async throws {
                             row.qualityEvaluationMilliseconds = phases.reduce(0) { $0 + $1.evaluationSeconds * 1000 }
                         }
                         let after = await executor.statistics()
+                        row.submittedBatches = after.submittedBatches - before.submittedBatches
+                        row.completedBatches = after.completedBatches - before.completedBatches
                         row.bufferAllocations = after.bufferAllocations - before.bufferAllocations
                         row.bufferReuses = after.bufferReuses - before.bufferReuses; row.cachedBufferBytes = after.cachedBufferBytes
                         row.device = metrics.compactMap(\.deviceName).first
                         rows.append(row)
+                        if trial == trials - 1 {
+                            finalGraphs[backend] = graph
+                        }
                         FileHandle.standardError.write(Data("\(size) \(fixture) \(operation) \(requested) trial \(trial): \(row.totalMilliseconds!) ms\n".utf8))
                     }
+                }
+                if let cpuGraph = finalGraphs[.cpu], let metalGraph = finalGraphs[.metal] {
+                    let cpuRows = rows.filter { $0.operation == operation && $0.fixture == fixture && $0.nodes == cpuGraph.nodes.count && $0.requestedBackend == "cpu" }
+                    let metalRows = rows.filter { $0.operation == operation && $0.fixture == fixture && $0.nodes == metalGraph.nodes.count && $0.requestedBackend == "metal" }
+                    let cpuWarm = (cpuRows.dropFirst().isEmpty ? cpuRows : Array(cpuRows.dropFirst())).compactMap(\.totalMilliseconds).sorted()
+                    let metalWarm = (metalRows.dropFirst().isEmpty ? metalRows : Array(metalRows.dropFirst())).compactMap(\.totalMilliseconds).sorted()
+                    let cpuMed = cpuWarm.isEmpty ? 0 : cpuWarm[cpuWarm.count / 2]
+                    let metalMed = metalWarm.isEmpty ? 0 : metalWarm[metalWarm.count / 2]
+                    let gpuMed = (metalRows.dropFirst().isEmpty ? metalRows : Array(metalRows.dropFirst())).compactMap(\.gpuMilliseconds).sorted().first ?? 0
+                    let outputComparison = BackendBenchmarkEvaluation.compareGraphs(
+                        id: "prod-\(operation)-\(fixture)-\(size)",
+                        family: "production",
+                        cpuGraph: cpuGraph,
+                        metalGraph: metalGraph
+                    )
+                    comparisons.append(
+                        ProductionComparison(
+                            operation: operation,
+                            fixture: fixture,
+                            nodes: cpuGraph.nodes.count,
+                            edges: cpuGraph.edges.count,
+                            cpuWarmMedianMilliseconds: cpuMed,
+                            metalWarmMedianMilliseconds: metalMed,
+                            warmSpeedupRatio: metalMed > 0 ? cpuMed / metalMed : 0,
+                            gpuUtilizationFraction: metalMed > 0 ? gpuMed / metalMed : 0,
+                            outputComparison: outputComparison
+                        )
+                    )
                 }
             }
         }
     }
     let report = ProductionReport(os: ProcessInfo.processInfo.operatingSystemVersionString,
-        processorCount: ProcessInfo.processInfo.activeProcessorCount, routing: routing, rows: rows,
+        processorCount: ProcessInfo.processInfo.activeProcessorCount, routing: routing, rows: rows, comparisons: comparisons,
         notes: ["Release build required. First trial includes lazy pipeline setup; later trials reuse the executor.",
                 "Production CPU uses Double; Metal uses Float. Organic includes full quality search and cleanup.",
                 "Total includes the operation and selected routing; fixture construction and statistics queries are excluded.",
@@ -221,7 +272,7 @@ func runProductionBenchmark(_ arguments: [String]) async throws {
                 "Quality phases cover CPU preparation/preflight, candidate solver calls, and CPU cleanup/scoring.",
                 "Radial operations include CPU obstacle repair even with --routing none; their Metal kernel selects clearance pairs.",
                 "Cached bytes describe idle pooled buffers, not peak process or GPU memory.",
-                "These timings do not measure cancellation latency or establish visual quality parity."])
+                "Comparisons measure node/edge geometry and quality deltas between the final CPU and Metal trial outputs."])
     let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(report)
     if let path = option("--output") { try data.write(to: URL(fileURLWithPath: path)) }
