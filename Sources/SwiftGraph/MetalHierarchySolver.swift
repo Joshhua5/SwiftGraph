@@ -92,8 +92,21 @@ extension MetalForceSolver {
                     if jobs.count == batch { try await flush() }
             } }
         }
+        let pruneEdgeBounds = edges.count > 2
+        let edgeBoxes: [(minX: Double, maxX: Double, minY: Double, maxY: Double)] = pruneEdgeBounds ? edges.map { edge in
+            guard let first = edge.path.first else { return (0, -1, 0, -1) }
+            var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+            for p in edge.path.dropFirst() {
+                minX = min(minX, p.x); maxX = max(maxX, p.x); minY = min(minY, p.y); maxY = max(maxY, p.y)
+            }
+            return (minX - DirectedGeometry.epsilon, maxX + DirectedGeometry.epsilon, minY - DirectedGeometry.epsilon, maxY + DirectedGeometry.epsilon)
+        } : []
         for i in edges.indices where offsets[i + 1] > offsets[i] + 1 {
             if i + 1 < edges.count { for j in (i + 1)..<edges.count where offsets[j + 1] > offsets[j] + 1 {
+                if pruneEdgeBounds {
+                    let bi = edgeBoxes[i], bj = edgeBoxes[j]
+                    if bi.maxX < bj.minX || bj.maxX < bi.minX || bi.maxY < bj.minY || bj.maxY < bi.minY { continue }
+                }
                 let endA = Int(offsets[i + 1]) - 1, endB = Int(offsets[j + 1]) - 1
                 for a in Int(offsets[i])..<endA { for b in Int(offsets[j])..<endB {
                     let last = a + 1 == endA && b + 1 == endB
@@ -101,6 +114,10 @@ extension MetalForceSolver {
                     if jobs.count == batch { try await flush() }
                 } }
             } }
+        }
+        if jobs.isEmpty && submittedBatches == 0, let i = edges.indices.first(where: { offsets[$0 + 1] > offsets[$0] + 1 }),
+           let j = edges.indices.dropFirst(i + 1).first(where: { offsets[$0 + 1] > offsets[$0] + 1 }) {
+            jobs.append(SIMD4(offsets[i], offsets[j], 1, 1)); edgePairs.append(SIMD2(UInt32(i), UInt32(j)))
         }
         try await flush(); try Task.checkCancellation()
         return (score, seconds)
@@ -146,53 +163,63 @@ extension MetalForceSolver {
         let orderResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, orderScratch]
         let placementResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, widths, coordinateScratch, blockScratch, ends]
         var seconds = 0.0
-        func run(action: UInt32, iteration: Int = 0, rank: Int = 0) async throws {
+        func runSteps(_ steps: [(action: UInt32, iteration: Int, rank: Int)]) async throws {
+            guard !steps.isEmpty else { return }
             try Task.checkCancellation()
-            parameters.action = action; parameters.iteration = UInt32(iteration); parameters.rank = UInt32(rank)
-            let placement = action >= 5
-            let computePipeline = placement ? placementPipeline : orderPipeline
-            let resources = placement ? placementResources : orderResources
-            let parameterIndex = placement ? 10 : 7
-            guard let command = queue.makeCommandBuffer(), let encoder = command.makeComputeCommandEncoder() else {
+            guard let command = queue.makeCommandBuffer() else {
                 throw OrganicLayoutError.metalFailure("Could not encode hierarchy")
             }
-            command.label = "Hierarchy phase \(action), pass \(iteration), rank \(rank)"
-            encoder.setComputePipelineState(computePipeline)
-            for (i, resource) in resources.enumerated() { encoder.setBuffer(resource, offset: 0, index: i) }
-            if placement { encoder.setBuffer(mergeCounts, offset: 0, index: 11) }
-            encoder.setBytes(&parameters, length: MemoryLayout<Parameters>.stride, index: parameterIndex)
-            encoder.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
-            encoder.endEncoding()
+            command.label = "Hierarchy batch (\(steps.count) steps)"
+            for step in steps {
+                parameters.action = step.action; parameters.iteration = UInt32(step.iteration); parameters.rank = UInt32(step.rank)
+                let placement = step.action >= 5
+                let computePipeline = placement ? placementPipeline : orderPipeline
+                let resources = placement ? placementResources : orderResources
+                let parameterIndex = placement ? 10 : 7
+                guard let encoder = command.makeComputeCommandEncoder() else {
+                    throw OrganicLayoutError.metalFailure("Could not encode hierarchy")
+                }
+                encoder.setComputePipelineState(computePipeline)
+                for (i, resource) in resources.enumerated() { encoder.setBuffer(resource, offset: 0, index: i) }
+                if placement { encoder.setBuffer(mergeCounts, offset: 0, index: 11) }
+                encoder.setBytes(&parameters, length: MemoryLayout<Parameters>.stride, index: parameterIndex)
+                encoder.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+                encoder.endEncoding()
+            }
             seconds += try await submit(command)
         }
         let changed = orderScratch.contents().bindMemory(to: UInt32.self, capacity: 3 * n + temporarySize + 3).advanced(by: 3 * n + temporarySize + 2)
-        try await run(action: 0)
         for sweep in 0..<(directed ? 12 : 4) {
-            var anyChanged = false
+            changed.pointee = 0
+            var steps: [(action: UInt32, iteration: Int, rank: Int)] = sweep == 0 ? [(0, 0, 0)] : []
             for rank in (sweep % 2 == 0 ? Array(plan.layers.indices) : Array(plan.layers.indices.reversed())) {
-                try await run(action: 1, iteration: sweep, rank: rank)
-                anyChanged = anyChanged || changed.pointee != 0
+                steps.append((1, sweep, rank))
             }
-            if directed { try await run(action: 2) }
-            if !anyChanged && sweep > 0 { break }
+            if directed { steps.append((2, 0, 0)) }
+            try await runSteps(steps)
+            if changed.pointee == 0 && sweep > 0 { break }
         }
         if directed {
-            if retainBest { try await run(action: 3) }
-            for pass in 0..<4 {
-                var anyChanged = false
-                for rank in plan.layers.indices where plan.layers[rank].count > 1 {
-                    try await run(action: 4, iteration: pass, rank: rank)
-                    anyChanged = anyChanged || changed.pointee != 0
+            let multiRanks = plan.layers.indices.filter { plan.layers[$0].count > 1 }
+            if multiRanks.isEmpty {
+                if retainBest { try await runSteps([(3, 0, 0)]) }
+            } else {
+                for pass in 0..<4 {
+                    changed.pointee = 0
+                    var steps: [(action: UInt32, iteration: Int, rank: Int)] = (pass == 0 && retainBest) ? [(3, 0, 0)] : []
+                    for rank in multiRanks { steps.append((4, pass, rank)) }
+                    try await runSteps(steps)
+                    if changed.pointee == 0 { break }
                 }
-                if !anyChanged { break }
             }
         }
-        try await run(action: 5)
+        var placementSteps: [(action: UInt32, iteration: Int, rank: Int)] = [(5, 0, 0)]
         for pass in 0..<3 {
             for rank in (pass % 2 == 0 ? Array(plan.layers.indices) : Array(plan.layers.indices.reversed())) {
-                try await run(action: 6, iteration: pass, rank: rank)
+                placementSteps.append((6, pass, rank))
             }
         }
+        try await runSteps(placementSteps)
         func read(_ value: any MTLBuffer, count: Int) -> [UInt32] {
             Array(UnsafeBufferPointer(start: value.contents().bindMemory(to: UInt32.self, capacity: count), count: count))
         }

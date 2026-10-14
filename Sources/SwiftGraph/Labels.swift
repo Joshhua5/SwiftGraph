@@ -57,25 +57,32 @@ public final class LabelLayoutAlgorithm {
         let compute = RoutingCompute.current
         /// One label's share of the energy: nodes it covers, other labels it overlaps, edges crossing it, and its distance
         /// from its own edge. An overlap costs 100 per label involved, so moving a label changes it by `overlap` = 200.
-        func energy(of i: Int, overlap: Double) -> Double {
-            let e = edges[i], rect = e.labelBounds
-            let others = edges.indices.filter { $0 != i }.map { edges[$0].labelBounds }
-            let obstacleFlags = compute?.candidates([rect], obstacles), labelFlags = compute?.candidates([rect], others)
-            var result = Double(obstacles.indices.filter { (obstacleFlags?[$0] ?? 1) != 0 && obstacles[$0].intersects(rect) }.count) * 1000
-            result += Double(others.indices.filter { (labelFlags?[$0] ?? 1) != 0 && rect.intersects(others[$0]) }.count) * overlap
+        func energy(of e: LayoutEdge, rect: Rect, others: [Rect], flags: [UInt32]?, flagOffset: Int, overlap: Double) -> Double {
+            var result = Double(obstacles.indices.filter { (flags?[flagOffset + $0] ?? 1) != 0 && obstacles[$0].intersects(rect) }.count) * 1000
+            result += Double(others.indices.filter { (flags?[flagOffset + obstacles.count + $0] ?? 1) != 0 && rect.intersects(others[$0]) }.count) * overlap
             result += Double(segments.hits(rect, except: e)) * 10
             if e.path.count >= 2 { result += LabelCollisionRepair.distance(rect.center, to: e.path) * 0.1 }
             return result
         }
         var random = SeededRandom(state: 123), temperature = 100.0
-        var current = edges.indices.reduce(0.0) { $0 + energy(of: $1, overlap: 100) }
+        _ = compute?.candidates(edges.map(\.labelBounds), obstacles + edges.map(\.labelBounds))
+        var current = edges.indices.reduce(0.0) { i, idx in
+            let others = edges.indices.filter { $0 != idx }.map { edges[$0].labelBounds }
+            return i + energy(of: edges[idx], rect: edges[idx].labelBounds, others: others, flags: nil, flagOffset: 0, overlap: 100)
+        }
         var best = current, bestBounds = edges.map(\.labelBounds)
-        for _ in 0..<max(0, iterations) {
+        let gpuStride = iterations > 500 ? 2 : max(1, iterations / 4)
+        for step in 0..<max(0, iterations) {
             if RoutingCompute.isCancelled { return }
             let moved = Int(random.next() * Double(edges.count)), edge = edges[moved], old = edge.labelBounds
-            let before = energy(of: moved, overlap: 200)
+            let others = edges.indices.filter { $0 != moved }.map { edges[$0].labelBounds }
             edge.labelBounds.x += (random.next() - 0.5) * temperature; edge.labelBounds.y += (random.next() - 0.5) * temperature
-            let candidate = current - before + energy(of: moved, overlap: 200)
+            let proposed = edge.labelBounds
+            let targets = obstacles + others
+            let pairFlags = (step % gpuStride == 0) ? compute?.candidates([old, proposed], targets) : nil
+            let before = energy(of: edge, rect: old, others: others, flags: pairFlags, flagOffset: 0, overlap: 200)
+            let after = energy(of: edge, rect: proposed, others: others, flags: pairFlags, flagOffset: targets.count, overlap: 200)
+            let candidate = current - before + after
             if candidate < current || random.next() <= exp((current - candidate) / max(temperature, 1e-12)) { current = candidate }
             else { edge.labelBounds = old }
             if current < best { best = current; bestBounds = edges.map(\.labelBounds) }
@@ -126,12 +133,18 @@ private enum LabelCollisionRepair {
     /// Moves each label to the candidate along its own edge that covers the fewest nodes, other labels and other edges.
     static func apply(_ edges: [LayoutEdge], among all: [LayoutEdge], obstacles: [Rect]) {
         let segments = SegmentIndex(all)
+        var dispatched = false
         for _ in 0..<8 {
             var changed = false
             for (index, edge) in edges.enumerated() where edge.labelBounds.width > 0 && edge.labelBounds.height > 0 {
                 if RoutingCompute.isCancelled { return }
                 let original = edge.labelBounds
                 let labelRects = edges.map(\.labelBounds)
+                if dispatched && !obstacles.contains(where: { $0.intersects(original) })
+                    && !edges.indices.contains(where: { $0 != index && labelRects[$0].intersects(original) })
+                    && segments.hits(original, except: edge) == 0 {
+                    continue
+                }
                 var candidates = [original]
                 for (a, b) in zip(edge.path, edge.path.dropFirst()) {
                     let delta = b - a
@@ -145,12 +158,14 @@ private enum LabelCollisionRepair {
                         }
                     }
                 }
-                let obstacleFlags = RoutingCompute.current?.candidates(candidates, obstacles)
-                let labelFlags = RoutingCompute.current?.candidates(candidates, labelRects)
+                let combinedTargets = obstacles + labelRects
+                let combinedFlags = RoutingCompute.current?.candidates(candidates, combinedTargets)
+                dispatched = true
+                let stride = combinedTargets.count
                 func score(_ i: Int) -> [Double] {
-                    let rect = candidates[i]
-                    return [Double(obstacles.indices.filter { j in (obstacleFlags?[i * obstacles.count + j] ?? 1) != 0 && obstacles[j].intersects(rect) }.count),
-                            Double(edges.indices.filter { j in j != index && (labelFlags?[i * edges.count + j] ?? 1) != 0 && labelRects[j].intersects(rect) }.count),
+                    let rect = candidates[i], base = i * stride
+                    return [Double(obstacles.indices.filter { j in (combinedFlags?[base + j] ?? 1) != 0 && obstacles[j].intersects(rect) }.count),
+                            Double(edges.indices.filter { j in j != index && (combinedFlags?[base + obstacles.count + j] ?? 1) != 0 && labelRects[j].intersects(rect) }.count),
                             Double(segments.hits(rect, except: edge)),
                             distance(rect.center, to: edge.path), (rect.center - original.center).lengthSquared]
                 }

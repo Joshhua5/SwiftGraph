@@ -224,7 +224,9 @@ enum ObstaclePolyline {
         return (bodies + headers).filter { $0.width > 0 && $0.height > 0 }
     }
     static func clear(_ path: [Point], _ obstacles: [Rect]) -> Bool {
-        if let compute = RoutingCompute.current { return path.count >= 2 && compute.hits(path, obstacles).isEmpty }
+        if let compute = RoutingCompute.current, compute.stages.isEmpty || max(0, path.count - 1) * obstacles.count >= 512 {
+            return path.count >= 2 && compute.hits(path, obstacles).isEmpty
+        }
         return path.count >= 2 && !zip(path, path.dropFirst()).contains { a, b in
             obstacles.contains { $0.intersectsLine(a, b) }
         }

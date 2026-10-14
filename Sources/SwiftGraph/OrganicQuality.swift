@@ -239,14 +239,24 @@ struct OrganicQualitySearch {
             for j in rects.indices where j > i { if conflict(rects[i], rects[j], separation) { overlaps += 1 } }
         }
         let edges = snapshot.edges.filter { $0.source != $0.target }
+        let edgeBounds = edges.map { e -> (minX: Double, maxX: Double, minY: Double, maxY: Double) in
+            let a = positions[e.source], b = positions[e.target]
+            return (min(a.x, b.x), max(a.x, b.x), min(a.y, b.y), max(a.y, b.y))
+        }
         for (index, e) in edges.enumerated() {
             if index % 32 == 0 { try Task.checkCancellation() }
-            let a = positions[e.source], b = positions[e.target]
+            let a = positions[e.source], b = positions[e.target], eb = edgeBounds[index]
             length += (b - a).length
             for i in rects.indices where i != e.source && i != e.target {
-                if rects[i].intersectsLine(a, b) { hits += 1 }
+                let r = rects[i]
+                guard eb.maxX >= r.left && eb.minX <= r.right && eb.maxY >= r.top && eb.minY <= r.bottom else { continue }
+                if r.intersectsLine(a, b) { hits += 1 }
             }
-            for f in edges.dropFirst(index + 1) where e.source != f.source && e.source != f.target && e.target != f.source && e.target != f.target {
+            for otherIndex in (index + 1)..<edges.count {
+                let fb = edgeBounds[otherIndex]
+                guard eb.maxX >= fb.minX && eb.minX <= fb.maxX && eb.maxY >= fb.minY && eb.minY <= fb.maxY else { continue }
+                let f = edges[otherIndex]
+                guard e.source != f.source && e.source != f.target && e.target != f.source && e.target != f.target else { continue }
                 let c = positions[f.source], d = positions[f.target], u = b - a, v = d - c
                 let denominator = u.x * v.y - u.y * v.x
                 guard abs(denominator) > 1e-9 else { continue }

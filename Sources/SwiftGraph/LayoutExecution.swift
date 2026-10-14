@@ -188,10 +188,13 @@ public actor LayoutExecutor {
                 // Node-count-dependent batch bound keeps large dispatches more cancellable.
                 let n = Double(snapshot.nodes.count)
                 let workBound = max(1, Int(min(64, 16_777_216 / max(1, n * n))))
+                let batchSize = (configuration.preparedPositions && options.iterationsPerBatch > 1)
+                    ? (snapshot.nodes.count < 64 ? max(options.iterationsPerBatch, min(configuration.iterations, 600)) : max(options.iterationsPerBatch, 15))
+                    : min(options.iterationsPerBatch, workBound)
                 let result = try await solver.solveAsync(prepared.state, iterations: configuration.iterations,
                     temperature: Float(configuration.initialTemperature),
                     parameters: ForceParameters(repulsionSquared: Float(configuration.repulsionForce * configuration.repulsionForce), attraction: Float(configuration.attractionForce)),
-                    batchSize: min(options.iterationsPerBatch, workBound),
+                    batchSize: batchSize,
                     coolingIterationBudget: configuration.iterationBudget)
                 gpuTime = result.gpuSeconds; deviceName = solver.deviceName
                 cpuPreparation += result.cpuPreparationSeconds

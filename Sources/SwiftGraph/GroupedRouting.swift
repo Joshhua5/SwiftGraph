@@ -116,8 +116,9 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
             let children = kids(n)
             let xStart = lowerBound(xGrid, Int(n.x)), xEnd = lowerBound(xGrid, Int(n.bounds.right))
             let yStart = lowerBound(yGrid, Int(n.y)), yEnd = lowerBound(yGrid, Int(n.bounds.bottom))
-            let xBlockers = RoutingCompute.current?.axisBlockers(grid.xChannels.map(Double.init), rectangles: children.map(\.bounds), vertical: true, closed: closed)
-            let yBlockers = RoutingCompute.current?.axisBlockers(grid.yChannels.map(Double.init), rectangles: children.map(\.bounds), vertical: false, closed: closed)
+            let useMetalBlockers = RoutingCompute.current.map { $0.stages.isEmpty || (grid.xChannels.count + grid.yChannels.count) * children.count >= 1024 } ?? false
+            let xBlockers = useMetalBlockers ? RoutingCompute.current?.axisBlockers(grid.xChannels.map(Double.init), rectangles: children.map(\.bounds), vertical: true, closed: closed) : nil
+            let yBlockers = useMetalBlockers ? RoutingCompute.current?.axisBlockers(grid.yChannels.map(Double.init), rectangles: children.map(\.bounds), vertical: false, closed: closed) : nil
             for (i, x) in grid.xChannels.enumerated() {
                 let ix = lowerBound(xGrid, x)
                 let blockers = xBlockers?[i].map { children[$0] } ?? children.filter { closed ? $0.x <= Double(x) && Double(x) <= $0.bounds.right : $0.x < Double(x) && Double(x) < $0.bounds.right }

@@ -133,7 +133,7 @@ kernel void hierarchyOrder(device uint *layers [[buffer(0)]], device const uint 
             layers[at] = node;
         }
         for (uint i = start; i < end; ++i) order[layers[i]] = i - start;
-        meta[2] = changed ? 1 : 0;
+        if (changed) meta[2] = 1;
     }
     if (p.action == 2 && p.directed) {
         ulong bestCrossings = ulong(meta[0]) | (ulong(meta[1]) << 32);
@@ -168,7 +168,7 @@ kernel void hierarchyOrder(device uint *layers [[buffer(0)]], device const uint 
                 order[u] = i + 1 - start; order[v] = i - start; changed = true;
             }
         }
-        meta[2] = changed ? 1 : 0;
+        if (changed) meta[2] = 1;
     }
 }
 

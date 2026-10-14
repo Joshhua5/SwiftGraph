@@ -48,7 +48,7 @@ public enum EdgeEndpointClipper {
         }
     }
     private static func clipStart(_ path: [Point], to rect: Rect) -> [Point] {
-        let inside = RoutingCompute.current?.contains(path, rect) ?? path.map(rect.contains)
+        let inside = (RoutingCompute.current.flatMap { $0.stages.isEmpty || path.count >= 64 ? $0.contains(path, rect) : nil }) ?? path.map(rect.contains)
         guard inside.first == true, inside.last == false else { return path }
         let core = rect.inflated(by: -1e-6)
         for k in stride(from: path.count - 2, through: 0, by: -1) {

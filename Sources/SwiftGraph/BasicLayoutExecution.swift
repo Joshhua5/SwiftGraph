@@ -222,7 +222,8 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     case .fillArea: magnitude = (parameters + size) * 4
     case .verticalStack: magnitude = (size + abs(c.spacing)) * Double(order.count) * 4 + abs(c.paddingX) + abs(c.paddingY)
     case .alignment: magnitude = (coordinate + size + parameters) * 4
-    case .clearArea, .removeOverlaps: magnitude = (coordinate + size + parameters + 1) * Double(max(1, count)) * 4
+    case .clearArea: magnitude = (coordinate + parameters + Double(max(1, order.count)) * (size + 10)) * 4
+    case .removeOverlaps: magnitude = (coordinate + size + parameters + 1) * Double(max(1, count)) * 4
     }
     var discreteSafe = true
     if style == .alignment && c.alignmentGridSize > 0 {

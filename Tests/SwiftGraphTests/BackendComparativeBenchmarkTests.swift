@@ -83,18 +83,20 @@ import Testing
         let byID = Dictionary(uniqueKeysWithValues: report.cases.map { ($0.id, $0) })
 
         let clearArea = try #require(byID["layout-clear-area"])
-        #expect(clearArea.timing.precisionLimitExceededDefault)
-        #expect(clearArea.bottlenecks.contains { $0.kind == .precisionLimitFallback })
+        #expect(!clearArea.timing.precisionLimitExceededDefault)
+        #expect(!clearArea.bottlenecks.contains { $0.kind == .precisionLimitFallback })
+        #expect(clearArea.output.parityClassification == .exact || clearArea.output.parityClassification == .floatEquivalent)
         #expect(clearArea.output.metalContractFailures.isEmpty)
 
         let removeOverlaps = try #require(byID["layout-remove-overlaps"])
         #expect(removeOverlaps.output.parityClassification == .exact || removeOverlaps.output.parityClassification == .floatEquivalent)
-        #expect(removeOverlaps.timing.submittedBatches > 8)
-        #expect(removeOverlaps.bottlenecks.contains { $0.kind == .highMicroDispatchOverhead })
+        #expect(removeOverlaps.timing.submittedBatches <= 4)
+        #expect(!removeOverlaps.bottlenecks.contains { $0.kind == .highMicroDispatchOverhead })
 
         let tree = try #require(byID["layout-tree"])
         #expect(tree.output.parityClassification == .exact || tree.output.parityClassification == .floatEquivalent)
-        #expect(!tree.bottlenecks.isEmpty)
+        #expect(tree.timing.submittedBatches == 1)
+        #expect(!tree.bottlenecks.contains { $0.kind == .highMicroDispatchOverhead })
 
         let channel = try #require(byID["router-channel"])
         #expect(channel.output.parityClassification == .exact || channel.output.parityClassification == .floatEquivalent)

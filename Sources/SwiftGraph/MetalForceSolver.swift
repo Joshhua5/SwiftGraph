@@ -177,7 +177,7 @@ final class MetalForceSolver {
         defer { recycle([input, output, fixed, offsets, neighbors]) }
         var gpuSeconds = 0.0
         var cpuPreparationSeconds = 0.0
-        let batch = min(max(1, batchSize), 64)
+        let batch = max(1, batchSize)
         if !barycenter && state.positions.count >= 64 {
             // ForceQuadTree is rebuilt after every CPU iteration. A drained command
             // gives topology preparation the same preceding-iteration positions.
@@ -186,7 +186,8 @@ final class MetalForceSolver {
                 return SIMD2(Float(cos(angle) * 0.1), Float(sin(angle) * 0.1))
             })
             defer { recycle([perturbations]) }
-            for iteration in 0..<iterations {
+            let treeStride = (coolingIterationBudget != nil && iterations >= 60) ? max(1, min(batch, 15)) : 1
+            for iteration in stride(from: 0, to: iterations, by: treeStride) {
                 try Task.checkCancellation()
                 let preparationStart = ContinuousClock.now
                 let tree = try OrganicForceTree(result(input, count: state.positions.count))
@@ -199,7 +200,7 @@ final class MetalForceSolver {
                     try lease(leaves.ranges), try lease(leaves.bodies), perturbations]
                 cpuPreparationSeconds += preparationStart.duration(to: .now).seconds
                 let command = try encode(state, iterations: iterations, temperature: temperature, parameters: parameters,
-                    steps: iteration..<(iteration + 1), input: &input, output: &output, fixed: fixed, offsets: offsets, neighbors: neighbors,
+                    steps: iteration..<min(iterations, iteration + treeStride), input: &input, output: &output, fixed: fixed, offsets: offsets, neighbors: neighbors,
                     coolingIterationBudget: coolingIterationBudget,
                     treeBuffers: resources, treeCount: tree.cells.count)
                 gpuSeconds += try await submit(command)

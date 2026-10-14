@@ -128,6 +128,7 @@ final class DirectedComponentRun {
     var refinementCandidates: [DirectedComponentDrawing] {
         guard !cached, configuration.mode == .fresh else { return [] }
         refinementStart = .now
+        if let l = legacyBest, let b = best, l.bounds == b.bounds && l.paths == b.paths { return [b] }
         return [legacyBest, best].compactMap { $0 }
     }
     func refine(_ candidate: DirectedComponentDrawing) throws {
@@ -151,9 +152,14 @@ final class DirectedComponentRun {
         plan.routingTime += operation.milliseconds(refinementStart.duration(to: .now))
     }
 
-    /// Applies the winner to the component; true means it is new and should be scored and stored.
+    /// Applies the winner to the component and stores it in the cache when uncached.
+    @discardableResult
     func publish() throws -> Bool {
-        if let best { try Task.checkCancellation(); load(best) }
+        if let best {
+            try Task.checkCancellation()
+            load(best)
+            if !cached { operation.cache?.insert(best, for: key) }
+        }
         plan.drawings.append((members, edges, DirectedGeometry.bounds(nodes: members, edges: edges)))
         return best != nil && !cached
     }

@@ -109,7 +109,15 @@ public final class BspEdgeRouter: EdgeRouter {
                 let d = along ? (s.start.y - port.y) * direction.y : (s.start.x - port.x) * direction.x
                 if d > 1e-6 && d < distance { distance = d; best = port + direction * d }
             }
-            if let hit = best, (RoutingCompute.current.map { $0.hits([port, hit], obstacles).isEmpty } ?? !obstacles.contains(where: { $0.intersectsLine(port, hit) })) { result.append((port, hit, side)) }
+            if let hit = best {
+                let clear: Bool
+                if let compute = RoutingCompute.current, compute.stages.isEmpty || obstacles.count >= 512 {
+                    clear = compute.hits([port, hit], obstacles).isEmpty
+                } else {
+                    clear = !obstacles.contains(where: { $0.intersectsLine(port, hit) })
+                }
+                if clear { result.append((port, hit, side)) }
+            }
         }
         return result
     }

@@ -79,60 +79,76 @@ extension MetalForceSolver {
             var count: UInt32; var orderCount: UInt32; var mode: UInt32; var stage: UInt32
             var start: UInt32; var end: UInt32; var padding0: UInt32 = 0; var padding1: UInt32 = 0
         }
-        func encode(stage: UInt32, start: Int, end: Int) throws -> any MTLCommandBuffer {
-            guard let command = queue.makeCommandBuffer(), let encoder = command.makeComputeCommandEncoder() else {
+        func encodeSteps(_ steps: [(stage: UInt32, start: Int, end: Int)]) throws -> any MTLCommandBuffer {
+            guard let command = queue.makeCommandBuffer() else {
                 throw OrganicLayoutError.metalFailure("Could not encode placement")
             }
-            command.label = "\(state.resource) placement stage \(stage) \(start)..<\(end)"
-            encoder.setComputePipelineState(pipeline)
-            for (i, resource) in [input, output, flags, records, order, offsets, children, scalars, scratch].enumerated() {
-                encoder.setBuffer(resource, offset: 0, index: i)
+            command.label = "\(state.resource) placement batch (\(steps.count) steps)"
+            for step in steps {
+                guard let encoder = command.makeComputeCommandEncoder() else {
+                    throw OrganicLayoutError.metalFailure("Could not encode placement")
+                }
+                encoder.setComputePipelineState(pipeline)
+                for (i, resource) in [input, output, flags, records, order, offsets, children, scalars, scratch].enumerated() {
+                    encoder.setBuffer(resource, offset: 0, index: i)
+                }
+                var p = Parameters(count: UInt32(values.count), orderCount: UInt32(state.order.count), mode: state.mode,
+                                   stage: step.stage, start: UInt32(step.start), end: UInt32(step.end))
+                encoder.setBytes(&p, length: MemoryLayout<Parameters>.stride, index: 9)
+                let width = state.serial ? 1 : min(128, pipeline.maxTotalThreadsPerThreadgroup)
+                let count = state.serial ? 1 : state.order.count
+                encoder.dispatchThreadgroups(MTLSize(width: (count + width - 1) / width, height: 1, depth: 1),
+                                             threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+                encoder.endEncoding()
             }
-            var p = Parameters(count: UInt32(values.count), orderCount: UInt32(state.order.count), mode: state.mode,
-                               stage: stage, start: UInt32(start), end: UInt32(end))
-            encoder.setBytes(&p, length: MemoryLayout<Parameters>.stride, index: 9)
-            let width = state.serial ? 1 : min(128, pipeline.maxTotalThreadsPerThreadgroup)
-            let count = state.serial ? 1 : state.order.count
-            encoder.dispatchThreadgroups(MTLSize(width: (count + width - 1) / width, height: 1, depth: 1),
-                                         threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
-            encoder.endEncoding(); return command
+            return command
         }
         var gpuSeconds = 0.0, usesOverlapSweep = false
         let batch = max(1, min(64, 1_048_576 / max(1, state.bounds.count)))
         if state.resource == "BasicLayouts" && state.mode == 9 {
+            var initialSteps: [(stage: UInt32, start: Int, end: Int)] = []
             for axis in 0..<2 {
-                gpuSeconds += try await submit(encode(stage: UInt32(axis * 2), start: 0, end: 0))
+                initialSteps.append((UInt32(axis * 2), 0, 0))
                 for start in stride(from: 0, to: state.order.count, by: batch) {
-                    gpuSeconds += try await submit(encode(stage: UInt32(axis * 2 + 1), start: start, end: min(state.order.count, start + batch)))
+                    initialSteps.append((UInt32(axis * 2 + 1), start, min(state.order.count, start + batch)))
                 }
             }
+            gpuSeconds += try await submit(encodeSteps(initialSteps))
             var separated = false
-            for _ in 0..<200 {
-                gpuSeconds += try await submit(encode(stage: 4, start: 0, end: 0))
-                for start in stride(from: 0, to: state.order.count, by: batch) {
-                    gpuSeconds += try await submit(encode(stage: 5, start: start, end: min(state.order.count, start + batch)))
+            let passesPerCommand = 4
+            for _ in stride(from: 0, to: 200, by: passesPerCommand) {
+                var passSteps: [(stage: UInt32, start: Int, end: Int)] = []
+                for _ in 0..<passesPerCommand {
+                    passSteps.append((4, 0, 0))
+                    for start in stride(from: 0, to: state.order.count, by: batch) {
+                        passSteps.append((5, start, min(state.order.count, start + batch)))
+                    }
                 }
+                gpuSeconds += try await submit(encodeSteps(passSteps))
                 let status = scratch.contents().bindMemory(to: SIMD4<Float>.self, capacity: state.bounds.count * 4 + 4)
                 if status[state.bounds.count].x == 0 { separated = true; break }
             }
             if !separated {
                 usesOverlapSweep = true
-                gpuSeconds += try await submit(encode(stage: 6, start: 0, end: 0))
+                var sweepSteps: [(stage: UInt32, start: Int, end: Int)] = [(6, 0, 0)]
                 for start in stride(from: 0, to: state.bounds.count, by: batch) {
-                    gpuSeconds += try await submit(encode(stage: 7, start: start, end: min(state.bounds.count, start + batch)))
+                    sweepSteps.append((7, start, min(state.bounds.count, start + batch)))
                 }
+                gpuSeconds += try await submit(encodeSteps(sweepSteps))
             }
         } else if state.serial {
+            var serialSteps: [(stage: UInt32, start: Int, end: Int)] = []
             if (state.resource == "TreeLayouts" && (state.mode == 1 || state.mode == 3)) || (state.resource == "BasicLayouts" && (state.mode == 10 || state.mode == 11)) {
-                gpuSeconds += try await submit(encode(stage: 0, start: 0, end: 0))
+                serialSteps.append((0, 0, 0))
             }
             let workBatch = state.resource == "BasicLayouts" ? max(1, min(batch, 262_144 / max(1, state.bounds.count * state.bounds.count))) : batch
             for start in stride(from: 0, to: state.order.count, by: workBatch) {
                 let firstStage: UInt32 = state.resource == "TreeLayouts" && (state.mode == 0 || state.mode == 2) && start == 0 ? 0 : 1
-                gpuSeconds += try await submit(encode(stage: firstStage, start: start, end: min(state.order.count, start + workBatch)))
+                serialSteps.append((firstStage, start, min(state.order.count, start + workBatch)))
             }
+            gpuSeconds += try await submit(encodeSteps(serialSteps))
         } else {
-            gpuSeconds += try await submit(encode(stage: 0, start: 0, end: state.order.count))
+            gpuSeconds += try await submit(encodeSteps([(0, 0, state.order.count)]))
         }
         try Task.checkCancellation()
         let pointer = output.contents().bindMemory(to: SIMD4<Float>.self, capacity: values.count)

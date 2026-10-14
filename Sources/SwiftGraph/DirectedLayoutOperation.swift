@@ -76,7 +76,7 @@ public struct DirectedLayoutOperation {
                 run.keepRefined(try run.measure())
             }
             run.finishRefinement()
-            if try run.publish() { run.store(try run.measure()) }
+            try run.publish()
         }
         pack(plan)
         return try finish(plan, try DirectedGeometry.measure(nodes: plan.nodes, edges: plan.edges, spacing: configuration.edgeSpacing))

@@ -168,7 +168,7 @@ extension DirectedLayoutOperation {
                 run.keepRefined(try await measure(run.members, run.edges))
             }
             run.finishRefinement()
-            if try run.publish() { run.store(try await measure(run.members, run.edges)) }
+            try run.publish()
         }
         pack(plan)
         return try finish(plan, try await measure(plan.nodes, plan.edges))

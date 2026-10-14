@@ -366,7 +366,9 @@ public final class EdgeSeparator: EdgeRouter {
         }.count
     }
     private static func hits(_ path: [Point], _ obstacles: [Rect]) -> Set<Int> {
-        if let compute = RoutingCompute.current { return compute.hits(path, obstacles) }
+        if let compute = RoutingCompute.current, compute.stages.isEmpty || max(0, path.count - 1) * obstacles.count >= 512 {
+            return compute.hits(path, obstacles)
+        }
         return Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0, $1) } })
     }
     private static func overlaps(_ a: (Double, Double), _ b: (Double, Double), reach: Double) -> Bool {
