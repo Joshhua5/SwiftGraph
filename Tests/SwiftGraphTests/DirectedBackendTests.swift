@@ -17,17 +17,17 @@ struct DirectedBackendTests {
         var configuration = DirectedLayoutConfiguration(); configuration.mode = mode; configuration.candidateCount = 1
         configuration.feedbackEdges = [5]; configuration.edgeWidths = [1, 2, 3, 1, 2, 1, 1]
         if mode != .fresh {
-            for (i, node) in graph.nodes.enumerated() { configuration.previousBounds[node.id] = Rect(x: Double(i * 100), y: Double(i % 2 * 160), width: node.width, height: node.height) }
+            for (i, node) in graph.nodes.enumerated() { configuration.previousBounds[node.id] = Rect(x: Float(i * 100), y: Float(i % 2 * 160), width: node.width, height: node.height) }
             configuration.fixedNodeIDs = [graph.nodes[0].id]
             if mode == .incremental { configuration.previousBounds.removeValue(forKey: graph.nodes[4].id); configuration.insertionOrigins[graph.nodes[4].id] = Point(x: 450, y: 350) }
         }
         return configuration
     }
     func expectNear(_ a: LayoutGraph, _ b: LayoutGraph) {
-        for (x, y) in zip(a.nodes, b.nodes) { #expect((x.center - y.center).length < 1e-8); #expect(x.width == y.width && x.height == y.height) }
+        for (x, y) in zip(a.nodes, b.nodes) { #expect((x.center - y.center).length < 1e-4); #expect(x.width == y.width && x.height == y.height) }
         for (x, y) in zip(a.edges, b.edges) {
             #expect(x.path.count == y.path.count)
-            for (p, q) in zip(x.path, y.path) { #expect((p - q).length < 1e-8) }
+            for (p, q) in zip(x.path, y.path) { #expect((p - q).length < 1e-4) }
             #expect(x.sourcePort == y.sourcePort && x.targetPort == y.targetPort)
         }
     }
@@ -87,7 +87,7 @@ struct DirectedBackendTests {
         let graph = LayoutGraph()
         for i in 0..<4 {
             let node = LayoutNode(id: "g\(i)", width: 5, height: 5)
-            node.center = Point(x: Double(i * 20), y: 50); graph.addNode(node)
+            node.center = Point(x: Float(i * 20), y: 50); graph.addNode(node)
         }
         graph.nodes[1].center = graph.nodes[0].center + Point(x: 2, y: 1)
         let paths = [
@@ -109,7 +109,7 @@ struct DirectedBackendTests {
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal unavailable"))
     func geometryEqualityKeepsDistinctDoubleCrossingsAndSubULPBodyOverlap() async throws {
-        let graph = LayoutGraph(), y = 1000.1, otherY = y.nextUp
+        let graph = LayoutGraph(), y: Float = 1000.1, otherY = y.nextUp
         let first = LayoutNode(id: "first", width: 20, height: 10)
         first.bounds = Rect(x: y, y: 30, width: 20, height: 10); graph.addNode(first)
         let second = LayoutNode(id: "second", width: 5, height: 10)
@@ -119,10 +119,7 @@ struct DirectedBackendTests {
         let vertical = LayoutEdge(source: first, target: second)
         vertical.path = [Point(x: 0, y: y - 10), Point(x: 0, y: y + 10)]
         graph.addEdge(horizontal); graph.addEdge(vertical)
-        // These coordinates have equal Float high and low components. CPU point
-        // equality still distinguishes the two crossings, and GPU IDs preserve it.
-        let high = Float(y)
-        #expect(Float(otherY) == high && Float(y - Double(high)) == Float(otherY - Double(high)))
+        #expect(otherY != y)
         let expected = try DirectedGeometry.measure(nodes: graph.nodes, edges: graph.edges)
         #expect(expected.crossings == 2 && expected.overlaps == 1)
         let actual = try await LayoutExecutor().directedTestScore(DirectedExecutionSnapshot(graph))

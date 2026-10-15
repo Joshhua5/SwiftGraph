@@ -16,8 +16,8 @@ import Testing
     @discardableResult private func edge(_ g: LayoutGraph, _ s: Int, _ t: Int, _ path: [Point] = []) -> LayoutEdge {
         let e = LayoutEdge(source: g.nodes[s], target: g.nodes[t]); e.path = path; g.addEdge(e); return e
     }
-    private func box(_ p: Point, _ size: Double = 10) -> Rect { Rect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size) }
-    private func length(_ path: [Point]) -> Double { zip(path, path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length } }
+    private func box(_ p: Point, _ size: Float = 10) -> Rect { Rect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size) }
+    private func length(_ path: [Point]) -> Float { zip(path, path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length } }
 
     @Test func defaultSpacingIsTen() {
         #expect(PolylineEdgeRouter().edgeSpacing == 10 && EdgeSeparator().spacing == 10)
@@ -57,7 +57,7 @@ import Testing
     // MARK: B4 clearance
 
     @Test func straightLinesNeedClearanceButNotFullPadding() {
-        func routed(gap: Double) -> LayoutEdge {
+        func routed(gap: Float) -> LayoutEdge {
             let g = nodes([("s", Rect(x: 0, y: 0, width: 40, height: 40)), ("t", Rect(x: 400, y: 0, width: 40, height: 40)),
                            ("a", Rect(x: 180, y: 20 + gap, width: 60, height: 60))])
             let e = edge(g, 0, 1); PolylineEdgeRouter().routeEdges(g); return e
@@ -96,11 +96,11 @@ import Testing
 
     @Test func windowedSearchMatchesTheFullSearch() {
         var seed: UInt64 = 7
-        func next() -> Double { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Double(seed >> 33) / Double(1 << 31) }
+        func next() -> Float { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Float(Double(seed >> 33) / Double(1 << 31)) }
         let g = LayoutGraph()
         for i in 0..<60 {
             let n = LayoutNode(id: "n\(i)", width: 20 + next() * 40, height: 20 + next() * 40)
-            n.x = Double(i % 10) * 110 + next() * 40; n.y = Double(i / 10) * 110 + next() * 40; g.addNode(n)
+            n.x = Float(i % 10) * 110 + next() * 40; n.y = Float(i / 10) * 110 + next() * 40; g.addNode(n)
         }
         for _ in 0..<80 { edge(g, Int(next() * 60) % 60, Int(next() * 60) % 60) }
         let scene = ObstaclePolyline.Scene(g.nodes)
@@ -108,7 +108,7 @@ import Testing
         for e in g.edges where e.source !== e.target {
             guard let found = scene.route(e, padding: 10), found.gap == 10 else { continue }
             let full = ObstaclePolyline.search(e.source.center, e.target.center, ObstaclePolyline.obstacles(e, g), padding: 10)
-            #expect(full != nil && abs(length(found.path) - length(full!)) < 1e-6)
+            #expect(full != nil && abs(length(found.path) - length(full!)) < 1e-3)
             checked += 1
         }
         #expect(checked > 40)
@@ -117,7 +117,7 @@ import Testing
     @Test func routingIsDeterministicAndKeepsEveryEdgeClearOnADenseGraph() {
         func run() -> [[Point]] {
             let g = VisualGraphs.graph(120, shape: "dense")
-            for (i, n) in g.nodes.enumerated() { n.x = Double(i % 12) * 200; n.y = Double(i / 12) * 130 }
+            for (i, n) in g.nodes.enumerated() { n.x = Float(i % 12) * 200; n.y = Float(i / 12) * 130 }
             let router = PolylineEdgeRouter(); router.routeEdges(g)
             #expect(measured(g).values["edgeNodeIntersections"] == 0 || !router.unroutableEdges.isEmpty)
             return g.edges.map(\.path)
@@ -128,7 +128,7 @@ import Testing
     // MARK: D1 costs
 
     @Test func detoursAvoidCrossingRoutesAlreadyLaid() {
-        func routed(crossing: Double) -> [Point] {
+        func routed(crossing: Float) -> [Point] {
             let g = nodes([("p", box(Point(x: 300, y: -200))), ("q", box(Point(x: 300, y: -20))),
                            ("a", Rect(x: -20, y: -20, width: 40, height: 40)), ("b", Rect(x: 380, y: -20, width: 40, height: 40)),
                            ("wall", Rect(x: 190, y: -100, width: 20, height: 210))])
@@ -165,7 +165,7 @@ import Testing
         let separator = EdgeSeparator(); separator.routeEdges(g)
         let m = measured(g)
         #expect(m.values["crossings"] == 0 && m.values["sharedSegments"] == 0)
-        func trunk(_ e: LayoutEdge) -> Double { e.path[1].y }
+        func trunk(_ e: LayoutEdge) -> Float { e.path[1].y }
         #expect(trunk(e1) < trunk(e2) && trunk(e2) < trunk(e3))
         #expect(separator.unseparatedEdges.isEmpty)
     }
@@ -189,11 +189,11 @@ import Testing
         EdgeSeparator().routeEdges(g)
         #expect(measured(g).values["sharedSegments"] == 0)
         #expect(long.path.count == 6 && long.path[1].y != 40 && long.path[3].y != 140)
-        #expect(zip(long.path, long.path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-9 || abs($0.y - $1.y) < 1e-9 })
+        #expect(zip(long.path, long.path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-4 || abs($0.y - $1.y) < 1e-4 })
     }
 
     @Test func lanesTakeTheOpenSideAndKeepClearanceFromNodes() {
-        func lanes(walls: [Rect]) -> (ys: [Double], separator: EdgeSeparator, graph: LayoutGraph) {
+        func lanes(walls: [Rect]) -> (ys: [Float], separator: EdgeSeparator, graph: LayoutGraph) {
             let g = nodes([("s", box(Point(x: 0, y: 0), 40)), ("t", box(Point(x: 400, y: 0), 40))] + walls.enumerated().map { ("wall\($0.offset)", $0.element) })
             let a = edge(g, 0, 1, [Point(x: 0, y: 0), Point(x: 400, y: 0)]), b = edge(g, 0, 1, [Point(x: 0, y: 0), Point(x: 400, y: 0)])
             let separator = EdgeSeparator(); separator.routeEdges(g)
@@ -201,10 +201,10 @@ import Testing
         }
         // A wall 8 above the trunk: both lanes move to the open side, a full spacing from it where they fit.
         let one = lanes(walls: [Rect(x: 100, y: -108, width: 200, height: 100)])
-        #expect(abs(one.ys[1] - one.ys[0] - 10) < 1e-9 && one.ys[0] >= -1e-9 && one.separator.unseparatedEdges.isEmpty)
+        #expect(abs(one.ys[1] - one.ys[0] - 10) < 1e-4 && one.ys[0] >= -1e-4 && one.separator.unseparatedEdges.isEmpty)
         // Walls 8 either side: lanes tighten, but keep half a spacing from both.
         let both = lanes(walls: [Rect(x: 100, y: -108, width: 200, height: 100), Rect(x: 100, y: 8, width: 200, height: 100)])
-        #expect(abs(both.ys[1] - both.ys[0] - 6) < 1e-9 && both.ys.allSatisfy { 8 - abs($0) >= 5 - 1e-9 })
+        #expect(abs(both.ys[1] - both.ys[0] - 6) < 1e-4 && both.ys.allSatisfy { 8 - abs($0) >= 5 - 1e-4 })
         #expect(both.separator.unseparatedEdges.isEmpty)
     }
 

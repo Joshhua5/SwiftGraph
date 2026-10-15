@@ -9,13 +9,13 @@ struct MetalCoverageAuditTests {
         let graph = LayoutGraph()
         for i in 0..<count {
             let node = LayoutNode(id: String(i), width: 20, height: 16)
-            node.center = Point(x: Double(i % 8) * 47.5 + 12, y: Double(i / 8) * 42.25 + Double(i % 3) * 5 + 10)
+            node.center = Point(x: Float(i % 8) * 47.5 + 12, y: Float(i / 8) * 42.25 + Float(i % 3) * 5 + 10)
             graph.addNode(node)
         }
         for i in 1..<count { graph.addEdge(LayoutEdge(source: graph.nodes[i - 1], target: graph.nodes[i])) }
         return graph
     }
-    private func legacyConfiguration(_ budget: Double) -> OrganicLayoutConfiguration {
+    private func legacyConfiguration(_ budget: Float) -> OrganicLayoutConfiguration {
         var configuration = OrganicLayoutConfiguration(quality: .legacy)
         configuration.iterationBudget = budget; configuration.initialTemperature = 20
         configuration.repulsionForce = 2_000; configuration.attractionForce = 0.05
@@ -64,8 +64,8 @@ struct MetalCoverageAuditTests {
         #expect(expected.nodes.map(\.bounds) == actual.nodes.map(\.bounds))
         #expect(operation.lastMetrics?.iterations == 3)
     }
-    @Test(arguments: [Double.nan, .infinity, -0.5])
-    func invalidFractionalBudgetsRejectBeforeMutation(_ budget: Double) async throws {
+    @Test(arguments: [Float.nan, .infinity, -0.5])
+    func invalidFractionalBudgetsRejectBeforeMutation(_ budget: Float) async throws {
         let graph = graph(), before = graph.nodes.map(\.bounds)
         let operation = OrganicLayoutOperation(backend: .cpu, configuration: legacyConfiguration(budget))
         await #expect(throws: LayoutExecutionError.self) { try await operation.applyLayoutAsync(graph) }
@@ -124,7 +124,7 @@ struct MetalCoverageAuditTests {
             let expected = graph(2), actual = graph(2)
             for g in [expected, actual] {
                 for (i, node) in g.nodes.enumerated() {
-                    node.bounds = Rect(x: 1e20 + Double(i) * 1_000_000, y: 1e20, width: 100_000, height: 100_000)
+                    node.bounds = Rect(x: 1e12 + Float(i) * 100_000_000, y: 1e12, width: 10_000_000, height: 10_000_000)
                 }
                 g.edges[0].path = [g.nodes[0].center, g.nodes[1].center]
             }

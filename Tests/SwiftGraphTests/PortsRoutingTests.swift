@@ -10,7 +10,7 @@ import Testing
     @discardableResult private func edge(_ g: LayoutGraph, _ a: LayoutNode, _ b: LayoutNode, _ path: [Point]) -> LayoutEdge {
         let e = LayoutEdge(source: a, target: b); e.path = path; g.addEdge(e); return e
     }
-    private func onBoundary(_ p: Point, _ r: Rect, tolerance: Double = 1e-6) -> Bool {
+    private func onBoundary(_ p: Point, _ r: Rect, tolerance: Float = 1e-4) -> Bool {
         r.inflated(by: tolerance).contains(p) && !r.inflated(by: -tolerance).contains(p)
     }
 
@@ -24,8 +24,8 @@ import Testing
             #expect(e.path.count >= 2, "\(pattern) \(e.source.id)->\(e.target.id)")
             guard let first = e.path.first, let last = e.path.last else { continue }
             // Channel ports sit one unit outside the node.
-            #expect(!e.source.bounds.inflated(by: -1e-6).contains(first) && e.source.bounds.inflated(by: 1.5).contains(first), "\(pattern) source of \(e.source.id)->\(e.target.id)")
-            #expect(!e.target.bounds.inflated(by: -1e-6).contains(last) && e.target.bounds.inflated(by: 1.5).contains(last), "\(pattern) target of \(e.source.id)->\(e.target.id)")
+            #expect(!e.source.bounds.inflated(by: -1e-4).contains(first) && e.source.bounds.inflated(by: 1.5).contains(first), "\(pattern) source of \(e.source.id)->\(e.target.id)")
+            #expect(!e.target.bounds.inflated(by: -1e-4).contains(last) && e.target.bounds.inflated(by: 1.5).contains(last), "\(pattern) target of \(e.source.id)->\(e.target.id)")
         }
     }
 
@@ -94,7 +94,7 @@ import Testing
         let e = edge(g, a, b, [Point(x: 0, y: 0), Point(x: 12, y: 0), Point(x: 12, y: 14), Point(x: 30, y: 14)])
         let router = CurveFittingEdgeRouter(); router.radius = 50; router.routeEdges(g)
         // Corners at (12,0) and (12,14) share a 14-unit leg and the first leg is 12 long: nothing leaves the hull.
-        for p in e.path { #expect(p.x >= -1e-9 && p.x <= 30 + 1e-9 && p.y >= -1e-9 && p.y <= 14 + 1e-9) }
+        for p in e.path { #expect(p.x >= -1e-4 && p.x <= 30 + 1e-4 && p.y >= -1e-4 && p.y <= 14 + 1e-4) }
         #expect(e.path.first == Point(x: 0, y: 0) && e.path.last == Point(x: 30, y: 14))
         #expect(e.path[1].y == 0 && e.path[e.path.count - 2].y == 14)
     }
@@ -112,8 +112,8 @@ import Testing
         for (i, a) in loops.enumerated() { for b in loops[(i + 1)...] {
             for (p, q) in zip(a.path, a.path.dropFirst()) { for (c, d) in zip(b.path, b.path.dropFirst()) {
                 let vertical = p.x == q.x && c.x == d.x && p.x == c.x, horizontal = p.y == q.y && c.y == d.y && p.y == c.y
-                if vertical { #expect(min(max(p.y, q.y), max(c.y, d.y)) - max(min(p.y, q.y), min(c.y, d.y)) <= 1e-9) }
-                if horizontal { #expect(min(max(p.x, q.x), max(c.x, d.x)) - max(min(p.x, q.x), min(c.x, d.x)) <= 1e-9) }
+                if vertical { #expect(min(max(p.y, q.y), max(c.y, d.y)) - max(min(p.y, q.y), min(c.y, d.y)) <= 1e-4) }
+                if horizontal { #expect(min(max(p.x, q.x), max(c.x, d.x)) - max(min(p.x, q.x), min(c.x, d.x)) <= 1e-4) }
             } }
         } }
     }
@@ -126,7 +126,7 @@ import Testing
         let loop = edge(g, n, n, []), router = SelfLoopRouter()
         router.routeEdges(g)
         let top = loop.path.map(\.y).min()!
-        #expect(top >= 32 - 1e-9 || router.unroutableEdges.isEmpty)
+        #expect(top >= 32 - 1e-4 || router.unroutableEdges.isEmpty)
         #expect(ObstaclePolyline.clear(loop.path, [Rect(x: -20, y: -38, width: 120, height: 30).inflated(by: router.padding)]))
     }
 
@@ -147,10 +147,10 @@ import Testing
         let hub = node(g, "hub", Rect(x: 100, y: 200, width: 120, height: 40))
         var edges: [LayoutEdge] = []
         for i in 0..<count {
-            let x = Double(i) * 160
+            let x = Float(i) * 160
             let t = node(g, "t\(i)", Rect(x: x, y: 0, width: 40, height: 40))
             // Every edge leaves the hub top at its centre x=160 and fans out to its target.
-            let path = bendFirst ? [Point(x: 160, y: 200), Point(x: 160, y: 120 - Double(i) * 4), Point(x: x + 20, y: 120 - Double(i) * 4), Point(x: x + 20, y: 40)]
+            let path = bendFirst ? [Point(x: 160, y: 200), Point(x: 160, y: 120 - Float(i) * 4), Point(x: x + 20, y: 120 - Float(i) * 4), Point(x: x + 20, y: 40)]
                                  : [Point(x: 160, y: 200), Point(x: x + 20, y: 40)]
             edges.append(edge(g, hub, t, path))
         }
@@ -164,7 +164,7 @@ import Testing
         #expect(xs == xs.sorted() && Set(xs).count == 4)
         #expect(edges.allSatisfy { $0.path[0].y == 200 })
         let pitch = hub.bounds.width / 5
-        for (i, x) in xs.enumerated() { #expect(abs(x - (hub.bounds.left + pitch * Double(i + 1))) < 1e-9) }
+        for (i, x) in xs.enumerated() { #expect(abs(x - (hub.bounds.left + pitch * Float(i + 1))) < 1e-4) }
         #expect(xs.allSatisfy { $0 >= hub.bounds.left + 6 && $0 <= hub.bounds.right - 6 })
         let before = edges.map(\.path); PortDistributor().routeEdges(g); #expect(edges.map(\.path) == before)
     }

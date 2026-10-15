@@ -7,11 +7,11 @@ extension RoutingFixture: CustomTestStringConvertible {
     public var testDescription: String { name }
 }
 private let routingFixtures = try! loadRoutingFixtures()
-private func approximatelyEqual(_ a: [Point], _ b: [[Double]]) -> Bool {
-    a.count == b.count && zip(a, b).allSatisfy { abs($0.x - $1[0]) < 1e-7 && abs($0.y - $1[1]) < 1e-7 }
+private func approximatelyEqual(_ a: [Point], _ b: [[Float]]) -> Bool {
+    a.count == b.count && zip(a, b).allSatisfy { abs($0.x - $1[0]) < 1e-4 && abs($0.y - $1[1]) < 1e-4 }
 }
-private func approximatelyEqual(_ a: Rect, _ b: [Double]) -> Bool {
-    zip([a.x, a.y, a.width, a.height], b).allSatisfy { abs($0 - $1) < 1e-7 }
+private func approximatelyEqual(_ a: Rect, _ b: [Float]) -> Bool {
+    zip([a.x, a.y, a.width, a.height], b).allSatisfy { abs($0 - $1) < 1e-4 }
 }
 
 /// Crossings and bends of the corridors fixtures as routed now; a regression raises them, an improvement may lower them.
@@ -36,7 +36,7 @@ private let corridorBudgets: [String: (crossings: Int, bends: Int)] = {
         let lanes = calculator.getAllGridSegments()
         let leaves = graph.nodes.filter { !$0.isGroup }
         for lane in lanes.dropFirst(min(4, lanes.count)) {
-            for node in leaves { #expect(!node.bounds.inflated(by: -1e-6).intersectsLine(lane.start, lane.end), "\(fixture.name): lane through \(node.id)") }
+            for node in leaves { #expect(!node.bounds.inflated(by: -1e-4).intersectsLine(lane.start, lane.end), "\(fixture.name): lane through \(node.id)") }
         }
         let router = fixture.makeRouter()
         router.routeEdges(graph)
@@ -89,7 +89,7 @@ private let corridorBudgets: [String: (crossings: Int, bends: Int)] = {
         let graph = fixture.graph(), calculator = BspGridCalculator()
         calculator.buildTree(graph)
         let a = try #require(graph.nodes.first { $0.id == "a" })
-        let cut = try #require(calculator.getLocalGridSegments(a).first { abs($0.start.y - 260) < 1e-7 && $0.start.y == $0.end.y })
+        let cut = try #require(calculator.getLocalGridSegments(a).first { abs($0.start.y - 260) < 1e-4 && $0.start.y == $0.end.y })
         #expect(cut.end.x == 500) // beyond wrapper's 450 edge, but not into sibling at 550
     }
 

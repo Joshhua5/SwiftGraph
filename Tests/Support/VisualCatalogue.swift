@@ -5,8 +5,8 @@ enum VisualGraphs {
     static func graph(_ count: Int = 12, shape: String = "dag") -> LayoutGraph {
         let g = LayoutGraph()
         for i in 0..<count {
-            let n = LayoutNode(id: "n\(i)", width: 80 + Double(i % 4) * 25, height: 32 + Double(i % 3) * 8)
-            n.x = Double(i % 4) * 220 - 120; n.y = Double(i / 4) * 150 - 80
+            let n = LayoutNode(id: "n\(i)", width: 80 + Float(i % 4) * 25, height: 32 + Float(i % 3) * 8)
+            n.x = Float(i % 4) * 220 - 120; n.y = Float(i / 4) * 150 - 80
             g.addNode(n)
         }
         guard count > 1 else { return g }
@@ -57,7 +57,7 @@ enum VisualGraphs {
         }
         if name == "bundling" || name == "bus" {
             let g = graph(12); g.edges = []
-            for (i, n) in g.nodes.enumerated() { n.x = i < 6 ? 0 : 720; n.y = Double(i % 6) * 110 }
+            for (i, n) in g.nodes.enumerated() { n.x = i < 6 ? 0 : 720; n.y = Float(i % 6) * 110 }
             for i in 0..<6 {
                 let pairs = name == "bus" ? [(0, i + 6), (i, 11)] : [(i, i + 6), (i, (i + 1) % 6 + 6)]
                 for (s, t) in pairs {
@@ -320,7 +320,7 @@ enum VisualCatalogue {
                 if let d = diagnostics {
                     drawing.reportedMetrics = ["placement.clearanceViolations": Double(d.final.clearanceViolations),
                         "placement.edgeNodeIntersections": Double(d.final.edgeNodeIntersections), "placement.crossings": Double(d.final.crossings),
-                        "placement.edgeLength": d.final.edgeLength, "placement.area": d.final.drawingArea,
+                        "placement.edgeLength": Double(d.final.edgeLength), "placement.area": Double(d.final.drawingArea),
                         "candidates": Double(d.candidateCount), "selectedCandidate": Double(d.selectedCandidate), "solverIterations": Double(d.solverIterations)]
                 }
                 let router = PolylineEdgeRouter(); router.routeEdges(g)
@@ -340,7 +340,7 @@ enum VisualCatalogue {
                 let g = VisualGraphs.graph(mode == "high-degree" ? 20 : 8, shape: mode == "high-degree" ? "star" : mode == "disconnected" ? "disconnected" : "cyclic")
                 var c = DirectedLayoutConfiguration(), drawing = VisualDrawing(graph: g)
                 if mode == "long-edges" { g.addEdge(LayoutEdge(source: g.nodes[0], target: g.nodes[6])) }
-                if mode == "high-degree" { c.edgeWidths = g.edges.map { _ in 3 }; drawing.edgeWidths = c.edgeWidths }
+                if mode == "high-degree" { c.edgeWidths = g.edges.map { _ in Float(3) }; drawing.edgeWidths = c.edgeWidths }
                 if ["incremental", "routes-only", "fixed-conflict"].contains(mode) {
                     try DirectedLayoutOperation().apply(g)
                     c.previousBounds = Dictionary(uniqueKeysWithValues: g.nodes.map { ($0.id, $0.bounds) })
@@ -359,7 +359,7 @@ enum VisualCatalogue {
                     }
                 }
                 let d = try DirectedLayoutOperation(configuration: c).apply(g)
-                drawing.reportedMetrics = ["crossings": Double(d.crossings), "sharedRuns": Double(d.sharedRuns), "bends": Double(d.bends), "routeLength": d.routeLength, "displacement": d.displacement, "unroutableEdges": Double(d.unroutableEdges.count), "fixedConflicts": Double(d.fixedNodeConflicts.count)]
+                drawing.reportedMetrics = ["crossings": Double(d.crossings), "sharedRuns": Double(d.sharedRuns), "bends": Double(d.bends), "routeLength": Double(d.routeLength), "displacement": Double(d.displacement), "unroutableEdges": Double(d.unroutableEdges.count), "fixedConflicts": Double(d.fixedNodeConflicts.count)]
                 if mode == "fixed-conflict" && d.fixedNodeConflicts.isEmpty { drawing.additionalFailures.append(.init(kind: "expected-fixed-conflict", elements: [])) }
                 if mode == "fixed-conflict" { drawing.notes = ["Intentional impossible fixed constraints: missing routes and overlapping nodes are expected, and must be diagnosed."] }
                 return drawing

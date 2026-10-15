@@ -78,7 +78,7 @@ import ImageIO
     @Test func routingQualityMetricsMeasureBendsEndpointsParallelRunsAndClearance() {
         let g = LayoutGraph()
         // Three 20x20 nodes: a (0,0), b (200,0), c (100,60) — c sits well below the a-b routes.
-        for (id, x, y) in [("a", 0.0, 0.0), ("b", 200.0, 0.0), ("c", 100.0, 60.0)] {
+        for (id, x, y) in [("a", Float(0.0), Float(0.0)), ("b", 200.0, 0.0), ("c", 100.0, 60.0)] {
             let n = LayoutNode(id: id, width: 20, height: 20); n.bounds.x = x; n.bounds.y = y; g.addNode(n)
         }
         func edge(_ s: Int, _ t: Int, _ path: [Point]) { let e = LayoutEdge(source: g.nodes[s], target: g.nodes[t]); e.path = path; g.addEdge(e) }
@@ -116,7 +116,7 @@ import ImageIO
     @Test func comparisonUsesToleranceAndFlagsQualityWithoutFailing() {
         let g = VisualGraphs.graph(2); VisualGraphs.finish(g, route: true)
         let a = snapshot(g); var b = a
-        b.nodes[0].bounds.x += 0.0000005
+        b.nodes[0].bounds.x += 0.0005
         #expect(!VisualComparison.compare(a, b).changed)
         b.nodes[0].bounds = b.nodes[1].bounds
         let diff = VisualComparison.compare(a, b)

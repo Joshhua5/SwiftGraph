@@ -12,7 +12,7 @@ import Testing
     @Test func radialLayoutsSeparateLargeNodesAndRemainDeterministic() throws {
         for algorithm in [RadialLayoutAlgorithm(), RadialTreeLayoutAlgorithm(), RadialStarLayoutAlgorithm()] as [any LayoutAlgorithm] {
             let g = VisualGraphs.graph(35, shape: "tree")
-            for (i, n) in g.nodes.enumerated() { n.width = 180 + Double(i % 4) * 120; n.height = 70 + Double(i % 3) * 50 }
+            for (i, n) in g.nodes.enumerated() { n.width = 180 + Float(i % 4) * 120; n.height = 70 + Float(i % 3) * 50 }
             try algorithm.applyLayout(g)
             let metrics = measured(g, contracts: .init(noNodeOverlaps: true, noObstacleIntersections: true))
             #expect(metrics.failures.isEmpty)
@@ -78,7 +78,7 @@ import Testing
         #expect(unrelated.map(\.path) == oldPaths)
         let delta = current.nodes[0].center - legacy.nodes[0].center
         #expect(delta.length > 0)
-        for i in 0..<6 { #expect((current.nodes[i].center - legacy.nodes[i].center - delta).length < 1e-8) }
+        for i in 0..<6 { #expect((current.nodes[i].center - legacy.nodes[i].center - delta).length < 1e-4) }
         #expect(measured(current).values["nodeOverlaps"] == 0)
         #expect(measured(legacy).values["nodeOverlaps"]! > 0)
     }
@@ -151,8 +151,8 @@ import Testing
         try RemoveOverlapsLayoutAlgorithm().applyLayout(g)
         // Stacked nodes stay stacked: a 20pt vertical move beats a 110pt horizontal one.
         #expect(g.nodes[0].x == g.nodes[1].x)
-        #expect(g.nodes[1].y - g.nodes[0].bounds.bottom >= 10 - 1e-9)
-        #expect(abs(g.nodes[0].y) + abs(g.nodes[1].y - 30) <= 20 + 1e-9)
+        #expect(g.nodes[1].y - g.nodes[0].bounds.bottom >= 10 - 1e-4)
+        #expect(abs(g.nodes[0].y) + abs(g.nodes[1].y - 30) <= 20 + 1e-4)
     }
 
     @Test func clearAreaDoesNotPushNodesOntoOtherNodes() throws {
@@ -184,8 +184,8 @@ import Testing
         EdgeSeparator().routeEdges(g)
         #expect(measured(g).values["sharedSegments"] == 0)
         let ys = edges.map { $0.path[0].y }.sorted()
-        #expect(ys.count == 3 && abs(ys[1] - ys[0] - 10) < 1e-9 && abs(ys[2] - ys[1] - 10) < 1e-9 && abs(ys[1] - a.y) < 1e-9)
-        #expect(edges.allSatisfy { $0.path.count == 2 && abs($0.path[0].y - $0.path[1].y) < 1e-9 })
+        #expect(ys.count == 3 && abs(ys[1] - ys[0] - 10) < 1e-4 && abs(ys[2] - ys[1] - 10) < 1e-4 && abs(ys[1] - a.y) < 1e-4)
+        #expect(edges.allSatisfy { $0.path.count == 2 && abs($0.path[0].y - $0.path[1].y) < 1e-4 })
         #expect(loop.path == [Point(x: 10, y: 0), Point(x: 30, y: -30), Point(x: 50, y: 0)])
     }
 
@@ -257,7 +257,7 @@ import Testing
         // Both ends sit on the node's boundary, on adjacent sides, and the loop stays within 16pt of the node.
         func onBoundary(_ p: Point) -> Bool { (p.x == r.left || p.x == r.right) != (p.y == r.top || p.y == r.bottom) }
         #expect(onBoundary(path[0]) && onBoundary(path[4]))
-        #expect(path.allSatisfy { r.inflated(by: 16 + 1e-9).contains($0) })
+        #expect(path.allSatisfy { r.inflated(by: 16 + 1e-4).contains($0) })
     }
 
     @Test func selfLoopsPickClearCornersAwayFromAttachedEdges() {

@@ -7,10 +7,10 @@ import ImageIO
 #endif
 
 enum VisualPrimitive {
-    case box(Rect, fill: String, stroke: String, width: Double)
-    case line([Point], color: String, width: Double, dashed: Bool)
+    case box(Rect, fill: String, stroke: String, width: Float)
+    case line([Point], color: String, width: Float, dashed: Bool)
     case polygon([Point], color: String)
-    case text(String, Rect, size: Double, color: String)
+    case text(String, Rect, size: Float, color: String)
 
     var bounds: Rect {
         switch self {
@@ -20,7 +20,7 @@ enum VisualPrimitive {
         case let .polygon(points, _): return pointBounds(points)
         }
     }
-    func transformed(scale: Double, offset: Point) -> VisualPrimitive {
+    func transformed(scale: Float, offset: Point) -> VisualPrimitive {
         func r(_ rect: Rect) -> Rect { Rect(x: rect.x * scale + offset.x, y: rect.y * scale + offset.y, width: rect.width * scale, height: rect.height * scale) }
         func p(_ points: [Point]) -> [Point] { points.map { $0 * scale + offset } }
         switch self {
@@ -69,7 +69,7 @@ struct VisualScene {
                         guard abs(denom) > VisualGeometry.epsilon else { continue }
                         let t = VisualGeometry.cross(c - a, v) / denom
                         let hit = a + (b - a) * t
-                        let half = min(3.0, min(t * len, (1 - t) * len) * 0.45)
+                        let half = min(Float(3.0), min(t * len, (1 - t) * len) * 0.45)
                         if half > 0.8 {
                             primitives.append(.line([hit - u * half, hit + u * half], color: "#ffffff", width: edge.width + 3.2, dashed: false))
                         }
@@ -77,13 +77,13 @@ struct VisualScene {
                 }
             }
             primitives.append(.line(edge.path, color: color, width: edge.width, dashed: edge.fallback))
-            if let end = edge.path.last, let from = edge.path.dropLast().last(where: { ($0 - end).length > 1e-6 }) {
+            if let end = edge.path.last, let from = edge.path.dropLast().last(where: { ($0 - end).length > 1e-5 }) {
                 let unit = (end - from) / (end - from).length, length = 2.5 * edge.width + 4
                 let base = end - unit * length, side = Point(x: -unit.y, y: unit.x) * (length / 2)
                 primitives.append(.polygon([end, base + side, base - side], color: color))
             }
             if edge.bidirectional == true, let start = edge.path.first,
-               let from = edge.path.dropFirst().first(where: { ($0 - start).length > 1e-6 }) {
+               let from = edge.path.dropFirst().first(where: { ($0 - start).length > 1e-5 }) {
                 let unit = (start - from) / (start - from).length, length = 2.5 * edge.width + 4
                 let base = start - unit * length, side = Point(x: -unit.y, y: unit.x) * (length / 2)
                 primitives.append(.polygon([start, base + side, base - side], color: color))
@@ -119,9 +119,9 @@ struct VisualScene {
 
     static func contactSheet(_ snapshots: [VisualSnapshot], crossingJumps: Bool = true) -> VisualScene {
         var primitives: [VisualPrimitive] = []
-        let width = 420.0, height = 300.0
+        let width: Float = 420.0, height: Float = 300.0
         for (index, snapshot) in snapshots.enumerated() {
-            let x = Double(index % 3) * width, y = Double(index / 3) * height
+            let x = Float(index % 3) * width, y = Float(index / 3) * height
             primitives.append(.box(Rect(x: x + 4, y: y + 4, width: width - 8, height: height - 8), fill: "#ffffff", stroke: "#cbd5e1", width: 1))
             primitives.append(.text(snapshot.id, Rect(x: x + 12, y: y + 10, width: width - 24, height: 22), size: 13, color: "#0f172a"))
             let scene = VisualScene(snapshot: snapshot, crossingJumps: crossingJumps)
@@ -129,7 +129,7 @@ struct VisualScene {
             let offset = Point(x: x + width / 2 - scene.bounds.center.x * scale, y: y + 38 + (height - 50) / 2 - scene.bounds.center.y * scale)
             primitives += scene.primitives.map { $0.transformed(scale: scale, offset: offset) }
         }
-        return VisualScene(primitives: primitives, bounds: Rect(width: width * 3, height: max(1, ceil(Double(snapshots.count) / 3)) * height))
+        return VisualScene(primitives: primitives, bounds: Rect(width: width * 3, height: max(1, ceil(Float(snapshots.count) / 3)) * height))
     }
 }
 
@@ -141,6 +141,7 @@ enum VisualRenderer {
             .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&#39;")
     }
     static func number(_ value: Double) -> String { String(format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), value == 0 ? 0 : value) }
+    static func number(_ value: Float) -> String { number(Double(value)) }
     static func svg(_ scene: VisualScene) -> String {
         func rect(_ r: Rect) -> String { "x=\"\(number(r.x))\" y=\"\(number(r.y))\" width=\"\(number(r.width))\" height=\"\(number(r.height))\"" }
         func points(_ p: [Point]) -> String { p.map { "\(number($0.x)),\(number($0.y))" }.joined(separator: " ") }
@@ -152,7 +153,7 @@ enum VisualRenderer {
             case let .line(p, color, width, dashed): body.append("<polyline points=\"\(points(p))\" fill=\"none\" stroke=\"\(color)\" stroke-width=\"\(number(width))\" stroke-linejoin=\"round\" \(dashed ? "stroke-dasharray=\"6 4\"" : "")/>")
             case let .polygon(p, color): body.append("<polygon points=\"\(points(p))\" fill=\"\(color)\"/>")
             case let .text(text, r, size, color):
-                let estWidth = max(1, Double(text.count) * size * 0.56)
+                let estWidth = max(1, Float(text.count) * size * 0.56)
                 let fitSize = r.width > 0 && estWidth > r.width ? max(size * 0.65, size * (r.width / estWidth)) : size
                 body.append("<defs><clipPath id=\"t\(i)\"><rect \(rect(r))/></clipPath></defs><text x=\"\(number(r.center.x))\" y=\"\(number(r.center.y + fitSize * 0.35))\" text-anchor=\"middle\" font-family=\"Helvetica, sans-serif\" font-size=\"\(number(fitSize))\" fill=\"\(color)\" clip-path=\"url(#t\(i))\">\(escape(text))</text>")
             }
@@ -170,12 +171,12 @@ enum VisualRenderer {
         #if os(macOS)
         let b = scene.bounds
         guard valid(b), b.width > 0, b.height > 0 else { throw VisualRenderError.invalidCanvas }
-        let scale = min(2, 2400 / max(b.width, b.height))
-        let width = max(1, Int(ceil(b.width * scale))), height = max(1, Int(ceil(b.height * scale)))
+        let scale = min(2.0, 2400.0 / Double(max(b.width, b.height)))
+        let width = max(1, Int(ceil(Double(b.width) * scale))), height = max(1, Int(ceil(Double(b.height) * scale)))
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw VisualRenderError.imageCreation }
         ctx.setFillColor(CGColor(gray: 1, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        ctx.translateBy(x: 0, y: Double(height)); ctx.scaleBy(x: scale, y: -scale); ctx.translateBy(x: -b.x, y: -b.y)
+        ctx.translateBy(x: 0, y: Double(height)); ctx.scaleBy(x: scale, y: -scale); ctx.translateBy(x: -Double(b.x), y: -Double(b.y))
         draw(scene, context: ctx)
         guard let image = ctx.makeImage(), let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { throw VisualRenderError.imageCreation }
         CGImageDestinationAddImage(destination, image, nil)
@@ -191,22 +192,22 @@ enum VisualRenderer {
         return CGColor(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255, alpha: hex == "none" ? 0 : 1)
     }
     private static func draw(_ scene: VisualScene, context ctx: CGContext) {
-        func rect(_ r: Rect) -> CGRect { CGRect(x: r.x, y: r.y, width: r.width, height: r.height) }
+        func rect(_ r: Rect) -> CGRect { CGRect(x: Double(r.x), y: Double(r.y), width: Double(r.width), height: Double(r.height)) }
         for primitive in scene.primitives {
             ctx.saveGState()
             switch primitive {
             case let .box(r, fill, stroke, width):
-                ctx.setFillColor(color(fill)); ctx.fill(rect(r)); ctx.setStrokeColor(color(stroke)); ctx.setLineWidth(width); ctx.stroke(rect(r))
+                ctx.setFillColor(color(fill)); ctx.fill(rect(r)); ctx.setStrokeColor(color(stroke)); ctx.setLineWidth(Double(width)); ctx.stroke(rect(r))
             case let .line(points, c, width, dashed):
                 if let first = points.first {
-                    ctx.setStrokeColor(color(c)); ctx.setLineWidth(width); ctx.setLineJoin(.round)
+                    ctx.setStrokeColor(color(c)); ctx.setLineWidth(Double(width)); ctx.setLineJoin(.round)
                     if dashed { ctx.setLineDash(phase: 0, lengths: [6, 4]) }
-                    ctx.move(to: CGPoint(x: first.x, y: first.y)); for p in points.dropFirst() { ctx.addLine(to: CGPoint(x: p.x, y: p.y)) }; ctx.strokePath()
+                    ctx.move(to: CGPoint(x: Double(first.x), y: Double(first.y))); for p in points.dropFirst() { ctx.addLine(to: CGPoint(x: Double(p.x), y: Double(p.y))) }; ctx.strokePath()
                 }
             case let .polygon(points, c):
                 if let first = points.first {
-                    ctx.setFillColor(color(c)); ctx.move(to: CGPoint(x: first.x, y: first.y))
-                    for p in points.dropFirst() { ctx.addLine(to: CGPoint(x: p.x, y: p.y)) }; ctx.closePath(); ctx.fillPath()
+                    ctx.setFillColor(color(c)); ctx.move(to: CGPoint(x: Double(first.x), y: Double(first.y)))
+                    for p in points.dropFirst() { ctx.addLine(to: CGPoint(x: Double(p.x), y: Double(p.y))) }; ctx.closePath(); ctx.fillPath()
                 }
             case let .text(text, r, size, c):
                 ctx.clip(to: rect(r))
@@ -218,12 +219,13 @@ enum VisualRenderer {
                     let w = CTLineGetTypographicBounds(ctLine, &asc, &desc, nil)
                     return (ctLine, w, asc, desc)
                 }
-                var (line, width, ascent, descent) = makeLine(size)
-                if width > r.width && r.width > 0 {
-                    let scaled = max(size * 0.65, size * (r.width / width) * 0.96)
+                let sizeD = Double(size), rWidthD = Double(r.width)
+                var (line, width, ascent, descent) = makeLine(sizeD)
+                if width > rWidthD && rWidthD > 0 {
+                    let scaled = max(sizeD * 0.65, sizeD * (rWidthD / width) * 0.96)
                     (line, width, ascent, descent) = makeLine(scaled)
                 }
-                ctx.translateBy(x: r.center.x - width / 2, y: r.center.y + (ascent - descent) / 2)
+                ctx.translateBy(x: Double(r.center.x) - width / 2, y: Double(r.center.y) + (ascent - descent) / 2)
                 ctx.scaleBy(x: 1, y: -1); ctx.textMatrix = .identity; ctx.textPosition = .zero
                 CTLineDraw(line, ctx)
             }

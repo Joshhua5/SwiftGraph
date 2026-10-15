@@ -20,6 +20,7 @@ struct VisualDifference: Codable, Equatable {
 
 enum VisualComparison {
     static func equal(_ a: Double, _ b: Double) -> Bool { abs(a - b) <= 1e-6 }
+    static func equal(_ a: Float, _ b: Float) -> Bool { abs(a - b) <= 1e-5 }
     static func equal(_ a: Point, _ b: Point) -> Bool { equal(a.x, b.x) && equal(a.y, b.y) }
     static func equal(_ a: Rect, _ b: Rect) -> Bool { equal(a.x, b.x) && equal(a.y, b.y) && equal(a.width, b.width) && equal(a.height, b.height) }
     static func equal(_ a: Rect?, _ b: Rect?) -> Bool {

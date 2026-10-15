@@ -8,8 +8,8 @@ struct RadialBackendTests {
     func graph(_ count: Int, kind: String = "tree") -> LayoutGraph {
         let graph = LayoutGraph()
         for i in 0..<count {
-            let node = LayoutNode(id: String(i), width: 9 + Double(i % 7) * 3, height: 7 + Double(i % 5) * 4)
-            node.center = Point(x: Double(i * 73), y: Double(i % 3 * 59))
+            let node = LayoutNode(id: String(i), width: 9 + Float(i % 7) * 3, height: 7 + Float(i % 5) * 4)
+            node.center = Point(x: Float(i * 73), y: Float(i % 3 * 59))
             graph.addNode(node)
         }
         if kind != "isolated" && count > 1 {
@@ -29,14 +29,14 @@ struct RadialBackendTests {
         }
         return graph
     }
-    func original(_ graph: LayoutGraph, _ style: RadialLayoutStyle, spacing: Double = 100) throws {
+    func original(_ graph: LayoutGraph, _ style: RadialLayoutStyle, spacing: Float = 100) throws {
         switch style {
         case .radial: let a = RadialLayoutAlgorithm(); a.layerSeparation = spacing; try a.applyLayout(graph)
         case .star: let a = RadialStarLayoutAlgorithm(); a.radius = spacing; try a.applyLayout(graph)
         case .tree: let a = RadialTreeLayoutAlgorithm(); a.layerDistance = spacing; try a.applyLayout(graph)
         }
     }
-    func options(_ tolerance: Double = 0.01) -> MetalLayoutOptions {
+    func options(_ tolerance: Float = 0.01) -> MetalLayoutOptions {
         var options = MetalLayoutOptions(); options.minimumRadialPairCount = 0
         options.maximumCoordinateError = tolerance; return options
     }
@@ -176,7 +176,7 @@ struct RadialBackendTests {
             var angles = (0..<count).map { i in (Double(i) + random() * 0.1) * 2 * .pi / Double(count) }
             angles.swapAt(0, count - 1)
             rings.append(RadialRing(indices: Array(0..<count), angles: angles,
-                diameters: (0..<count).map { _ in 5 + random() * 30 }, depth: 1))
+                diameters: (0..<count).map { _ in Float(5 + random() * 30) }, depth: 1))
         }
         rings.append(RadialRing(indices: [0, 1, 2], angles: [1, 1, 1], diameters: [10, 20, 30], depth: 50))
         for i in rings.indices { rings[i].normalizeCollapsedAngles() }
@@ -186,7 +186,7 @@ struct RadialBackendTests {
         let solver = try MetalForceSolver(), result = try await solver.radialClearanceAsync(state)
         var offset = 0
         for ring in rings {
-            var actual = 0.0
+            var actual: Float = 0.0
             for i in ring.indices.indices {
                 let j = Int(result.partners[offset + i]) - offset
                 if j != i { actual = max(actual, ring.clearance(i, j)) }

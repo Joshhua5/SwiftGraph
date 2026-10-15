@@ -2,18 +2,18 @@ import Foundation
 import SwiftGraph
 
 struct RoutingFixture: Decodable, Sendable {
-    struct Node: Decodable, Sendable { var id: String; var bounds: [Double]; var parent: String?; var group: Bool? }
+    struct Node: Decodable, Sendable { var id: String; var bounds: [Float]; var parent: String?; var group: Bool? }
     struct Edge: Decodable, Sendable {
         var source: String; var target: String
         var sourcePort: PortConstraint?; var targetPort: PortConstraint?
         var sourceCandidates: [PortConstraint]?; var targetCandidates: [PortConstraint]?
-        var path: [[Double]]?
+        var path: [[Float]]?
     }
     struct Expected: Decodable, Sendable {
-        var paths: [[[Double]]]; var bounds: [[Double]]; var root: [Double]
-        var global: [[[Double]]]; var local: [[[[Double]]]]
+        var paths: [[[Float]]]; var bounds: [[Float]]; var root: [Float]
+        var global: [[[Float]]]; var local: [[[[Float]]]]
     }
-    var name: String; var router: String; var nodes: [Node]; var edges: [Edge]; var config: [String: Double]; var expected: Expected
+    var name: String; var router: String; var nodes: [Node]; var edges: [Edge]; var config: [String: Float]; var expected: Expected
     func graph() -> LayoutGraph {
         let graph = LayoutGraph()
         let lookup = Dictionary(uniqueKeysWithValues: nodes.map { spec in

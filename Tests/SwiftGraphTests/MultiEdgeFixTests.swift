@@ -7,11 +7,11 @@ private struct Lcg: RandomNumberGenerator {
     mutating func next() -> UInt64 { s = s &* 6364136223846793005 &+ 1442695040888963407; return s ^ (s >> 29) }
 }
 private func crosses(_ a: Point, _ b: Point, _ c: Point, _ d: Point) -> Bool {
-    func x(_ p: Point, _ q: Point) -> Double { p.x * q.y - p.y * q.x }
+    func x(_ p: Point, _ q: Point) -> Float { p.x * q.y - p.y * q.x }
     let u = b - a, v = d - c, den = x(u, v)
-    guard abs(den) > 1e-12 else { return false }
+    guard abs(den) > 1e-6 else { return false }
     let t = x(c - a, v) / den, s = x(c - a, u) / den
-    return t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9
+    return t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5
 }
 private func segments(_ e: LayoutEdge) -> [(Point, Point)] { Array(zip(e.path, e.path.dropFirst())) }
 /// Crossings between edges that join the same two nodes (duplicates and reciprocals).
@@ -47,8 +47,8 @@ private func spread(_ rng: inout Lcg, nodes count: Int, edges m: Int, duplicates
     let g = LayoutGraph(), cols = Int(Double(count).squareRoot().rounded(.up))
     var nodes: [LayoutNode] = []
     for i in 0..<count {
-        let n = LayoutNode(id: "n\(i)", width: Double(Int.random(in: 36...70, using: &rng)), height: Double(Int.random(in: 24...40, using: &rng)))
-        n.x = Double(i % cols) * 150 + Double(Int.random(in: 0..<40, using: &rng)); n.y = Double(i / cols) * 120 + Double(Int.random(in: 0..<30, using: &rng))
+        let n = LayoutNode(id: "n\(i)", width: Float(Int.random(in: 36...70, using: &rng)), height: Float(Int.random(in: 24...40, using: &rng)))
+        n.x = Float(i % cols) * 150 + Float(Int.random(in: 0..<40, using: &rng)); n.y = Float(i / cols) * 120 + Float(Int.random(in: 0..<30, using: &rng))
         nodes.append(n); g.addNode(n)
     }
     func pick() -> (Int, Int) { var a = 0, b = 0; repeat { a = Int.random(in: 0..<count, using: &rng); b = Int.random(in: 0..<count, using: &rng) } while a == b; return (a, b) }
@@ -59,7 +59,7 @@ private func spread(_ rng: inout Lcg, nodes count: Int, edges m: Int, duplicates
 }
 private func twelveEdges() -> LayoutGraph {
     let g = LayoutGraph(); var ns: [LayoutNode] = []
-    for (i, q) in [(0.0, 0.0), (300, 10), (150, 250), (-20, 300), (320, 320), (160, -200)].enumerated() {
+    for (i, q) in [(Float(0.0), Float(0.0)), (300, 10), (150, 250), (-20, 300), (320, 320), (160, -200)].enumerated() {
         let n = LayoutNode(id: "n\(i)", width: 60, height: 36); n.x = q.0; n.y = q.1; ns.append(n); g.addNode(n)
     }
     for (a, b) in [(0, 1), (0, 1), (0, 1), (1, 0), (2, 3), (2, 3), (3, 2), (4, 5), (5, 4), (0, 2), (1, 4), (3, 5)] { g.addEdge(LayoutEdge(source: ns[a], target: ns[b])) }
@@ -84,8 +84,8 @@ private func layered(seed: UInt64) async throws -> LayoutGraph {
     for e in g.edges { e.path = [] }
     return g
 }
-private func axisAligned(_ path: [Point]) -> Bool { zip(path, path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-9 || abs($0.y - $1.y) < 1e-9 } }
-private func node(_ g: LayoutGraph, _ id: String, _ x: Double, _ y: Double, _ w: Double = 40, _ h: Double = 30) -> LayoutNode {
+private func axisAligned(_ path: [Point]) -> Bool { zip(path, path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-4 || abs($0.y - $1.y) < 1e-4 } }
+private func node(_ g: LayoutGraph, _ id: String, _ x: Float, _ y: Float, _ w: Float = 40, _ h: Float = 30) -> LayoutNode {
     let n = LayoutNode(id: id, width: w, height: h); n.center = Point(x: x, y: y); g.addNode(n); return n
 }
 
@@ -140,7 +140,7 @@ struct MultiEdgeFixTests {
     @Test func distributionKeepsLanesThatAreAlreadySeparated() {
         // Four lanes 8 apart on a 36 wide face: spreading them evenly would squeeze them to 7.2.
         let g = LayoutGraph(), top = node(g, "t", 0, 0, 36, 30), bottom = node(g, "b", 0, 200, 36, 30)
-        let xs = [-12.0, -4, 4, 12]
+        let xs: [Float] = [-12.0, -4, 4, 12]
         let edges = xs.map { x -> LayoutEdge in
             let e = LayoutEdge(source: top, target: bottom); g.addEdge(e); e.path = [Point(x: x, y: 15), Point(x: x, y: 185)]; return e
         }
@@ -167,7 +167,7 @@ struct MultiEdgeFixTests {
         PortDistributor().routeEdges(g)
         let x = Dictionary(uniqueKeysWithValues: edges.map { ($0.target.id, $0.path[0].x) })
         #expect(x["a"]! < x["b"]! && x["b"]! < x["c"]!)
-        #expect(abs(x["b"]! - x["a"]! - 25) < 1e-9 && abs(x["c"]! - x["b"]! - 25) < 1e-9)
+        #expect(abs(x["b"]! - x["a"]! - 25) < 1e-4 && abs(x["c"]! - x["b"]! - 25) < 1e-4)
     }
 
     @Test func removeOverlapsKeepsOrthogonalRoutesOrthogonal() throws {
@@ -227,7 +227,7 @@ struct MultiEdgeFixTests {
     }
 
     @Test func bundlerStopsBuildingCompatibilityWhenCancelled() {
-        let edges = (0..<40).map { i in BundlingEdge(source: -1, target: -1, from: Point(x: 0, y: Double(i)), to: Point(x: 200, y: Double(i)), path: []) }
+        let edges = (0..<40).map { i in BundlingEdge(source: -1, target: -1, from: Point(x: 0, y: Float(i)), to: Point(x: 200, y: Float(i)), path: []) }
         let free = EdgeBundler(BundlingSettings(), nodes: [], solid: [], edges: edges)
         #expect(!free.compatible.isEmpty)
         let cancellation = RoutingCancellation(); cancellation.cancel()

@@ -15,7 +15,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         return VisualGeometry.measure(VisualSnapshot(case: item, drawing: VisualDrawing(graph: graph)))
     }
     private func onBoundary(_ p: Point, _ r: Rect) -> Bool {
-        r.inflated(by: 1e-6).contains(p) && !r.inflated(by: -1e-6).contains(p)
+        r.inflated(by: 1e-4).contains(p) && !r.inflated(by: -1e-4).contains(p)
     }
     private func scene(_ rects: [Rect], edges: [(Int, Int)]) -> LayoutGraph {
         let graph = LayoutGraph()
@@ -23,7 +23,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         for (a, b) in edges { graph.addEdge(LayoutEdge(source: graph.nodes[a], target: graph.nodes[b])) }
         return graph
     }
-    private func clearance(_ path: [Point], _ rect: Rect) -> Double {
+    private func clearance(_ path: [Point], _ rect: Rect) -> Float {
         zip(path, path.dropFirst()).map { VisualGeometry.distance($0, $1, to: rect) }.min() ?? .infinity
     }
 
@@ -38,7 +38,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
             guard path.count >= 2 else { continue }
             #expect(path.first != path.last, "\(label): closed loop")
             guard !router.unroutableEdges.contains(where: { $0 === edge }) else { continue }
-            for (a, b) in zip(path, path.dropFirst()) { #expect(abs(a.x - b.x) < 1e-6 || abs(a.y - b.y) < 1e-6, "\(label): diagonal \(a)-\(b)") }
+            for (a, b) in zip(path, path.dropFirst()) { #expect(abs(a.x - b.x) < 1e-4 || abs(a.y - b.y) < 1e-4, "\(label): diagonal \(a)-\(b)") }
             #expect(onBoundary(path[0], edge.source.bounds), "\(label): starts off \(edge.source.id)")
             #expect(onBoundary(path[path.count - 1], edge.target.bounds), "\(label): ends off \(edge.target.id)")
             let unrelated = graph.nodes.filter { n in
@@ -79,7 +79,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         let path = g.edges[0].path
         #expect(router.unroutableEdges.isEmpty)
         for (point, next, node) in [(path[0], path[1], g.nodes[0]), (path[path.count - 1], path[path.count - 2], g.nodes[2])] {
-            let alongFace = abs(point.x - next.x) < 1e-6 ? point.x <= node.bounds.left + 1e-6 || point.x >= node.bounds.right - 1e-6 : point.y <= node.bounds.top + 1e-6 || point.y >= node.bounds.bottom - 1e-6
+            let alongFace = abs(point.x - next.x) < 1e-4 ? point.x <= node.bounds.left + 1e-4 || point.x >= node.bounds.right - 1e-4 : point.y <= node.bounds.top + 1e-4 || point.y >= node.bounds.bottom - 1e-4
             #expect(!alongFace, "\(path)")
         }
     }
@@ -105,7 +105,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
     func axisBlockersCloseTheirIntervalOnlyWhenAsked() throws {
         let rects = [Rect(x: 10, y: 0, width: 40, height: 40), Rect(x: 60, y: 0, width: 40, height: 40)]
         let compute = RoutingCompute(solver: try MetalForceSolver(), tolerance: 1e-3, statisticsChanged: {})
-        let values = [10.0, 30, 50, 55, 60, 100]
+        let values: [Float] = [10.0, 30, 50, 55, 60, 100]
         #expect(compute.axisBlockers(values, rectangles: rects, vertical: true) == [[], [0], [], [], [], []])
         #expect(compute.axisBlockers(values, rectangles: rects, vertical: true, closed: true) == [[0], [0], [0], [], [1], [1]])
         #expect(compute.axisBlockers([0, 20, 40, 41], rectangles: rects, vertical: false, closed: true) == [[0, 1], [0, 1], [0, 1], []])
@@ -138,7 +138,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         var rects: [Rect] = []
         for row in 0..<6 { for column in 0..<7 {
             let w = 20 + next(31), h = 20 + next(31)
-            rects.append(Rect(x: Double(column * 110 + next(50)), y: Double(row * 100 + next(40)), width: Double(w), height: Double(h)))
+            rects.append(Rect(x: Float(column * 110 + next(50)), y: Float(row * 100 + next(40)), width: Float(w), height: Float(h)))
         } }
         let g = scene(rects, edges: (0..<70).map { _ in (next(rects.count), next(rects.count)) }.filter { $0.0 != $0.1 })
         let router = OrthogonalGroupedEdgeRouter(); router.routeEdges(g)
@@ -146,7 +146,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
             let path = edge.path, label = "seed \(seed) e\(index)"
             #expect(path.count >= 2 && path.first != path.last, "\(label): \(path)")
             guard path.count >= 2 else { continue }
-            for (a, b) in zip(path, path.dropFirst()) { #expect(abs(a.x - b.x) < 1e-6 || abs(a.y - b.y) < 1e-6, "\(label): diagonal \(a)-\(b)") }
+            for (a, b) in zip(path, path.dropFirst()) { #expect(abs(a.x - b.x) < 1e-4 || abs(a.y - b.y) < 1e-4, "\(label): diagonal \(a)-\(b)") }
             #expect(onBoundary(path[0], edge.source.bounds) && onBoundary(path[path.count - 1], edge.target.bounds), "\(label): \(path)")
             for node in g.nodes where node !== edge.source && node !== edge.target { #expect(clearance(path, node.bounds) > 0, "\(label): touches \(node.id)") }
         }

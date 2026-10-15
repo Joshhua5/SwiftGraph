@@ -7,8 +7,8 @@ struct HierarchyBackendTests {
     func graph(_ count: Int = 19, fractional: Bool = false) -> LayoutGraph {
         let graph = LayoutGraph()
         for i in 0..<count {
-            let node = LayoutNode(id: "n\(i)", width: 12 + Double(i % 7) + (fractional ? Double(i % 3) / 7 : 0), height: 9 + Double(i % 5))
-            node.center = Point(x: Double(i * 19), y: Double(i % 4 * 17)); graph.addNode(node)
+            let node = LayoutNode(id: "n\(i)", width: 12 + Float(i % 7) + (fractional ? Float(i % 3) / 7 : 0), height: 9 + Float(i % 5))
+            node.center = Point(x: Float(i * 19), y: Float(i % 4 * 17)); graph.addNode(node)
         }
         if count > 1 { for i in 1..<count { graph.addEdge(LayoutEdge(source: graph.nodes[(i - 1) / 2], target: graph.nodes[i])) } }
         if count > 4 {
@@ -28,7 +28,7 @@ struct HierarchyBackendTests {
         configuration.maxNodesPerRank = narrow ? 3 : nil
         return configuration
     }
-    func expectNear(_ a: LayoutGraph, _ b: LayoutGraph, tolerance: Double = 1e-9) {
+    func expectNear(_ a: LayoutGraph, _ b: LayoutGraph, tolerance: Float = 1e-4) {
         #expect(a.nodes.count == b.nodes.count && a.edges.count == b.edges.count)
         for (x, y) in zip(a.nodes, b.nodes) {
             #expect((x.center - y.center).length < tolerance)

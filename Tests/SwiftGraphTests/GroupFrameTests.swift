@@ -5,8 +5,8 @@ import Testing
 @MainActor
 struct GroupFrameTests {
     func contains(_ outer: Rect, _ inner: Rect) -> Bool {
-        inner.left >= outer.left - 1e-7 && inner.right <= outer.right + 1e-7 &&
-        inner.top >= outer.top - 1e-7 && inner.bottom <= outer.bottom + 1e-7
+        inner.left >= outer.left - 1e-4 && inner.right <= outer.right + 1e-4 &&
+        inner.top >= outer.top - 1e-4 && inner.bottom <= outer.bottom + 1e-4
     }
     @discardableResult func leaf(_ graph: LayoutGraph, _ id: String, _ parent: LayoutNode? = nil) throws -> LayoutNode {
         let node = LayoutNode(id: id, width: 60, height: 30)
@@ -105,7 +105,7 @@ struct GroupFrameTests {
 
     final class BentLayout: LayoutAlgorithm {
         func applyLayout(_ graph: LayoutGraph) throws {
-            for (i, node) in graph.nodes.enumerated() { node.x = Double(i * 180); node.y = 50 }
+            for (i, node) in graph.nodes.enumerated() { node.x = Float(i * 180); node.y = 50 }
             for edge in graph.edges {
                 edge.path = [edge.source.center, Point(x: edge.source.center.x, y: -80),
                              Point(x: edge.target.center.x, y: -80), edge.target.center]
@@ -144,7 +144,7 @@ struct GroupFrameTests {
         let layout = RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()); try layout.applyLayout(graph)
         #expect(layout.unroutableEdges.isEmpty && edge.path.count > 2)
         for (p, q) in zip(edge.path, edge.path.dropFirst()) {
-            #expect(!wall.bounds.inflated(by: -1e-6).intersectsLine(p, q))
+            #expect(!wall.bounds.inflated(by: -1e-4).intersectsLine(p, q))
         }
         // Route out of a titled group upwards: the title itself remains an obstacle.
         let titled = try graph.addGroup(id: "titled", frame: .init(headerSize: Size(width: 120, height: 40)))
@@ -154,7 +154,7 @@ struct GroupFrameTests {
         let upward = LayoutEdge(source: start, target: target); graph.addEdge(upward)
         try layout.applyLayout(graph)
         for (p, q) in zip(upward.path, upward.path.dropFirst()) {
-            #expect(!titled.groupHeaderBounds!.inflated(by: -1e-6).intersectsLine(p, q))
+            #expect(!titled.groupHeaderBounds!.inflated(by: -1e-4).intersectsLine(p, q))
         }
     }
 

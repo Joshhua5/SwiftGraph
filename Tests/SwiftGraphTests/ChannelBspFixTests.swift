@@ -6,7 +6,7 @@ import Testing
 /// Route quality measured on a routed graph, shared by the fixture invariants and the regression tests.
 struct RouteAudit {
     var fallbacks: [LayoutEdge], diagonal: [Int] = [], leafHits: [(edge: Int, node: String)] = [], offBoundary: [(edge: Int, end: String)] = []
-    var minClearance = Double.infinity, crossings = 0, bends = 0
+    var minClearance = Float.infinity, crossings = 0, bends = 0
     init(_ graph: LayoutGraph, _ router: any EdgeRouter) {
         switch router {
         case let r as ChannelEdgeRouter: fallbacks = r.unroutableEdges
@@ -18,42 +18,42 @@ struct RouteAudit {
         // Reported fallback edges are drawn as a last resort and exempt from the per-route checks.
         for (i, edge) in graph.edges.enumerated() where edge.source !== edge.target && edge.path.count >= 2 && !fallbacks.contains(where: { $0 === edge }) {
             let segments = Array(zip(edge.path, edge.path.dropFirst()))
-            if segments.contains(where: { abs($0.x - $1.x) > 1e-6 && abs($0.y - $1.y) > 1e-6 }) { diagonal.append(i) }
+            if segments.contains(where: { abs($0.x - $1.x) > 1e-4 && abs($0.y - $1.y) > 1e-4 }) { diagonal.append(i) }
             for leaf in leaves where leaf !== edge.source && leaf !== edge.target && !isAncestor(edge.source, of: leaf) && !isAncestor(edge.target, of: leaf) {
-                if segments.contains(where: { leaf.bounds.inflated(by: -1e-6).intersectsLine($0.0, $0.1) }) { leafHits.append((i, leaf.id)) }
+                if segments.contains(where: { leaf.bounds.inflated(by: -1e-4).intersectsLine($0.0, $0.1) }) { leafHits.append((i, leaf.id)) }
                 minClearance = min(minClearance, segments.map { Self.distance(leaf.bounds, $0.0, $0.1) }.min()!)
             }
             for (node, point) in [(edge.source, edge.path[0]), (edge.target, edge.path[edge.path.count - 1])] where !node.isGroup {
-                if node.bounds.inflated(by: -1e-6).contains(point) || !node.bounds.inflated(by: 1e-6).contains(point) { offBoundary.append((i, node.id)) }
+                if node.bounds.inflated(by: -1e-4).contains(point) || !node.bounds.inflated(by: 1e-4).contains(point) { offBoundary.append((i, node.id)) }
             }
-            bends += (1..<(edge.path.count - 1)).filter { abs(Self.cross(edge.path[$0] - edge.path[$0 - 1], edge.path[$0 + 1] - edge.path[$0])) > 1e-6 }.count
+            bends += (1..<(edge.path.count - 1)).filter { abs(Self.cross(edge.path[$0] - edge.path[$0 - 1], edge.path[$0 + 1] - edge.path[$0])) > 1e-4 }.count
         }
         let routed = graph.edges.indices.filter { graph.edges[$0].source !== graph.edges[$0].target && graph.edges[$0].path.count >= 2 }
         for (n, i) in routed.enumerated() { for j in routed[(n + 1)...] {
             for (a, b) in zip(graph.edges[i].path, graph.edges[i].path.dropFirst()) { for (c, d) in zip(graph.edges[j].path, graph.edges[j].path.dropFirst()) where Self.crosses(a, b, c, d) { crossings += 1 } }
         } }
     }
-    private static func cross(_ a: Point, _ b: Point) -> Double { a.x * b.y - a.y * b.x }
+    private static func cross(_ a: Point, _ b: Point) -> Float { a.x * b.y - a.y * b.x }
     private static func crosses(_ a: Point, _ b: Point, _ c: Point, _ d: Point) -> Bool {
         let u = b - a, v = d - c, denominator = cross(u, v)
-        guard abs(denominator) > 1e-12 else { return false }
+        guard abs(denominator) > 1e-6 else { return false }
         let t = cross(c - a, v) / denominator, s = cross(c - a, u) / denominator
-        return t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9
+        return t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5
     }
     /// Gap between a rectangle and a segment: zero when they touch, else the nearest of the segment ends and rectangle corners.
-    static func distance(_ r: Rect, _ a: Point, _ b: Point) -> Double {
+    static func distance(_ r: Rect, _ a: Point, _ b: Point) -> Float {
         if r.intersectsLine(a, b) { return 0 }
-        func toSegment(_ p: Point) -> Double {
+        func toSegment(_ p: Point) -> Float {
             let u = b - a, l = u.x * u.x + u.y * u.y, t = l == 0 ? 0 : min(max(((p.x - a.x) * u.x + (p.y - a.y) * u.y) / l, 0), 1)
             return (p - (a + u * t)).length
         }
-        func toRect(_ p: Point) -> Double { Point(x: max(r.left - p.x, 0, p.x - r.right), y: max(r.top - p.y, 0, p.y - r.bottom)).length }
+        func toRect(_ p: Point) -> Float { Point(x: max(r.left - p.x, 0, p.x - r.right), y: max(r.top - p.y, 0, p.y - r.bottom)).length }
         return ([toRect(a), toRect(b)] + [Point(x: r.left, y: r.top), Point(x: r.right, y: r.top), Point(x: r.left, y: r.bottom), Point(x: r.right, y: r.bottom)].map(toSegment)).min()!
     }
 }
 
 @Suite struct ChannelBspFixTests {
-    private func node(_ g: LayoutGraph, _ id: String, _ x: Double, _ y: Double, _ w: Double, _ h: Double) -> LayoutNode {
+    private func node(_ g: LayoutGraph, _ id: String, _ x: Float, _ y: Float, _ w: Float, _ h: Float) -> LayoutNode {
         let n = LayoutNode(id: id, width: w, height: h); n.x = x; n.y = y; g.addNode(n); return n
     }
     private func fixture(_ name: String) throws -> RoutingFixture { try #require(try loadRoutingFixtures().first { $0.name == name }) }
@@ -77,8 +77,8 @@ struct RouteAudit {
             let g = LayoutGraph()
             var nodes: [LayoutNode] = []
             for i in 0..<15 {
-                let w = Double(60 + next() % 60), h = Double(30 + next() % 30)
-                nodes.append(node(g, "n\(i)", Double(i % 5) * 190 + Double(next() % 50), Double(i / 5) * 150 + Double(next() % 50), w, h))
+                let w = Float(60 + next() % 60), h = Float(30 + next() % 30)
+                nodes.append(node(g, "n\(i)", Float(i % 5) * 190 + Float(next() % 50), Float(i / 5) * 150 + Float(next() % 50), w, h))
             }
             for _ in 0..<(18 + round) {
                 let s = next() % nodes.count, t = next() % nodes.count
@@ -127,7 +127,7 @@ struct RouteAudit {
         #expect(edge.path.count >= 2 && edge.path.count <= 8)
         #expect(edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite })
         #expect(g.nodes.map(\.bounds) == bounds)
-        #expect(!zip(edge.path, edge.path.dropFirst()).contains { abs($0.x - $1.x) > 1e-6 && abs($0.y - $1.y) > 1e-6 })
+        #expect(!zip(edge.path, edge.path.dropFirst()).contains { abs($0.x - $1.x) > 1e-4 && abs($0.y - $1.y) > 1e-4 })
         let first = edge.path; router.routeEdges(g); #expect(edge.path == first)
     }
 
@@ -149,7 +149,7 @@ struct RouteAudit {
         #expect(router.unroutableEdges.isEmpty)
         let audit = RouteAudit(g, router)
         #expect(audit.diagonal.isEmpty && audit.offBoundary.isEmpty)
-        #expect(g.edges.allSatisfy { edge in !zip(edge.path, edge.path.dropFirst()).contains { wall.bounds.inflated(by: -1e-6).intersectsLine($0, $1) } })
+        #expect(g.edges.allSatisfy { edge in !zip(edge.path, edge.path.dropFirst()).contains { wall.bounds.inflated(by: -1e-4).intersectsLine($0, $1) } })
         #expect(g.nodes.map(\.bounds) == bounds)
         let first = g.edges.map(\.path); router.routeEdges(g); #expect(g.edges.map(\.path) == first)
     }
@@ -176,11 +176,11 @@ struct RouteAudit {
         for _ in 0..<2 { g.addEdge(LayoutEdge(source: a, target: b)) }
         BspEdgeRouter().routeEdges(g)
         // The lane is the height of the edge's longest horizontal run.
-        func lane(_ e: LayoutEdge) -> Double {
-            let runs = zip(e.path, e.path.dropFirst()).filter { abs($0.y - $1.y) < 1e-6 }
+        func lane(_ e: LayoutEdge) -> Float {
+            let runs = zip(e.path, e.path.dropFirst()).filter { abs($0.y - $1.y) < 1e-4 }
             return runs.max { abs($0.0.x - $0.1.x) < abs($1.0.x - $1.1.x) }?.0.y ?? .nan
         }
-        #expect(abs(lane(g.edges[0]) - lane(g.edges[1])) >= 10 - 1e-6, "\(g.edges.map(\.path))")
+        #expect(abs(lane(g.edges[0]) - lane(g.edges[1])) >= 10 - 1e-4, "\(g.edges.map(\.path))")
     }
 
     @Test(arguments: ["bsp-corridors-3", "bsp-corridors-5", "bsp-corridors-10", "bsp-off-grid-wall"])

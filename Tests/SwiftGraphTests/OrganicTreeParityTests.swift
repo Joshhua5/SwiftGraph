@@ -11,8 +11,8 @@ struct OrganicTreeParityTests {
             let node = LayoutNode(id: String(i), width: 8, height: 8)
             if shape == "coincident" { node.center = Point(x: 3.25, y: -5.5) }
             else if shape == "cutoff" {
-                node.center = Point(x: i == 0 ? 0 : (i % 2 == 0 ? 499.99 : 500.01), y: Double(i % 4) * 0.25)
-            } else { node.center = Point(x: Double((i * 137 + 29) % 997), y: Double((i * 263 + 47) % 991)) }
+                node.center = Point(x: i == 0 ? 0 : (i % 2 == 0 ? 499.99 : 500.01), y: Float(i % 4) * 0.25)
+            } else { node.center = Point(x: Float((i * 137 + 29) % 997), y: Float((i * 263 + 47) % 991)) }
             graph.addNode(node)
         }
         graph.nodes[0].metadata[GraphMetadataKeys.fixed] = true
@@ -23,7 +23,7 @@ struct OrganicTreeParityTests {
     func serializationRetainsProductionInsertionAndCutoffPolicy(_ shape: String) throws {
         let graph = graph(129, shape: shape)
         let floats = graph.nodes.map { SIMD2(Float($0.center.x), Float($0.center.y)) }
-        let points = floats.map { Point(x: Double($0.x), y: Double($0.y)) }
+        let points = floats.map { Point(x: $0.x, y: $0.y) }
         let tree = ForceQuadTree(); tree.build(points)
         let snapshot = try OrganicForceTree(floats)
         #expect(snapshot.cells[0].mass == points.count)
@@ -74,8 +74,8 @@ extension LayoutExecutor {
 }
 
 extension OrganicForceTree {
-    /// Exact Double oracle for serialization regression tests only.
-    func testForce(on node: Int, strength: Double) -> Point {
+    /// Exact Float oracle for serialization regression tests only.
+    func testForce(on node: Int, strength: Float) -> Point {
         guard !cells.isEmpty else { return .zero }
         let point = positions[node]
         var force = Point.zero, stack = [0]
@@ -84,9 +84,9 @@ extension OrganicForceTree {
             if delta.lengthSquared > 250_000 { return .zero }
             if delta.lengthSquared < 0.01 {
                 let angle = Double(node) * 2.399963229728653
-                delta = Point(x: cos(angle) * 0.1, y: sin(angle) * 0.1)
+                delta = Point(x: Float(cos(angle) * 0.1), y: Float(sin(angle) * 0.1))
             }
-            return delta * (strength * Double(mass) / delta.lengthSquared)
+            return delta * (strength * Float(mass) / delta.lengthSquared)
         }
         while let index = stack.popLast() {
             let cell = cells[index]

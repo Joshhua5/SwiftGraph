@@ -4,7 +4,7 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct GroupIncomingEdgeTests {
-    func length(_ edges: [LayoutEdge]) -> Double {
+    func length(_ edges: [LayoutEdge]) -> Float {
         edges.reduce(0) { sum, edge in
             sum + zip(edge.path, edge.path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length }
         }

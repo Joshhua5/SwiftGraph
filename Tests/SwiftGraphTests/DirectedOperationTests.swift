@@ -5,7 +5,7 @@ import Testing
 struct DirectedOperationTests {
     private func graph(_ count: Int, _ pairs: [(Int, Int)]) -> LayoutGraph {
         let g = LayoutGraph()
-        for i in 0..<count { g.addNode(LayoutNode(id: "node-\(i)", width: 80 + Double(i % 3) * 35, height: 32)) }
+        for i in 0..<count { g.addNode(LayoutNode(id: "node-\(i)", width: 80 + Float(i % 3) * 35, height: 32)) }
         for (s, t) in pairs { g.addEdge(LayoutEdge(source: g.nodes[s], target: g.nodes[t])) }
         return g
     }
@@ -102,7 +102,7 @@ struct DirectedOperationTests {
         var config = DirectedLayoutConfiguration()
         config.mode = .incremental; config.previousBounds = prior
         config.nodeSpacing = 8; config.clearance = 20
-        for (i, width) in [222.0, 248.0, 200.0].enumerated() {
+        for (i, width) in [Float(222.0), 248.0, 200.0].enumerated() {
             let node = LayoutNode(id: "inserted-\(i)", width: width, height: 25)
             g.addNode(node); g.addEdge(LayoutEdge(source: g.nodes[0], target: node))
             config.insertionOrigins[node.id] = g.nodes[1].center
@@ -170,7 +170,7 @@ struct DirectedOperationTests {
         let g = LayoutGraph(); var state = seed
         func next(_ n: Int) -> Int { state = (state &* 1103515245 &+ 12345) & 0x7fffffff; return state % n }
         var rows: [[Int]] = []
-        for (r, w) in widths.enumerated() { rows.append((0..<w).map { _ in g.addNode(LayoutNode(id: "r\(r)-\(g.nodes.count)", width: 60 + Double(next(4)) * 20, height: 30)); return g.nodes.count - 1 }) }
+        for (r, w) in widths.enumerated() { rows.append((0..<w).map { _ in g.addNode(LayoutNode(id: "r\(r)-\(g.nodes.count)", width: 60 + Float(next(4)) * 20, height: 30)); return g.nodes.count - 1 }) }
         for r in 0..<(rows.count - 1) { for a in rows[r] {
             g.addEdge(LayoutEdge(source: g.nodes[a], target: g.nodes[rows[r + 1][next(rows[r + 1].count)]]))
             if next(3) == 0, r + 2 < rows.count { g.addEdge(LayoutEdge(source: g.nodes[a], target: g.nodes[rows[r + 2][next(rows[r + 2].count)]])) }
@@ -249,7 +249,7 @@ struct DirectedOperationTests {
         let added = LayoutEdge(source: g.nodes[0], target: g.nodes[g.nodes.count - 1]); g.addEdge(added)
         let report = try DirectedLayoutOperation(configuration: config).apply(g)
         #expect(report.unroutableEdges.isEmpty && report.displacement == 0)
-        let moved = zip(before, g.edges).filter { $0.count != $1.path.count || zip($0, $1.path).contains { ($0 - $1).length > 1e-6 } }.count
+        let moved = zip(before, g.edges).filter { $0.count != $1.path.count || zip($0, $1.path).contains { ($0 - $1).length > 1e-4 } }.count
         #expect(moved <= 2)
         #expect(added.path.first.map { p in g.edges.dropLast().allSatisfy { $0.source !== g.nodes[0] || ($0.path[0] - p).length >= 10 } } == true)
     }
@@ -265,7 +265,7 @@ struct DirectedOperationTests {
         #expect(report.unroutableEdges.isEmpty)
         let reach = DirectedGeometry.bounds(nodes: g.nodes, edges: g.edges)
         // Lanes stack outward by spacing, not by edge index times the port pitch.
-        #expect(reach.height < drawing.height + Double(g.edges.count) * config.edgeSpacing)
+        #expect(reach.height < drawing.height + Float(g.edges.count) * config.edgeSpacing)
     }
 
     @Test func denseLayeredGraphStaysRoutableAndFast() throws {

@@ -29,7 +29,7 @@ struct DirectedChannelTests {
 
     @Test func conflictingPreferencesRemainDeterministicAndClear() throws {
         let segments = (0..<24).map { i in
-            DirectedChannelSegment(id: i, source: Double((i * 37) % 113), target: Double((i * 61 + 19) % 127))
+            DirectedChannelSegment(id: i, source: Float((i * 37) % 113), target: Float((i * 61 + 19) % 127))
         }
         let a = try DirectedChannelAllocation.solve(segments, clearance: 6)
         let b = try DirectedChannelAllocation.solve(segments.reversed(), clearance: 6)
@@ -62,7 +62,7 @@ struct DirectedChannelTests {
         for (i, p) in [Point(x: 0, y: 0), Point(x: 1000, y: 500), Point(x: 0, y: 400), Point(x: 1000, y: 100)].enumerated() {
             let n = LayoutNode(id: "\(i)", width: 80, height: 40); n.center = p; g.addNode(n)
         }
-        for (s, t, x) in [(0, 1, 400.0), (2, 3, 600.0)] {
+        for (s, t, x) in [(0, 1, Float(400.0)), (2, 3, Float(600.0))] {
             let e = LayoutEdge(source: g.nodes[s], target: g.nodes[t])
             e.path = [Point(x: 40, y: e.source.center.y), Point(x: x, y: e.source.center.y),
                       Point(x: x, y: e.target.center.y), Point(x: 960, y: e.target.center.y)]
@@ -103,13 +103,13 @@ struct DirectedChannelTests {
         let plan = DirectedChannelPlan(nodes: g.nodes, edges: edges, feedback: [], ports: ports,
             edgeIndices: [edges[0]: 0, edges[1]: 1], clearance: 10, spacing: 10)
         let paths = try plan.apply(minimumGap: 100)
-        let xs = try edges.map { e -> Double in
+        let xs = try edges.map { e -> Float in
             let path = try #require(paths[e])
             return path[1].x
         }.sorted()
         let low = g.nodes[0].bounds.right + 10, high = g.nodes[2].bounds.left - 10
         #expect(xs[0] > low && xs[1] < high && xs[1] - xs[0] >= 10)
-        #expect(abs((xs[0] - low) - (high - xs[1])) < 1e-9)
+        #expect(abs((xs[0] - low) - (high - xs[1])) < 1e-4)
         #expect(g.nodes[2].bounds.left - g.nodes[0].bounds.right >= 100)
     }
 
@@ -121,10 +121,10 @@ struct DirectedChannelTests {
         let e = LayoutEdge(source: g.nodes[0], target: g.nodes[1]); g.addEdge(e)
         e.path = [Point(x: 40, y: 0), Point(x: 300, y: 0), Point(x: 300, y: -30), Point(x: 500, y: -30), Point(x: 500, y: 0), Point(x: 860, y: 0)]
         try DirectedDrawingCompaction.apply(nodes: g.nodes, edges: g.edges, clearance: 10, spacing: 10, layerSpacing: 120, nodeSpacing: 60)
-        #expect(g.nodes[1].bounds.left - g.nodes[0].bounds.right >= 120 - 1e-9)
-        #expect(g.nodes[2].bounds.top - g.nodes[0].bounds.bottom >= 60 - 1e-9)
+        #expect(g.nodes[1].bounds.left - g.nodes[0].bounds.right >= 120 - 1e-4)
+        #expect(g.nodes[2].bounds.top - g.nodes[0].bounds.bottom >= 60 - 1e-4)
         // Tracks inside the gap still keep their spacing.
         let verticals = Set(e.path.map(\.x)).sorted().filter { $0 > g.nodes[0].bounds.right && $0 < g.nodes[1].bounds.left }
-        #expect(zip(verticals, verticals.dropFirst()).allSatisfy { $1 - $0 >= 10 - 1e-9 })
+        #expect(zip(verticals, verticals.dropFirst()).allSatisfy { $1 - $0 >= 10 - 1e-4 })
     }
 }

@@ -414,7 +414,7 @@ public enum BackendComparativeCatalogue {
                     g.addEdge(LayoutEdge(source: g.nodes[0], target: g.nodes[6]))
                 }
                 if mode == "high-degree" {
-                    c.edgeWidths = g.edges.map { _ in 3 }
+                    c.edgeWidths = g.edges.map { _ in Float(3) }
                     drawing.edgeWidths = c.edgeWidths
                 }
                 if ["incremental", "routes-only", "fixed-conflict"].contains(mode) {
@@ -443,8 +443,8 @@ public enum BackendComparativeCatalogue {
                         "crossings": Double(d.crossings),
                         "sharedRuns": Double(d.sharedRuns),
                         "bends": Double(d.bends),
-                        "routeLength": d.routeLength,
-                        "displacement": d.displacement,
+                        "routeLength": Double(d.routeLength),
+                        "displacement": Double(d.displacement),
                         "unroutableEdges": Double(d.unroutableEdges.count),
                         "fixedConflicts": Double(d.fixedNodeConflicts.count)
                     ]
@@ -548,8 +548,8 @@ public enum BackendComparativeCatalogue {
                         "placement.clearanceViolations": Double(d.final.clearanceViolations),
                         "placement.edgeNodeIntersections": Double(d.final.edgeNodeIntersections),
                         "placement.crossings": Double(d.final.crossings),
-                        "placement.edgeLength": d.final.edgeLength,
-                        "placement.area": d.final.drawingArea,
+                        "placement.edgeLength": Double(d.final.edgeLength),
+                        "placement.area": Double(d.final.drawingArea),
                         "candidates": Double(d.candidateCount),
                         "selectedCandidate": Double(d.selectedCandidate),
                         "solverIterations": Double(d.solverIterations)

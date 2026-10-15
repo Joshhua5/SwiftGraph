@@ -5,8 +5,8 @@ import Testing
 private func compositionMetalFixture() -> LayoutGraph {
     let graph = LayoutGraph()
     for i in 0..<12 {
-        let node = LayoutNode(id: "c\(i)", width: 24 + Double(i % 3), height: 16 + Double(i % 4), data: "payload-\(i)")
-        node.x = Double(i % 4) * 40; node.y = Double(i / 4) * 30; graph.addNode(node)
+        let node = LayoutNode(id: "c\(i)", width: 24 + Float(i % 3), height: 16 + Float(i % 4), data: "payload-\(i)")
+        node.x = Float(i % 4) * 40; node.y = Float(i / 4) * 30; graph.addNode(node)
     }
     for component in 0..<3 {
         let base = component * 4
@@ -16,7 +16,7 @@ private func compositionMetalFixture() -> LayoutGraph {
     }
     return graph
 }
-private func expectCompositionGeometry(_ actual: LayoutGraph, _ expected: LayoutGraph, tolerance: Double = 0.02) {
+private func expectCompositionGeometry(_ actual: LayoutGraph, _ expected: LayoutGraph, tolerance: Float = 0.02) {
     for (a, b) in zip(actual.nodes, expected.nodes) {
         #expect(abs(a.x-b.x) <= tolerance); #expect(abs(a.y-b.y) <= tolerance)
         #expect(abs(a.width-b.width) <= tolerance); #expect(abs(a.height-b.height) <= tolerance)

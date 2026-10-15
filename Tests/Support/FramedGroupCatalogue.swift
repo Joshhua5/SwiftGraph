@@ -8,7 +8,7 @@ extension VisualCatalogue {
                 contracts: VisualContracts(noNodeOverlaps: true, noObstacleIntersections: true, framedGroups: true),
                 smoke: kind == "mixed-layouts") {
                 let graph = LayoutGraph()
-                func group(_ name: String, parent: LayoutNode? = nil, width: Double = 160, minimum: Size = Size()) throws -> LayoutNode {
+                func group(_ name: String, parent: LayoutNode? = nil, width: Float = 160, minimum: Size = Size()) throws -> LayoutNode {
                     try graph.addGroup(id: name, parent: parent,
                         frame: GroupFrameOptions(headerSize: Size(width: width, height: 26), minimumSize: minimum))
                 }
@@ -55,7 +55,7 @@ extension VisualCatalogue {
                     layout.optimizeIncomingEdges = false
                     try layout.applyLayout(graph)
                     previousBounds = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0.bounds) })
-                    let before = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length }
+                    let before = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0.0) { $0 + Double(($1.1 - $1.0).length) }
                     metrics["incomingLengthBefore"] = before
                     layout.optimizeIncomingEdges = true
                     notes.append("Previous bounds record placement before incoming-edge refinement; the frame and its internal route move together. Reported lengths compare the routed centre-to-centre path before endpoint clipping.")
@@ -69,7 +69,7 @@ extension VisualCatalogue {
                 }
                 try layout.applyLayout(graph)
                 if kind == "incoming-alignment" {
-                    metrics["incomingLengthAfter"] = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length }
+                    metrics["incomingLengthAfter"] = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0.0) { $0 + Double(($1.1 - $1.0).length) }
                 }
                 EdgeEndpointClipper.clipToNodeBounds(graph)
                 return VisualDrawing(graph: graph, previousBounds: previousBounds,
@@ -81,7 +81,7 @@ extension VisualCatalogue {
 
     static func runFramedGroup(_ kind: String, backend: LayoutBackend, executor: LayoutExecutor) async throws -> (VisualDrawing, [LayoutExecutionMetrics]) {
         let graph = LayoutGraph()
-        func group(_ name: String, parent: LayoutNode? = nil, width: Double = 160, minimum: Size = Size()) throws -> LayoutNode {
+        func group(_ name: String, parent: LayoutNode? = nil, width: Float = 160, minimum: Size = Size()) throws -> LayoutNode {
             try graph.addGroup(id: name, parent: parent,
                 frame: GroupFrameOptions(headerSize: Size(width: width, height: 26), minimumSize: minimum))
         }
@@ -137,7 +137,7 @@ extension VisualCatalogue {
             try await layout.applyLayoutAsync(graph)
             executionRecords += layout.lastExecutionMetrics
             previousBounds = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0.bounds) })
-            let before = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length }
+            let before = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0.0) { $0 + Double(($1.1 - $1.0).length) }
             metrics["incomingLengthBefore"] = before
             layout.optimizeIncomingEdges = true
             notes.append("Previous bounds record placement before incoming-edge refinement; the frame and its internal route move together. Reported lengths compare the routed centre-to-centre path before endpoint clipping.")
@@ -152,7 +152,7 @@ extension VisualCatalogue {
         try await layout.applyLayoutAsync(graph)
         executionRecords += layout.lastExecutionMetrics
         if kind == "incoming-alignment" {
-            metrics["incomingLengthAfter"] = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0) { $0 + ($1.1 - $1.0).length }
+            metrics["incomingLengthAfter"] = zip(graph.edges[0].path, graph.edges[0].path.dropFirst()).reduce(0.0) { $0 + Double(($1.1 - $1.0).length) }
         }
         let clip = RoutingLayoutOperation(.endpointClipping, backend: backend, executor: executor)
         try await clip.applyLayoutAsync(graph)

@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import SwiftGraph
 
-private func basicMetalFixture(_ count: Int = 9, origin: Double = 0, groups: Bool = true) -> LayoutGraph {
+private func basicMetalFixture(_ count: Int = 9, origin: Float = 0, groups: Bool = true) -> LayoutGraph {
     let graph = LayoutGraph()
     for i in 0..<count {
-        let node = LayoutNode(id: "n\(i + 1)", width: 18 + Double(i % 3), height: 12 + Double(i % 4), data: "value-\(i)")
-        node.x = origin + Double(i % 3) * 11; node.y = origin + Double(i / 3) * 9
+        let node = LayoutNode(id: "n\(i + 1)", width: 18 + Float(i % 3), height: 12 + Float(i % 4), data: "value-\(i)")
+        node.x = origin + Float(i % 3) * 11; node.y = origin + Float(i / 3) * 9
         graph.addNode(node)
     }
     if groups, let last = graph.nodes.last { last.isGroup = true; last.x = origin + 150.123456789; last.y = origin + 170.987654321 }
@@ -24,7 +24,7 @@ private func basicMetalConfiguration(_ style: BasicLayoutStyle, count: Int = 9) 
     for i in 0..<count { c.cellAssignment["n\(i + 1)"] = GridCell(row: i / 3, column: i % 3) }
     return c
 }
-private func expectBasicGeometry(_ actual: LayoutGraph, _ expected: LayoutGraph, tolerance: Double = 0.01) {
+private func expectBasicGeometry(_ actual: LayoutGraph, _ expected: LayoutGraph, tolerance: Float = 0.01) {
     #expect(actual.nodes.count == expected.nodes.count)
     for (a, b) in zip(actual.nodes, expected.nodes) {
         #expect(abs(a.x - b.x) <= tolerance)
@@ -106,7 +106,7 @@ func basicMetalThreadBoundariesAndDiscardedOrigins(_ count: Int) async throws {
 @Test func basicPlacementPrecisionAndBankerRounding() async throws {
     guard LayoutExecutor.isMetalAvailable else { return }
     let graph = LayoutGraph()
-    for (i, x) in [-30.0, -10, 10, 30, 50].enumerated() {
+    for (i, x) in [Float(-30.0), -10, 10, 30, 50].enumerated() {
         let n = LayoutNode(id: "\(i)", width: 2, height: 2); n.x = x; graph.addNode(n)
     }
     var c = BasicLayoutConfiguration(); c.horizontalAlignment = .snapToGrid
@@ -181,7 +181,7 @@ func basicMetalThreadBoundariesAndDiscardedOrigins(_ count: Int) async throws {
 @Test func basicSnapBoundaryUsesExplicitPrecisionFailureOrAutomaticCPU() async throws {
     guard LayoutExecutor.isMetalAvailable else { return }
     let graph = LayoutGraph(), node = LayoutNode(id: "near-half", width: 2, height: 2)
-    node.x = 10 + 1e-10; graph.addNode(node)
+    node.x = Float(10).nextUp; graph.addNode(node)
     var c = BasicLayoutConfiguration(); c.horizontalAlignment = .snapToGrid
     let before = node.bounds
     let explicit = BasicLayoutOperation(style: .alignment, backend: .metal, configuration: c)
@@ -196,8 +196,8 @@ func basicMetalThreadBoundariesAndDiscardedOrigins(_ count: Int) async throws {
 @Test func basicAlreadyClearOverlapInputPreservesExactCoordinatesWithoutGPUWork() async throws {
     let graph = LayoutGraph()
     for i in 0..<3 {
-        let node = LayoutNode(id: "clear-\(i)", width: 20 + Double(i), height: 14)
-        node.center = Point(x: 100 + Double(i) * 1e-10, y: Double(i) * 100)
+        let node = LayoutNode(id: "clear-\(i)", width: 20 + Float(i), height: 14)
+        node.center = Point(x: 100 + Float(i) * Float(100).ulp, y: Float(i) * 100)
         graph.addNode(node)
     }
     let before = graph.nodes.map(\.bounds), executor = LayoutExecutor(metalEnabled: false)
@@ -215,7 +215,7 @@ func basicMetalThreadBoundariesAndDiscardedOrigins(_ count: Int) async throws {
         let graph = LayoutGraph()
         for i in 0..<3 {
             let node = LayoutNode(id: "conflict-\(i)", width: 20, height: 14)
-            node.center = Point(x: 100 + Double(i) * 1e-10, y: 100); graph.addNode(node)
+            node.center = Point(x: 100 + Float(i) * Float(100).ulp, y: 100); graph.addNode(node)
         }
         return graph
     }

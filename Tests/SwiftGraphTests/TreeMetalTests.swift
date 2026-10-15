@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import SwiftGraph
 
-private func treeMetalFixture(_ count: Int = 11, cyclic: Bool = false, origin: Double = 0) -> LayoutGraph {
+private func treeMetalFixture(_ count: Int = 11, cyclic: Bool = false, origin: Float = 0) -> LayoutGraph {
     let graph = LayoutGraph()
     for i in 0..<count {
-        let node = LayoutNode(id: "tree-\(i)", width: 20 + Double(i % 4), height: 14 + Double(i % 3), data: i == 2 ? "Assistant" : "value-\(i)")
-        node.x = origin + Double(i) * 2; node.y = origin + Double(i) * 3; graph.addNode(node)
+        let node = LayoutNode(id: "tree-\(i)", width: 20 + Float(i % 4), height: 14 + Float(i % 3), data: i == 2 ? "Assistant" : "value-\(i)")
+        node.x = origin + Float(i) * 2; node.y = origin + Float(i) * 3; graph.addNode(node)
     }
     for i in 1..<max(1, count - 2) { graph.addEdge(LayoutEdge(source: graph.nodes[(i - 1) / 2], target: graph.nodes[i])) }
     if cyclic, count > 3 { graph.addEdge(LayoutEdge(source: graph.nodes[3], target: graph.nodes[0])) }
@@ -15,7 +15,7 @@ private func treeMetalFixture(_ count: Int = 11, cyclic: Bool = false, origin: D
     }
     return graph
 }
-private func expectTreeMetalGeometry(_ actual: LayoutGraph, _ expected: LayoutGraph, tolerance: Double = 0.01) {
+private func expectTreeMetalGeometry(_ actual: LayoutGraph, _ expected: LayoutGraph, tolerance: Float = 0.01) {
     for (a, b) in zip(actual.nodes + [actual.root], expected.nodes + [expected.root]) {
         #expect(abs(a.x - b.x) <= tolerance)
         #expect(abs(a.y - b.y) <= tolerance)
@@ -145,7 +145,7 @@ func treeMetalCommandBoundariesAndDiscardedOrigin(_ count: Int) async throws {
     try await square.applyLayoutAsync(squareGPU)
     expectTreeMetalGeometry(squareGPU, squareCPU)
     #expect(square.lastMetrics?.backend == .metal)
-    c.padding = 100 + 1e-9
+    c.padding = Float(100).nextUp
     let graph = nestedSquare(), before = graph.nodes.map(\.bounds)
     let explicit = TreeLayoutOperation(style: .treeMap, backend: .metal, configuration: c)
     await #expect(throws: LayoutExecutionError.precisionLimit) { try await explicit.applyLayoutAsync(graph) }

@@ -102,8 +102,8 @@ struct MetalRoutingTests {
             #expect(operation.lastMetrics?.backend == .metal)
         }
     }
-    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [0.0, 1e-12, -1e-12, 1e-7, -1e-7])
-    func tangencyNearCollinearityAndDegenerateBoundsKeepExactDecisions(_ offset: Double) async throws {
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [Float(0.0), 1e-12, -1e-12, 1e-7, -1e-7])
+    func tangencyNearCollinearityAndDegenerateBoundsKeepExactDecisions(_ offset: Float) async throws {
         let a = graph(), b = graph()
         for g in [a, b] {
             g.nodes[4].bounds = Rect(x: 120, y: offset, width: 30, height: 30)
@@ -233,7 +233,7 @@ struct MetalRoutingTests {
         let graph = LayoutGraph()
         for r in 0..<rows { for c in 0..<columns {
             let node = LayoutNode(id: "n\(r)-\(c)", width: 12, height: 12)
-            node.center = Point(x: Double(c) * 40, y: Double(r) * 40); graph.addNode(node)
+            node.center = Point(x: Float(c) * 40, y: Float(r) * 40); graph.addNode(node)
         } }
         let last = graph.nodes.count - 1
         graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[last]))
@@ -241,7 +241,7 @@ struct MetalRoutingTests {
             let a = graph.nodes[(i * 7) % graph.nodes.count], b = graph.nodes[(i * 13 + 5) % graph.nodes.count]
             guard a !== b else { continue }
             let edge = LayoutEdge(source: a, target: b)
-            edge.path = (0...segments).map { k in Point(x: a.center.x + Double(k) * 20, y: a.center.y + Double(i % 17) * 3 + (k % 2 == 0 ? 0 : 9)) }
+            edge.path = (0...segments).map { k in Point(x: a.center.x + Float(k) * 20, y: a.center.y + Float(i % 17) * 3 + (k % 2 == 0 ? 0 : 9)) }
             graph.addEdge(edge)
         }
         return graph
@@ -251,12 +251,12 @@ struct MetalRoutingTests {
         // A wall forces a detour; 1,100 distant nodes push the visibility vertices past 4,096 (V² > 64 MiB).
         func walled() -> LayoutGraph {
             let graph = LayoutGraph()
-            for (id, x, y, w, h) in [("s", 0.0, 0.0, 20.0, 20.0), ("t", 300, 0, 20, 20), ("wall", 150, -150, 20, 320)] {
+            for (id, x, y, w, h) in [("s", Float(0.0), Float(0.0), Float(20.0), Float(20.0)), ("t", 300, 0, 20, 20), ("wall", 150, -150, 20, 320)] {
                 let node = LayoutNode(id: id, width: w, height: h); node.x = x; node.y = y; graph.addNode(node)
             }
             for i in 0..<1_100 {
                 let node = LayoutNode(id: "far\(i)", width: 10, height: 10)
-                node.x = 5_000 + Double(i % 40) * 30; node.y = Double(i / 40) * 30; graph.addNode(node)
+                node.x = 5_000 + Float(i % 40) * 30; node.y = Float(i / 40) * 30; graph.addNode(node)
             }
             graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1]))
             return graph
@@ -286,8 +286,8 @@ struct MetalRoutingTests {
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable))
     func hitsChunkLongPathsAndAgreeWithTheCPUPredicate() throws {
         let compute = RoutingCompute(solver: try MetalForceSolver(), tolerance: 1e-3, statisticsChanged: {})
-        let path = (0...5_000).map { Point(x: Double($0) * 3, y: $0 % 2 == 0 ? 0 : 10) }
-        let obstacles = (0..<4_200).map { Rect(x: Double($0) * 3.5, y: 4, width: 1, height: 2) }
+        let path = (0...5_000).map { Point(x: Float($0) * 3, y: $0 % 2 == 0 ? 0 : 10) }
+        let obstacles = (0..<4_200).map { Rect(x: Float($0) * 3.5, y: 4, width: 1, height: 2) }
         let expected = Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0.0, $0.1) } })
         #expect(path.count - 1 > 4_096 && !expected.isEmpty)
         #expect(compute.hits(path, obstacles) == expected)

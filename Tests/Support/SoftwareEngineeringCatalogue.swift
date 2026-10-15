@@ -51,9 +51,9 @@ extension VisualCatalogue {
     }
 
     @discardableResult
-    private static func addLeaf(_ graph: LayoutGraph, _ id: String, name: String? = nil, width: Double = 104, height: Double = 36, parent: LayoutNode? = nil) throws -> LayoutNode {
+    private static func addLeaf(_ graph: LayoutGraph, _ id: String, name: String? = nil, width: Float = 104, height: Float = 36, parent: LayoutNode? = nil) throws -> LayoutNode {
         let label = name ?? id
-        let minWidth = (Double(label.count) * 7.0 + 14).rounded(.up)
+        let minWidth = (Float(label.count) * 7.0 + 14).rounded(.up)
         let node = LayoutNode(id: id, width: max(width, minWidth), height: height)
         node.name = label
         try graph.addNode(node, to: parent)
@@ -61,7 +61,7 @@ extension VisualCatalogue {
     }
 
     @discardableResult
-    private static func addFrame(_ graph: LayoutGraph, _ id: String, title: String? = nil, parent: LayoutNode? = nil, headerWidth: Double = 180, minSize: Size = Size(), padding: LayoutInsets = LayoutInsets(20)) throws -> LayoutNode {
+    private static func addFrame(_ graph: LayoutGraph, _ id: String, title: String? = nil, parent: LayoutNode? = nil, headerWidth: Float = 180, minSize: Size = Size(), padding: LayoutInsets = LayoutInsets(20)) throws -> LayoutNode {
         let group = try graph.addGroup(id: id, parent: parent, frame: GroupFrameOptions(padding: padding, headerSize: Size(width: headerWidth, height: 26), minimumSize: minSize))
         group.name = title ?? id
         return group
@@ -185,8 +185,8 @@ extension VisualCatalogue {
                 let serviceNames = ["Gateway", "Identity", "Catalog", "Cart", "Checkout", "Ledger", "Shipping", "Search", "Recommend", "Notify"]
                 var aServices: [LayoutNode] = [], bServices: [LayoutNode] = []
                 for (i, sName) in serviceNames.enumerated() {
-                    let na = try addLeaf(g, "aza-\(sName.lowercased())", name: "\(sName)-A", width: 96 + Double(i % 3) * 12, height: 34, parent: subAApp)
-                    let nb = try addLeaf(g, "azb-\(sName.lowercased())", name: "\(sName)-B", width: 96 + Double(i % 3) * 12, height: 34, parent: subBApp)
+                    let na = try addLeaf(g, "aza-\(sName.lowercased())", name: "\(sName)-A", width: 96 + Float(i % 3) * 12, height: 34, parent: subAApp)
+                    let nb = try addLeaf(g, "azb-\(sName.lowercased())", name: "\(sName)-B", width: 96 + Float(i % 3) * 12, height: 34, parent: subBApp)
                     aServices.append(na); bServices.append(nb)
                 }
                 for i in 0..<3 {
@@ -272,13 +272,13 @@ extension VisualCatalogue {
 
                     var apiNodes: [LayoutNode] = []
                     for i in 0..<8 {
-                        let n = try addLeaf(g, "d\(dIdx)-api-\(i)", name: "\(domain.prefix(4))-API-\(i)", width: 92 + Double(i % 3) * 10, height: 32, parent: apiFrame)
+                        let n = try addLeaf(g, "d\(dIdx)-api-\(i)", name: "\(domain.prefix(4))-API-\(i)", width: 92 + Float(i % 3) * 10, height: 32, parent: apiFrame)
                         apiNodes.append(n)
                         if i > 0 { link(g, apiNodes[(i - 1) / 2], n) }
                     }
                     var workerNodes: [LayoutNode] = []
                     for i in 0..<12 {
-                        let n = try addLeaf(g, "d\(dIdx)-wrk-\(i)", name: "\(domain.prefix(4))-Wrk-\(i)", width: 90 + Double(i % 2) * 14, height: 32, parent: workerFrame)
+                        let n = try addLeaf(g, "d\(dIdx)-wrk-\(i)", name: "\(domain.prefix(4))-Wrk-\(i)", width: 90 + Float(i % 2) * 14, height: 32, parent: workerFrame)
                         workerNodes.append(n)
                         if i > 0 { link(g, workerNodes[(i - 1) / 3], n) }
                         if i > 3 && i % 4 == 0 { link(g, workerNodes[i - 2], n) }
@@ -350,7 +350,7 @@ extension VisualCatalogue {
                 smoke: true
             ) {
                 let g = LayoutGraph()
-                let specs: [(String, Double, Double)] = [
+                let specs: [(String, Float, Float)] = [
                     ("AppTarget", 110, 38), ("FeatureAuth", 114, 36), ("FeatureFeed", 114, 36), ("FeatureSearch", 120, 36),
                     ("UIComponents", 122, 36), ("DomainCore", 116, 38), ("LegacyBridge", 118, 36), ("NetworkClient", 120, 36),
                     ("CacheStore", 108, 34), ("AnalyticsSDK", 116, 34), ("CoreModels", 108, 36), ("LoggerCore", 106, 36),
@@ -358,7 +358,7 @@ extension VisualCatalogue {
                 ]
                 for (id, w, h) in specs { try addLeaf(g, id, width: w, height: h) }
                 let byID = Dictionary(uniqueKeysWithValues: g.nodes.map { ($0.id, $0) })
-                let pairs: [(String, String, Double)] = [
+                let pairs: [(String, String, Float)] = [
                     ("AppTarget", "FeatureAuth", 2.5), ("AppTarget", "FeatureFeed", 2.5), ("AppTarget", "FeatureSearch", 2.0),
                     ("FeatureAuth", "UIComponents", 1.5), ("FeatureFeed", "UIComponents", 1.5), ("FeatureSearch", "UIComponents", 1.5),
                     ("FeatureAuth", "DomainCore", 2.0), ("FeatureFeed", "DomainCore", 2.0), ("FeatureSearch", "DomainCore", 2.0),
@@ -372,7 +372,7 @@ extension VisualCatalogue {
                     ("NetworkClient", "LoggerCore", 1.2), ("CacheStore", "LoggerCore", 1.2), ("AnalyticsSDK", "LoggerCore", 1.2),
                     ("PluginHost", "PluginAPI", 1.8), ("PluginAPI", "CoreModels", 1.5)
                 ]
-                var widths: [Double] = []
+                var widths: [Float] = []
                 for (s, t, w) in pairs { link(g, byID[s]!, byID[t]!); widths.append(w) }
                 var config = DirectedLayoutConfiguration(); config.edgeWidths = widths
                 let diag: DirectedLayoutDiagnostics
@@ -441,7 +441,7 @@ extension VisualCatalogue {
                 }
                 return VisualDrawing(
                     graph: g,
-                    reportedMetrics: ["scaleTier": 2, "godNodeHeight": god.height, "crossings": Double(diag.crossings), "bends": Double(diag.bends)],
+                    reportedMetrics: ["scaleTier": 2, "godNodeHeight": Double(god.height), "crossings": Double(diag.crossings), "bends": Double(diag.bends)],
                     notes: ["Medium 56-node OOP class diagram where 18 classes reference ServiceLocator, testing dynamic port-capacity expansion and multi-component packing."]
                 )
             },
@@ -459,7 +459,7 @@ extension VisualCatalogue {
                 for (lIdx, lName) in layerNames.enumerated() {
                     var row: [LayoutNode] = []
                     for i in 0..<25 {
-                        let n = try addLeaf(g, "L\(lIdx)-\(lName)-\(i)", name: "\(lName.prefix(4))Mod\(i)", width: 88 + Double((lIdx + i) % 3) * 14, height: 32)
+                        let n = try addLeaf(g, "L\(lIdx)-\(lName)-\(i)", name: "\(lName.prefix(4))Mod\(i)", width: 88 + Float((lIdx + i) % 3) * 14, height: 32)
                         row.append(n)
                     }
                     layers.append(row)
@@ -529,7 +529,7 @@ extension VisualCatalogue {
                     "skipTrivia", "emitDiagnostic"
                 ]
                 for (i, fn) in funcs.enumerated() {
-                    try addLeaf(g, fn, name: fn + "()", width: 132 + Double(i % 3) * 14, height: 34)
+                    try addLeaf(g, fn, name: fn + "()", width: 132 + Float(i % 3) * 14, height: 34)
                 }
                 let byID = Dictionary(uniqueKeysWithValues: g.nodes.map { ($0.id, $0) })
                 let calls: [(String, String)] = [
@@ -610,7 +610,7 @@ extension VisualCatalogue {
                         .transform { graph in
                             for node in graph.nodes {
                                 let pr = node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0
-                                let scale = min(1.85, 1.0 + 3.5 * pr)
+                                let scale = Float(min(1.85, 1.0 + 3.5 * pr))
                                 node.width = (node.width * scale).rounded()
                                 node.height = (node.height * scale).rounded()
                             }
@@ -630,7 +630,7 @@ extension VisualCatalogue {
                         .transform { graph in
                             for node in graph.nodes {
                                 let pr = node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0
-                                let scale = min(1.85, 1.0 + 3.5 * pr)
+                                let scale = Float(min(1.85, 1.0 + 3.5 * pr))
                                 node.width = (node.width * scale).rounded()
                                 node.height = (node.height * scale).rounded()
                             }
@@ -646,7 +646,7 @@ extension VisualCatalogue {
                 }
                 return VisualDrawing(
                     graph: g,
-                    reportedMetrics: ["scaleTier": 2, "stageCount": Double(stages.count), "maxNodeWidth": g.nodes.map(\.width).max() ?? 0],
+                    reportedMetrics: ["scaleTier": 2, "stageCount": Double(stages.count), "maxNodeWidth": Double(g.nodes.map(\.width).max() ?? 0)],
                     notes: ["52-node distributed trace call graph where node dimensions scale with PageRank centrality (highlighting hot-path dispatchers and telemetry sinks)."]
                 )
             },
@@ -664,7 +664,7 @@ extension VisualCatalogue {
                 for sub in subsystems {
                     var group: [LayoutNode] = []
                     for i in 0..<36 {
-                        let n = try addLeaf(g, "\(sub)-\(i)", name: "\(sub.prefix(6))::fn\(i)", width: 92 + Double(i % 3) * 10, height: 30)
+                        let n = try addLeaf(g, "\(sub)-\(i)", name: "\(sub.prefix(6))::fn\(i)", width: 92 + Float(i % 3) * 10, height: 30)
                         group.append(n)
                         if i > 0 {
                             link(g, group[(i - 1) / 2], n)
@@ -856,7 +856,7 @@ extension VisualCatalogue {
                     superFrames.append(frame)
                     var sub: [LayoutNode] = []
                     for i in 0..<25 {
-                        let st = try addLeaf(g, "st-\(sIdx)-\(i)", name: "\(sName.prefix(5))_S\(i)", width: 94 + Double(i % 3) * 10, height: 32, parent: frame)
+                        let st = try addLeaf(g, "st-\(sIdx)-\(i)", name: "\(sName.prefix(5))_S\(i)", width: 94 + Float(i % 3) * 10, height: 32, parent: frame)
                         sub.append(st)
                         if i > 0 {
                             link(g, sub[(i - 1) / 3], st)
@@ -1118,7 +1118,7 @@ extension VisualCatalogue {
             ) {
                 let g = LayoutGraph()
                 // Tall boxes simulate database tables with varying numbers of columns
-                let tables: [(String, Double, Double)] = [
+                let tables: [(String, Float, Float)] = [
                     ("users", 128, 72), ("roles", 112, 48), ("user_roles", 118, 44),
                     ("addresses", 128, 68), ("categories", 124, 56), ("products", 132, 78),
                     ("inventory_lots", 130, 58), ("carts", 116, 52), ("cart_items", 122, 54),
@@ -1177,7 +1177,7 @@ extension VisualCatalogue {
                 for (mIdx, mod) in modules.enumerated() {
                     var tables: [LayoutNode] = []
                     for i in 0..<8 {
-                        let h = 42.0 + Double((mIdx + i) % 4) * 14.0
+                        let h: Float = 42.0 + Float((mIdx + i) % 4) * 14.0
                         let n = try addLeaf(g, "\(mod.lowercased())_tbl_\(i)", name: "\(mod)_T\(i)", width: 118, height: h)
                         tables.append(n)
                         if i > 0 { link(g, tables[i], tables[(i - 1) / 2]) }
@@ -1237,7 +1237,7 @@ extension VisualCatalogue {
                 var hubs: [LayoutNode] = []
                 for (i, hName) in hubNames.enumerated() {
                     let h = try addLeaf(g, "hub-\(i)", name: hName, width: 132, height: 42)
-                    let angle = 2.0 * Double.pi * Double(i) / Double(hubNames.count)
+                    let angle = Float(2.0 * Double.pi * Double(i) / Double(hubNames.count))
                     h.center = Point(x: 420 * cos(angle), y: 420 * sin(angle))
                     h.metadata[GraphMetadataKeys.fixed] = true
                     hubs.append(h)
@@ -1247,9 +1247,9 @@ extension VisualCatalogue {
                 var satellites: [LayoutNode] = []
                 for i in 0..<155 {
                     let hubIdx = i % hubs.count
-                    let sat = try addLeaf(g, "ont-\(i)", name: "Concept_\(i)", width: 88 + Double(i % 3) * 10, height: 30)
-                    let baseAngle = 2.0 * Double.pi * Double(hubIdx) / Double(hubNames.count) + Double(i / 5) * 0.18
-                    let radius = 180.0 + Double(i % 7) * 65.0
+                    let sat = try addLeaf(g, "ont-\(i)", name: "Concept_\(i)", width: 88 + Float(i % 3) * 10, height: 30)
+                    let baseAngle = Float(2.0 * Double.pi * Double(hubIdx) / Double(hubNames.count) + Double(i / 5) * 0.18)
+                    let radius: Float = 180.0 + Float(i % 7) * 65.0
                     sat.center = Point(x: radius * cos(baseAngle), y: radius * sin(baseAngle))
                     sat.metadata[GraphMetadataKeys.layoutSubset] = true
                     satellites.append(sat)
@@ -1298,7 +1298,7 @@ extension VisualCatalogue {
             ) {
                 let g = LayoutGraph()
                 for i in 0..<32 {
-                    try addLeaf(g, "base-svc-\(i)", name: "CoreSvc-\(i)", width: 102 + Double(i % 3) * 12, height: 34)
+                    try addLeaf(g, "base-svc-\(i)", name: "CoreSvc-\(i)", width: 102 + Float(i % 3) * 12, height: 34)
                 }
                 for i in 1..<32 {
                     link(g, g.nodes[(i - 1) / 2], g.nodes[i])
@@ -1338,7 +1338,7 @@ extension VisualCatalogue {
                     graph: g,
                     previousBounds: priorBounds,
                     fixedCenters: priorBounds.mapValues(\.center),
-                    reportedMetrics: ["scaleTier": 2, "fixedNodes": 32, "insertedNodes": 13, "displacement": diag.displacement, "crossings": Double(diag.crossings)],
+                    reportedMetrics: ["scaleTier": 2, "fixedNodes": 32, "insertedNodes": 13, "displacement": Double(diag.displacement), "crossings": Double(diag.crossings)],
                     notes: ["Interactive architecture expansion: 32 baseline nodes remain strictly pinned at their prior coordinates while 13 expanded pods slot into free corridors."]
                 )
             },
@@ -1358,7 +1358,7 @@ extension VisualCatalogue {
                     var rNodes: [LayoutNode] = []
                     for col in 0..<6 {
                         let n = try addLeaf(g, "rack-r\(row)-c\(col)", name: "Rack[\(row),\(col)]", width: 110, height: 42)
-                        n.center = Point(x: Double(col) * 210, y: Double(row) * 130)
+                        n.center = Point(x: Float(col) * 210, y: Float(row) * 130)
                         fixedCenters[n.id] = n.center
                         rNodes.append(n)
                     }
@@ -1368,12 +1368,12 @@ extension VisualCatalogue {
                 var leftGateways: [LayoutNode] = [], rightSinks: [LayoutNode] = []
                 for i in 0..<6 {
                     let lg = try addLeaf(g, "ingress-\(i)", name: "IngressGW-\(i)", width: 116, height: 36)
-                    lg.center = Point(x: -240, y: Double(i) * 104 - 20)
+                    lg.center = Point(x: -240, y: Float(i) * 104 - 20)
                     fixedCenters[lg.id] = lg.center
                     leftGateways.append(lg)
 
                     let rs = try addLeaf(g, "egress-\(i)", name: "EgressSink-\(i)", width: 116, height: 36)
-                    rs.center = Point(x: 6.0 * 210 + 30, y: Double(i) * 104 - 20)
+                    rs.center = Point(x: 6.0 * 210 + 30, y: Float(i) * 104 - 20)
                     fixedCenters[rs.id] = rs.center
                     rightSinks.append(rs)
                 }
@@ -1439,7 +1439,7 @@ extension VisualCatalogue {
                 for (cIdx, count) in componentSizes.enumerated() {
                     var compNodes: [LayoutNode] = []
                     for i in 0..<count {
-                        let n = try addLeaf(g, "fleet\(cIdx)-mod\(i)", name: "App\(cIdx)·M\(i)", width: 92 + Double(i % 3) * 12, height: 32)
+                        let n = try addLeaf(g, "fleet\(cIdx)-mod\(i)", name: "App\(cIdx)·M\(i)", width: 92 + Float(i % 3) * 12, height: 32)
                         compNodes.append(n)
                         if i > 0 {
                             link(g, compNodes[(i - 1) / 2], n)

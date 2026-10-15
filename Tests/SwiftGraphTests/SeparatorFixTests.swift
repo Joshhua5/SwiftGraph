@@ -8,11 +8,11 @@ import Testing
         mutating func next() -> UInt64 { s = s &* 6364136223846793005 &+ 1442695040888963407; return s ^ (s >> 29) }
     }
     private static func crosses(_ a: Point, _ b: Point, _ c: Point, _ d: Point) -> Bool {
-        func x(_ p: Point, _ q: Point) -> Double { p.x * q.y - p.y * q.x }
+        func x(_ p: Point, _ q: Point) -> Float { p.x * q.y - p.y * q.x }
         let u = b - a, v = d - c, den = x(u, v)
-        guard abs(den) > 1e-9 * u.length * v.length else { return false }
+        guard abs(den) > 1e-5 * u.length * v.length else { return false }
         let t = x(c - a, v) / den, s = x(c - a, u) / den
-        return t > 1e-9 && t < 1 - 1e-9 && s > 1e-9 && s < 1 - 1e-9
+        return t > 1e-5 && t < 1 - 1e-5 && s > 1e-5 && s < 1 - 1e-5
     }
     private static func crossings(_ p: [Point], _ q: [Point]) -> Int {
         zip(p, p.dropFirst()).reduce(0) { n, a in n + zip(q, q.dropFirst()).filter { crosses(a.0, a.1, $0, $1) }.count }
@@ -30,22 +30,22 @@ import Testing
             return u.x * v.x + u.y * v.y < -0.866 * u.length * v.length
         }.count
     }
-    private static func distance(_ p: Point, _ a: Point, _ b: Point) -> Double {
+    private static func distance(_ p: Point, _ a: Point, _ b: Point) -> Float {
         let u = b - a, l2 = u.x * u.x + u.y * u.y
-        let t = l2 > 1e-12 ? min(1, max(0, ((p - a).x * u.x + (p - a).y * u.y) / l2)) : 0
+        let t = l2 > 1e-6 ? min(1, max(0, ((p - a).x * u.x + (p - a).y * u.y) / l2)) : 0
         return (p - (a + u * t)).length
     }
 
     struct Report {
         var selfCrossingEdges = 0, newSelfCrossing = 0, reversals = 0, newReversals = 0
-        var pairCrossings = 0, newPairCrossings = 0, maxDisplacement = 0.0, newNodeHits = 0, widestGroup = 0, unseparated = 0
+        var pairCrossings = 0, newPairCrossings = 0, maxDisplacement: Float = 0.0, newNodeHits = 0, widestGroup = 0, unseparated = 0
     }
 
     /// Routes a seeded random graph with reciprocal pairs, separates it, and compares every edge with its raw route.
     private static func stress(_ n: Int, _ m: Int, seed: UInt64, orgChart: Bool) async throws -> Report {
         var rng = RNG(s: seed)
         let g = LayoutGraph()
-        let nodes = (0..<n).map { i in LayoutNode(id: "n\(i)", width: Double(Int.random(in: 30...120, using: &rng)), height: Double(Int.random(in: 20...60, using: &rng))) }
+        let nodes = (0..<n).map { i in LayoutNode(id: "n\(i)", width: Float(Int.random(in: 30...120, using: &rng)), height: Float(Int.random(in: 20...60, using: &rng))) }
         nodes.forEach(g.addNode)
         for _ in 0..<m { g.addEdge(LayoutEdge(source: nodes[Int.random(in: 0..<n, using: &rng)], target: nodes[Int.random(in: 0..<n, using: &rng)])) }
         for _ in 0..<(m / 10) {
@@ -55,7 +55,7 @@ import Testing
         if orgChart { try await LayoutBuilder.create(g).useOrgChart { $0.siblingDistance = 40; $0.layerDistance = 80 }.applyAsync() }
         else {
             let cols = Int(Double(n).squareRoot().rounded(.up))
-            for (i, node) in nodes.enumerated() { node.x = Double(i % cols) * 150 + Double(Int.random(in: 0..<40, using: &rng)); node.y = Double(i / cols) * 110 + Double(Int.random(in: 0..<40, using: &rng)) }
+            for (i, node) in nodes.enumerated() { node.x = Float(i % cols) * 150 + Float(Int.random(in: 0..<40, using: &rng)); node.y = Float(i / cols) * 110 + Float(Int.random(in: 0..<40, using: &rng)) }
         }
         let router = PolylineEdgeRouter(); router.edgeSpacing = 0; router.routeEdges(g)
         let raw = g.edges.map(\.path)
@@ -102,7 +102,7 @@ import Testing
     @Test func shortBendNextToSharedRunDoesNotSpike() {
         // The first run is shared and moves a lane; the second is a short, shallow continuation that stays put.
         // The unclamped mitre of the two shifted lines lands past the end of the short run and doubles back.
-        for sign in [1.0, -1.0] { for swapped in [false, true] {
+        for sign: Float in [1.0, -1.0] { for swapped in [false, true] {
             var paths = [[Point(x: 0, y: 0), Point(x: 100, y: 0), Point(x: 110, y: 3 * sign)], [Point(x: 0, y: 0), Point(x: 100, y: 0), Point(x: 100, y: 50)]]
             if swapped { paths.reverse() }
             let g = graph(paths), before = g.edges.map(\.path)
@@ -120,7 +120,7 @@ import Testing
         let separator = EdgeSeparator(); separator.routeEdges(g)
         let ys = g.edges.map { $0.path[0].y }
         #expect(separator.widestGroup == 2 && separator.unseparatedEdges.isEmpty)
-        #expect(abs(ys[0] - ys[1]) < 1e-9 && abs(ys[0] - ys[2]) >= 1, "\(ys)")
+        #expect(abs(ys[0] - ys[1]) < 1e-4 && abs(ys[0] - ys[2]) >= 1, "\(ys)")
     }
 
     @Test(arguments: [(40, 120, true, 2), (40, 120, false, 2), (80, 300, true, 1), (80, 300, false, 1)])
@@ -129,7 +129,7 @@ import Testing
             let r = try await Self.stress(n, m, seed: UInt64(seed), orgChart: orgChart)
             let label = "\(n)/\(m) \(orgChart ? "org" : "grid") seed \(seed): \(r)"
             #expect(r.newSelfCrossing == 0 && r.newReversals == 0 && r.newPairCrossings == 0 && r.newNodeHits == 0, "\(label)")
-            #expect(r.maxDisplacement <= Double(r.widestGroup) * 10, "\(label)")
+            #expect(r.maxDisplacement <= Float(r.widestGroup) * 10, "\(label)")
         }
     }
 }

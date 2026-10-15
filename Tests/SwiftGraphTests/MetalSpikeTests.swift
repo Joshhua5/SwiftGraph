@@ -5,14 +5,14 @@ import Testing
 private func fixture(_ count: Int = 12) -> LayoutGraph {
     let graph = LayoutGraph()
     for i in 0..<count {
-        let n = LayoutNode(id: "\(i)", width: 30 + Double(i % 3), height: 20 + Double(i % 5))
-        n.center = Point(x: Double((i * 137 + 11) % 337), y: Double((i * 71 + 23) % 331))
+        let n = LayoutNode(id: "\(i)", width: 30 + Float(i % 3), height: 20 + Float(i % 5))
+        n.center = Point(x: Float((i * 137 + 11) % 337), y: Float((i * 71 + 23) % 331))
         n.data = "payload-\(i)"; graph.addNode(n)
     }
     for i in 1..<count { graph.addEdge(LayoutEdge(source: graph.nodes[(i - 1) / 2], target: graph.nodes[i])) }
     return graph
 }
-private func close(_ a: Point, _ b: Point, tolerance: Double = 0.002) -> Bool { (a - b).length < tolerance }
+private func close(_ a: Point, _ b: Point, tolerance: Float = 0.002) -> Bool { (a - b).length < tolerance }
 
 @Test func geometryAndOwnership() {
     let rect = Rect(x: 10, y: 20, width: 30, height: 40)
@@ -82,7 +82,7 @@ func pinsAndSubsetAreExact(_ backend: OrganicBackend) throws {
 
 @Test func exactPairAndCutoff() throws {
     let graph = LayoutGraph()
-    for x in [0.0, 100.0] { let n = LayoutNode(id: "\(x)", width: 10, height: 10); n.center = Point(x: x, y: 0); graph.addNode(n) }
+    for x in [Float(0.0), 100.0] { let n = LayoutNode(id: "\(x)", width: 10, height: 10); n.center = Point(x: x, y: 0); graph.addNode(n) }
     var state = try ForceState(graph, scope: .all, scatter: false)
     let parameters = ForceParameters(repulsionSquared: 1_000, attraction: 0)
     let result = try cpuStep(state, parameters: parameters, temperature: 100, theta: nil)
