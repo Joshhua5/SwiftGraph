@@ -50,6 +50,7 @@ public final class TreeLayoutAlgorithm: LayoutAlgorithm {
             cursor += nodeSeparation * 2
             try Task.checkCancellation()
         }
+        packForest(a.nodes, components: f.components, spacing: max(20, nodeSeparation))
         straightEdges(graph)
     }
 }
@@ -107,7 +108,6 @@ public final class RadialTreeLayoutAlgorithm: LayoutAlgorithm {
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
         let a = Adjacency(graph), f = Forest(a)
-        var cursor: Float = 0.0
         for root in f.roots {
             var indices: [Int] = [], angles = Array(repeating: 0.0, count: a.nodes.count)
             var stack = [(root, 0.0, 2 * Double.pi)]
@@ -117,12 +117,10 @@ public final class RadialTreeLayoutAlgorithm: LayoutAlgorithm {
                 for (j, child) in children.enumerated().reversed() { stack.append((child, start + Double(j) * sweep, start + Double(j + 1) * sweep)) }
             }
             let component = indices.map { a.nodes[$0] }
-            try placeRadialRings(component, depth: indices.map { f.depth[$0] }, angles: indices.map { angles[$0] }, minimumStep: layerDistance)
-            let bounds = enclosingBounds(component)
-            for node in component { node.x += cursor - bounds.x }
-            cursor += bounds.width + (layerDistance.isFinite ? max(20, layerDistance) : 100)
+            try placeRadialRings(component, depth: indices.map { f.depth[$0] }, angles: indices.map { angles[$0] }, minimumStep: layerDistance, compactDepths: true)
             try Task.checkCancellation()
         }
+        packForest(a.nodes, components: f.components, spacing: layerDistance.isFinite ? max(20, layerDistance) : 100)
         straightEdges(graph)
         ObstaclePolyline.repair(graph)
         try Task.checkCancellation()
@@ -170,18 +168,25 @@ public final class OrgChartLayoutAlgorithm: LayoutAlgorithm {
         try Task.checkCancellation()
         let a = Adjacency(graph), f = Forest(a)
         let assistant = a.nodes.map { ($0.data as? String)?.lowercased() == "assistant" }
-        var ys = Array(repeating: Float(0.0), count: a.nodes.count), cursor: Float = 0.0
+        var depths = Array(repeating: -1, count: a.nodes.count), pending = f.roots
+        for root in f.roots { depths[root] = 0 }
+        while let i = pending.popLast() {
+            let step = f.children[i].contains { assistant[$0] } ? 2 : 1
+            for child in f.children[i] where !assistant[child] { depths[child] = depths[i] + step; pending.append(child) }
+        }
+        let levels = orgChartLevelOffsets(a.nodes, depths: depths, minimum: layerDistance)
+        var cursor: Float = 0.0
         for root in f.roots {
             var stack = [(root, false)]
             while let (i, post) = stack.popLast() {
                 let regular = f.children[i].filter { !assistant[$0] }, assistants = f.children[i].filter { assistant[$0] }
                 if !post {
                     stack.append((i, true))
-                    for child in regular.reversed() { ys[child] = ys[i] + (assistants.isEmpty ? 1 : 2) * layerDistance; stack.append((child, false)) }
+                    for child in regular.reversed() { stack.append((child, false)) }
                     continue
                 }
                 let node = a.nodes[i]
-                node.y = ys[i]
+                node.y = levels[depths[i]]
                 if let first = regular.first, let last = regular.last { node.x = (a.nodes[first].center.x + a.nodes[last].center.x) / 2 - node.width / 2 }
                 else { node.x = cursor; cursor += node.width }
                 cursor = max(cursor, node.bounds.right)
@@ -194,6 +199,7 @@ public final class OrgChartLayoutAlgorithm: LayoutAlgorithm {
             }
             try Task.checkCancellation()
         }
+        packForest(a.nodes, components: f.components, spacing: max(20, siblingDistance))
         straightEdges(graph)
     }
 }
@@ -235,16 +241,17 @@ public final class TreeMapLayoutAlgorithm: LayoutAlgorithm {
 }
 
 /// Circumscribed node circles provide clearance both within and between rings.
-private func placeRadialRings(_ nodes: [LayoutNode], depth: [Int], angles inputAngles: [Double], minimumStep: Float) throws {
+private func placeRadialRings(_ nodes: [LayoutNode], depth: [Int], angles inputAngles: [Double], minimumStep: Float, compactDepths: Bool = false) throws {
     guard let maximumDepth = depth.max() else { return }
     let step: Float = minimumStep.isFinite ? max(0, minimumStep) : 100
     var previousRadius: Float = 0.0, previousHalf: Float = 0.0, angles = inputAngles
+    var placed: [Rect] = []
     for d in 0...maximumDepth {
         try Task.checkCancellation()
         let ring = nodes.indices.filter { depth[$0] == d }
         guard !ring.isEmpty else { continue }
         let half = ring.map { hypot(nodes[$0].width, nodes[$0].height) / 2 }.max()!
-        var radius: Float = d == 0 ? 0 : previousRadius + max(step, previousHalf + half + 20)
+        var radius: Float = d == 0 ? 0 : previousRadius + (compactDepths ? step : max(step, previousHalf + half + 20))
         // Extremely deep sectors can collapse at floating-point precision.
         if ring.count > 1 && ring.enumerated().contains(where: { offset, i in
             ring.dropFirst(offset + 1).contains { abs(sin((angles[i] - angles[$0]) / 2)) < 1e-12 }
@@ -258,7 +265,9 @@ private func placeRadialRings(_ nodes: [LayoutNode], depth: [Int], angles inputA
                 radius = max(radius, distance / chord)
             }
         }
+        if compactDepths { radius = fittedRadialDepth(ring.map { nodes[$0] }, angles: ring.map { angles[$0] }, previous: placed, minimum: radius) }
         for i in ring { nodes[i].center = Point(x: radius * Float(cos(angles[i])), y: radius * Float(sin(angles[i]))) }
+        placed += ring.map { nodes[$0].bounds }
         previousRadius = radius; previousHalf = half
     }
 }

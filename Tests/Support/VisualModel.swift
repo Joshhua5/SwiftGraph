@@ -262,8 +262,10 @@ enum VisualGeometry {
         }
         if snapshot.contracts.framedGroups {
             func contains(_ outer: Rect, _ inner: Rect) -> Bool {
-                inner.left >= outer.left - epsilon && inner.right <= outer.right + epsilon &&
-                inner.top >= outer.top - epsilon && inner.bottom <= outer.bottom + epsilon
+                let magnitude = [outer.left, outer.right, outer.top, outer.bottom, inner.left, inner.right, inner.top, inner.bottom].map(abs).max() ?? 0
+                let allowance = max(epsilon, magnitude.ulp * 4)
+                return inner.left >= outer.left - allowance && inner.right <= outer.right + allowance &&
+                inner.top >= outer.top - allowance && inner.bottom <= outer.bottom + allowance
             }
             for node in nodes {
                 if let parent = node.parent.flatMap({ byID[$0] }), let content = parent.contentBounds,

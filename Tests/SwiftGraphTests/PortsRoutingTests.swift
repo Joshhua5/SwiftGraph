@@ -68,9 +68,13 @@ import Testing
         #expect(zip(e.path, e.path.dropFirst()).allSatisfy { ($1 - $0).length >= 4 })
     }
 
-    @Test func enterpriseArchitectureSeparatesOnce() {
-        // page rank, layout, BSP, self-loops, clip, ports: BSP already separates its lanes.
-        #expect(LayoutBuilder.create(VisualGraphs.graph()).applyEnterpriseArchitecture().pipelineLength == 6)
+    @Test func enterpriseArchitectureFinishesRoutesInsideItsContainerPass() async throws {
+        let graph = VisualGraphs.graph()
+        try await LayoutBuilder.create(graph).applyEnterpriseArchitecture().applyAsync()
+        #expect(graph.edges.allSatisfy { $0.path.count >= 2 })
+        #expect(graph.edges.filter { $0.source !== $0.target }.allSatisfy {
+            ObstaclePolyline.clear($0.path, ObstaclePolyline.obstacles($0, graph))
+        })
     }
 
     // MARK: B1

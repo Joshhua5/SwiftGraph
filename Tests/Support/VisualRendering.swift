@@ -50,10 +50,6 @@ struct VisualScene {
         }
         for group in groups {
             primitives.append(.box(group.bounds, fill: tint == nil ? "#f1f5f9" : "none", stroke: tint ?? "#94a3b8", width: 1))
-            let header = group.headerBounds ?? Rect(x: group.bounds.x + 4, y: group.bounds.y + 2, width: max(1, group.bounds.width - 8), height: 16)
-            if header.height > 0 {
-                primitives.append(.text(group.name, header, size: 11, color: tint ?? "#475569"))
-            }
         }
         var drawnSegments: [(Point, Point)] = []
         for (i, edge) in snapshot.edges.enumerated() where edge.path.count >= 2 {
@@ -89,6 +85,13 @@ struct VisualScene {
                 primitives.append(.polygon([start, base + side, base - side], color: color))
             }
             if crossingJumps { drawnSegments.append(contentsOf: segs) }
+        }
+        // Text remains legible over route antialiasing; header clearance is enforced by routing.
+        for group in groups {
+            let header = group.headerBounds ?? Rect(x: group.bounds.x + 4, y: group.bounds.y + 2, width: max(1, group.bounds.width - 8), height: 16)
+            if header.height > 0 {
+                primitives.append(.text(group.name, header, size: 11, color: tint ?? "#475569"))
+            }
         }
         for node in snapshot.nodes where !node.group {
             primitives.append(.box(node.bounds, fill: tint == nil ? "#ffffff" : "none", stroke: tint ?? "#334155", width: 1.5))

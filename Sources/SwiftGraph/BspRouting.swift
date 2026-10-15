@@ -6,6 +6,7 @@ import Foundation
 /// constraints and candidates choose the sides; without them, a graph whose edges mostly run one way prefers leaving
 /// on the downstream side and entering on the upstream one. Edges with no route through the partition are retried
 /// without port constraints, then drawn as an obstacle-aware polyline or an orthogonal L/Z, and reported.
+/// Unusually long partition routes are compared with a finer channel route before lane separation.
 public final class BspEdgeRouter: EdgeRouter {
     /// Clearance between the outermost nodes and the outer routing frame.
     public var margin: Float = 20
@@ -24,18 +25,32 @@ public final class BspEdgeRouter: EdgeRouter {
         let frame = segments.count >= 4 ? Rect(x: segments[0].start.x, y: segments[0].start.y,
                                                 width: segments[0].end.x - segments[0].start.x, height: segments[2].end.y - segments[2].start.y) : nil
         if let frame, margin > 0 { segments = Self.expand(segments, frame: frame, by: margin) }
-        let blockers = graph.nodes.filter { !$0.isGroup }, flow = OrthogonalPorts.flow(graph).direction
+        let flow = OrthogonalPorts.flow(graph).direction
         // One graph for every edge; each edge only adds its own port stubs to a copy.
         let base = segments.isEmpty ? nil : BspVisibilityGraph(segments)
         for edge in graph.edges where edge.source !== edge.target {
             if RoutingCompute.isCancelled { return }
-            let obstacles = blockers.filter { $0 !== edge.source && $0 !== edge.target }.map { $0.bounds.inflated(by: -1e-5) }
+            let obstacles = ObstaclePolyline.obstacles(edge, graph).map(ObstaclePolyline.interior)
             var path = base.flatMap { orthogonalRoute(edge, $0, segments, obstacles, flow: flow, constrained: true) }
             if path == nil, edge.sourcePort != .none || edge.targetPort != .none || !edge.sourcePortCandidates.isEmpty || !edge.targetPortCandidates.isEmpty {
                 path = base.flatMap { orthogonalRoute(edge, $0, segments, obstacles, flow: flow, constrained: false) }
             }
             if RoutingCompute.isCancelled { return }
             if path == nil { unroutableEdges.append(edge); path = RoutingFallback.route(edge, graph) }
+            if let current = path, ObstaclePolyline.length(current) > 4 * max(1, (edge.target.center - edge.source.center).length) {
+                let candidate = LayoutEdge(source: edge.source, target: edge.target)
+                candidate.sourcePort = edge.sourcePort; candidate.targetPort = edge.targetPort
+                candidate.sourcePortCandidates = edge.sourcePortCandidates; candidate.targetPortCandidates = edge.targetPortCandidates
+                let local = LayoutGraph(); local.nodes = graph.nodes; local.edges = [candidate]
+                let router = ChannelEdgeRouter(); router.gridSize = 10; router.congestionPenalty = 0
+                router.routeEdges(local)
+                if router.unroutableEdges.isEmpty, ObstaclePolyline.Scene(graph.nodes).clear(candidate.path, edge),
+                   zip(candidate.path, candidate.path.dropFirst()).allSatisfy({ abs($0.x - $1.x) < 1e-4 || abs($0.y - $1.y) < 1e-4 }),
+                   ObstaclePolyline.length(candidate.path) < ObstaclePolyline.length(current) * 0.75 {
+                    path = candidate.path
+                    unroutableEdges.removeAll { $0 === edge }
+                }
+            }
             edge.path = path!
         }
         if edgeSpacing > 0 {
@@ -71,7 +86,7 @@ public final class BspEdgeRouter: EdgeRouter {
         var visibility = base
         for port in sources + targets { visibility.attach(port.port, to: port.hit) }
         let leaving = flow, entering = flow.map { $0 * -1 }
-        guard let path = visibility.path(from: sources.map { ($0.port, sideCost($0.side, desired: leaving)) }, to: targets.map { ($0.port, sideCost($0.side, desired: entering)) }, bendPenalty: bendPenalty) else { return nil }
+        guard let path = visibility.path(from: sources.map { ($0.port, sideCost($0.side, desired: leaving)) }, to: targets.map { ($0.port, sideCost($0.side, desired: entering)) }, bendPenalty: bendPenalty, obstacles: obstacles) else { return nil }
         // Drop straight-through points so aligned neighbours get a single segment.
         var result: [Point] = []
         for p in path {
@@ -81,7 +96,7 @@ public final class BspEdgeRouter: EdgeRouter {
             }
             result.append(p)
         }
-        return result.count >= 2 ? result : nil
+        return result.count >= 2 && ObstaclePolyline.clear(result, obstacles) ? result : nil
     }
     /// Candidate ports on each side (its middle, and positions aligned with the other node), each joined by an
     /// unobstructed perpendicular ray to the first channel it meets.
@@ -175,7 +190,10 @@ struct BspVisibilityGraph {
     }
     /// A* over (vertex, axis) states from any start to any end, charging `bendPenalty` per change of axis and each
     /// port's own cost for starting or finishing there.
-    func path(from starts: [(Point, Float)], to ends: [(Point, Float)], bendPenalty: Float) -> [Point]? {
+    func path(from starts: [(Point, Float)], to ends: [(Point, Float)], bendPenalty: Float, obstacles: [Rect] = []) -> [Point]? {
+        let obstacleBounds = obstacles.first.map { first in obstacles.dropFirst().reduce(first) { $0.union($1) } } ?? Rect()
+        let tree = QuadTree<Rect>(bounds: obstacleBounds.inflated(by: 1))
+        for r in obstacles where r.width > 0 && r.height > 0 { tree.insert(bounds: r, item: r) }
         var goals: [Int: Float] = [:]
         for (p, c) in ends { if let i = indices[BspPointKey(p)], c < goals[i, default: .infinity] { goals[i] = c } }
         func estimate(_ p: Point) -> Float { ends.map { abs($0.0.x - p.x) + abs($0.0.y - p.y) }.min() ?? 0 }
@@ -195,6 +213,8 @@ struct BspVisibilityGraph {
                 return path.reversed()
             }
             for next in adjacency[vertex] {
+                let a = points[vertex], b = points[next]
+                if tree.query(RoutingCompute.bounds(a, b).inflated(by: 1e-4)).contains(where: { $0.intersectsLine(a, b) }) { continue }
                 let d = points[next] - points[vertex]
                 let nextAxis = abs(d.x) >= abs(d.y) ? 1 : 2
                 let cost = costs[state]! + abs(d.x) + abs(d.y) + (axis != 0 && axis != nextAxis ? bendPenalty : 0) + (goals[next] ?? 0)

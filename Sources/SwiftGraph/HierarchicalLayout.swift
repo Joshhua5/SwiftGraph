@@ -25,7 +25,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             if span > 1 && span - 1 <= 64 {
                 for step in 1..<span {
                     let v = widths.count, rank = ranks[s] + step * (delta > 0 ? 1 : -1)
-                    widths.append(8); ranks.append(rank); incoming.append([]); outgoing.append([])
+                    widths.append(0); ranks.append(rank); incoming.append([]); outgoing.append([])
                     layers[rank].append(v); chain.append(v)
                 }
             }
@@ -65,9 +65,13 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
         let ys = offsets(heights, gap: layerSeparation)
         var xs = Array(repeating: Float(0), count: widths.count)
         for layer in layers {
-            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + Float(max(0, layer.count - 1)) * nodeSeparation
+            let gaps = zip(layer, layer.dropFirst()).map { hierarchyGap($0, $1, originals: count, separation: nodeSeparation) }
+            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + gaps.reduce(0, +)
             var x = -total / 2
-            for i in layer { xs[i] = x + widths[i] / 2; x += widths[i] + nodeSeparation }
+            for (p, i) in layer.enumerated() {
+                xs[i] = x + widths[i] / 2
+                x += widths[i] + (p < gaps.count ? gaps[p] : 0)
+            }
         }
         for pass in 0..<3 {
             try Task.checkCancellation()
@@ -75,7 +79,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
                 let layer = layers[rank]
                 var desired: [Float] = [], shift: [Float] = [], weights: [Float] = [], distance: Float = 0
                 for (position, i) in layer.enumerated() {
-                    if position > 0 { distance += (widths[layer[position - 1]] + widths[i]) / 2 + nodeSeparation }
+                    if position > 0 { distance += (widths[layer[position - 1]] + widths[i]) / 2 + hierarchyGap(layer[position - 1], i, originals: count, separation: nodeSeparation) }
                     shift.append(distance)
                     let neighbors = incoming[i] + outgoing[i]
                     desired.append((neighbors.isEmpty ? xs[i] : neighbors.reduce(Float(0)) { $0 + xs[$1] } / Float(neighbors.count)) - distance)

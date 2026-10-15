@@ -68,7 +68,7 @@ kernel void orderedPlacement(device const float4* input [[buffer(0)]], device fl
             for(uint j=offsets[i];j<offsets[i+1];j++) if((flags[children[j]]&2)==0) {
                 if(first==p.count) first=children[j]; last=children[j];
             }
-            output[i].y=float(records[i].x)*s[0];
+            output[i].y=s[2+records[i].x];
             if(first!=p.count) output[i].x=(center(output[first]).x+center(output[last]).x)/2-output[i].z/2;
             else { output[i].x=cursor; cursor+=output[i].z; }
             cursor=max(cursor,output[i].x+output[i].z); float assistantY=output[i].y+20;

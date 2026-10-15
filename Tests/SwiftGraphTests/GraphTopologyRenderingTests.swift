@@ -10,6 +10,7 @@ import ImageIO
     private struct RenderResult: Sendable {
         var id: String
         var snapshot: VisualSnapshot?
+        var diagnostics: TopologyDiagnostics?
         var error: String?
     }
 
@@ -19,10 +20,11 @@ import ImageIO
         print("Rendering topology preset: \(id)")
         do {
             let graph = try topology.makeGraph()
-            let identities = graph.nodes
+            let identities = graph.nodes, edges = graph.edges, parents = graph.nodes.map(\.parent)
             try await LayoutBuilder.create(graph).applyPattern(pattern).applyAsync()
             #expect(graph.nodes == identities, "\(id): node identities changed")
-            #expect(graph.edges.count == topology.edges.count, "\(id): edges lost")
+            #expect(graph.edges == edges, "\(id): edge identities changed")
+            #expect(graph.nodes.map(\.parent) == parents, "\(id): parents changed")
             let drawing = topology.drawing(graph)
             let item = VisualCase(id: id, family: "topology", title: "Topology / \(id)", configuration: ["pattern": id]) { drawing }
             let snapshot = VisualSnapshot(case: item, drawing: drawing)
@@ -30,12 +32,17 @@ import ImageIO
             #expect(snapshot.edges.allSatisfy { $0.path.count >= 2 }, "\(id): missing routes")
             let stem = output.appendingPathComponent(id)
             try VisualStorage.writeJSON(snapshot, stem.appendingPathExtension("json"))
+            let diagnostics = TopologyDiagnostics(snapshot)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(diagnostics).write(to: stem.appendingPathExtension("quality.json"))
+            let passes = diagnostics.passes
+            #expect(passes, "\(id): \(diagnostics.obstacleIntersections.count) obstacle hits, \(diagnostics.headerIntersections.count) header hits, \(diagnostics.escapedChildren.count) escaped children; see \(id).quality.json")
             try VisualRenderer.write(VisualScene(snapshot: snapshot, crossingJumps: false), to: stem)
             let source = try #require(CGImageSourceCreateWithURL(stem.appendingPathExtension("png") as CFURL, nil))
             let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
             #expect(image.width > 0 && image.height > 0 && max(image.width, image.height) <= 2400)
             print("Rendered topology preset: \(id)")
-            return RenderResult(id: id, snapshot: snapshot)
+            return RenderResult(id: id, snapshot: snapshot, diagnostics: diagnostics)
         } catch {
             Issue.record("\(id): \(error)")
             return RenderResult(id: id, error: String(describing: error))
@@ -112,6 +119,33 @@ import ImageIO
         #expect(graph.nodes[248].parent === graph.root)
     }
 
+    /// Reuses final geometry for reproducible close-ups without rerunning a dense layout.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SWIFTGRAPH_TOPOLOGY_DETAILS"] != nil))
+    func rendersSavedTopologyDetails() throws {
+        #if os(macOS)
+        struct Request: Decodable {
+            var input: String; var output: String
+            var x: Float; var y: Float; var width: Float; var height: Float
+            var edgeIDs: [String]?
+        }
+        let path = try #require(ProcessInfo.processInfo.environment["SWIFTGRAPH_TOPOLOGY_DETAILS"])
+        let requests = try JSONDecoder().decode([Request].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        for request in requests {
+            var snapshot = try JSONDecoder().decode(VisualSnapshot.self, from: Data(contentsOf: URL(fileURLWithPath: request.input)))
+            if let ids = request.edgeIDs {
+                #expect(Set(ids).isSubset(of: Set(snapshot.edges.map(\.id))))
+                snapshot.edges = snapshot.edges.filter { ids.contains($0.id) }
+            }
+            let bounds = Rect(x: request.x, y: request.y, width: request.width, height: request.height)
+            try #require([bounds.x, bounds.y, bounds.width, bounds.height].allSatisfy(\.isFinite) && bounds.width > 0 && bounds.height > 0)
+            var scene = VisualScene(snapshot: snapshot, crossingJumps: false); scene.bounds = bounds
+            let output = URL(fileURLWithPath: request.output)
+            try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try VisualRenderer.write(scene, to: output)
+        }
+        #endif
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SWIFTGRAPH_RENDER_TOPOLOGY"] == "1"))
     func rendersTopologyInEverySupportedPreset() async throws {
         #if os(macOS)
@@ -128,8 +162,8 @@ import ImageIO
         var report = ["# Graph topology preset renders", "",
             "Input: \(topology.nodes.count) nodes, \(topology.edges.count) edges. Node labels are zero-based indices.", "",
             "Every preset uses its default CPU pipeline on a fresh graph. Parents become groups; bidirectional records use one route with two arrowheads.", "",
-            "PNG previews are capped at 2400 pixels; SVGs retain full geometry for zooming. Crossing jump decoration is disabled for this dense graph. Overlaps and crossings are visual review findings, not pass/fail thresholds.", "",
-            "![All presets](contact-sheet.png)", "", "| Preset | Result | PNG | SVG | Geometry |", "| --- | --- | --- | --- | --- |"]
+            "PNG previews are capped at 2400 pixels; SVGs retain full geometry for zooming. Crossing jump decoration is disabled for this dense graph. Containment, node overlaps, missing routes and obstacle/header intersections are checked; ordinary edge crossings remain visual review findings.", "",
+            "![All presets](contact-sheet.png)", "", "| Preset | Result | PNG | SVG | Geometry | Quality |", "| --- | --- | --- | --- | --- | --- |"]
         print("Topology render artifacts: \(output.path)")
         let patterns = LayoutPatternType.allCases
         let results = await withTaskGroup(of: RenderResult.self, returning: [String: RenderResult].self) { group in
@@ -154,10 +188,11 @@ import ImageIO
             let id = pattern.rawValue
             if let snapshot = results[id]?.snapshot {
                 snapshots.append(snapshot)
-                report.append("| \(id) | Rendered | [PNG](\(id).png) | [SVG](\(id).svg) | [JSON](\(id).json) |")
+                let status = results[id]?.diagnostics?.passes == true ? "Rendered; geometry checks passed" : "Rendered; geometry issues"
+                report.append("| \(id) | \(status) | [PNG](\(id).png) | [SVG](\(id).svg) | [JSON](\(id).json) | [Quality](\(id).quality.json) |")
             } else {
                 let error = (results[id]?.error ?? "Missing result").replacingOccurrences(of: "|", with: "/").replacingOccurrences(of: "\n", with: " ")
-                report.append("| \(id) | Failed: \(error) | | | |")
+                report.append("| \(id) | Failed: \(error) | | | | |")
             }
         }
         if !snapshots.isEmpty {

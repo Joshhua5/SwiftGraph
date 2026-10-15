@@ -9,21 +9,16 @@ public final class ComponentLayout: LayoutAlgorithm {
         try Task.checkCancellation()
         let a = Adjacency(graph), components = a.components()
         if components.count == 1 { try coreLayout.applyLayout(graph); return }
-        var graphs: [LayoutGraph] = [], bounds: [Rect] = []
+        var graphs: [LayoutGraph] = []
         for component in components {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
             try coreLayout.applyLayout(g)
             let b = g.bounds
-            translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g); bounds.append(b)
+            translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g)
         }
-        let width = max(200, sqrt(bounds.reduce(Float(0)) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
-        var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
-        for i in graphs.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height }) {
-            if x > 0 && x + bounds[i].width > width { x = 0; y += rowHeight + componentSpacing; rowHeight = 0 }
-            translate(graphs[i], by: Point(x: x, y: y))
-            x += bounds[i].width + componentSpacing; rowHeight = max(rowHeight, bounds[i].height)
-        }
+        let shifts = packedTranslations(graphs.map(\.bounds), spacing: componentSpacing, aspectRatio: preferredAspectRatio)
+        for (g, shift) in zip(graphs, shifts) { translate(g, by: shift) }
     }
 }
 
@@ -67,7 +62,14 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
                 !selectedNodeIds.contains(node.id) && !g.nodes.contains {
                     isAncestor(node, of: $0) || isAncestor($0, of: node)
                 }
-            }.map(\.bounds)
+            }.map(\.bounds) + graph.edges.filter {
+                !selectedNodeIds.contains($0.source.id) && !selectedNodeIds.contains($0.target.id)
+            }.flatMap { edge in
+                // Moving the selection must not obstruct a route whose endpoints are untouched.
+                zip(edge.path, edge.path.dropFirst()).map { a, b in
+                    Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+                }
+            }
             var envelope = g.bounds
             for edge in g.edges {
                 for p in edge.path { envelope = envelope.union(Rect(x: p.x, y: p.y)) }
@@ -111,6 +113,7 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
     public var optimizeIncomingEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any LayoutAlgorithm)?
     public private(set) var unroutableEdges: [LayoutEdge] = []
+    var presetRouting: ((LayoutGraph) -> [LayoutEdge])?
     public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
     public func applyLayout(_ graph: LayoutGraph) throws {
         unroutableEdges = []
@@ -127,10 +130,13 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
                 try layout.applyLayout(projection.graph)
                 try engine.accept(projection, in: group)
             }
-            let routing = engine.routingGraph(for: group)
+            let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
             if !routing.edges.isEmpty {
-                let router = PolylineEdgeRouter(); router.routeEdges(routing)
-                failures.formUnion(router.unroutableEdges)
+                if let presetRouting { failures.formUnion(presetRouting(routing)) }
+                else {
+                    let router = PolylineEdgeRouter(); router.routeEdges(routing)
+                    failures.formUnion(router.unroutableEdges)
+                }
             }
             try engine.finish(group, routed: routing.edges)
         }

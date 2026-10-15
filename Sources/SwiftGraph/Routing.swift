@@ -43,9 +43,12 @@ public enum EdgeEndpointClipper {
     /// would be left with fewer than two points stay as they were.
     public static func clipToNodeBounds(_ graph: LayoutGraph) {
         for edge in graph.edges where edge.source !== edge.target && edge.path.count >= 2 {
-            let start = clipStart(edge.path, to: edge.source.bounds)
-            edge.path = Array(clipStart(Array(start.reversed()), to: edge.target.bounds).reversed())
+            edge.path = clipped(edge.path, source: edge.source.bounds, target: edge.target.bounds)
         }
+    }
+    static func clipped(_ path: [Point], source: Rect, target: Rect) -> [Point] {
+        let start = clipStart(path, to: source)
+        return Array(clipStart(Array(start.reversed()), to: target).reversed())
     }
     private static func clipStart(_ path: [Point], to rect: Rect) -> [Point] {
         let inside = (RoutingCompute.current.flatMap { $0.stages.isEmpty || path.count >= 64 ? $0.contains(path, rect) : nil }) ?? path.map(rect.contains)

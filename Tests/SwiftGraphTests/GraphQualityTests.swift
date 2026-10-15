@@ -83,6 +83,27 @@ import Testing
         #expect(measured(legacy).values["nodeOverlaps"]! > 0)
     }
 
+    @Test func subgraphPlacementKeepsUntouchedRoutesClear() async throws {
+        for asynchronous in [false, true] {
+            let graph = VisualGraphs.graph()
+            PolylineEdgeRouter().routeEdges(graph)
+            let selected = Set((0..<6).map { "n\($0)" })
+            let untouched = graph.edges.filter { !selected.contains($0.source.id) && !selected.contains($0.target.id) }
+            let paths = untouched.map(\.path), bounds = graph.nodes.dropFirst(6).map(\.bounds)
+            if asynchronous {
+                let layout = SubgraphLayoutOperation(CircularLayoutAlgorithm()); layout.selectedNodeIds = selected
+                try await layout.applyLayoutAsync(graph)
+            } else {
+                let layout = SubgraphLayoutAlgorithm(CircularLayoutAlgorithm()); layout.selectedNodeIds = selected
+                try layout.applyLayout(graph)
+            }
+            #expect(untouched.map(\.path) == paths)
+            #expect(graph.nodes.dropFirst(6).map(\.bounds) == bounds)
+            VisualGraphs.finish(graph)
+            #expect(measured(graph, contracts: .init(noNodeOverlaps: true, noObstacleIntersections: true)).failures.isEmpty)
+        }
+    }
+
     @Test func labelCollisionsAreMeasuredAndReportedWithoutGeometryChanges() throws {
         let g = VisualGraphs.graph(3); VisualGraphs.finish(g, route: true)
         for edge in g.edges { edge.data = "label"; edge.labelBounds = Rect(x: 0, y: 500, width: 80, height: 20) }

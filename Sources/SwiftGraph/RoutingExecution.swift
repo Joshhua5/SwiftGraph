@@ -137,6 +137,9 @@ struct RoutingSnapshot: Sendable {
     struct Node: Sendable {
         var id: String; var bounds: Rect; var isGroup: Bool
         var parent: Int?; var children: [Int]
+        var frame: GroupFrameOptions? = nil
+        var content: Rect? = nil
+        var header: Rect? = nil
     }
     /// Related hierarchy nodes are distinct from obstacle/routing graph membership.
     /// Index zero is the local graph's root; external ancestor roots remain separate nodes.
@@ -153,6 +156,7 @@ struct RoutingSnapshot: Sendable {
         let nodes = hierarchy.enumerated().map { i, state in
             let node = i == 0 ? graph.root : LayoutNode(id: state.id, width: state.bounds.width, height: state.bounds.height)
             node.bounds = state.bounds; node.isGroup = state.isGroup
+            node.groupFrame = state.frame; node.groupContentBounds = state.content; node.groupHeaderBounds = state.header
             return node
         }
         for i in nodes.indices {
@@ -226,7 +230,7 @@ struct RoutingCheckpoint {
         }
         related = nodes; relatedStates = nodes.map(NodeState.init)
         snapshot = RoutingSnapshot(geometry: graph.snapshot,
-            hierarchy: nodes.map { .init(id: $0.id, bounds: $0.bounds, isGroup: $0.isGroup, parent: $0.parent.flatMap { index[$0] }, children: $0.children.map { index[$0]! }) },
+            hierarchy: nodes.map { .init(id: $0.id, bounds: $0.bounds, isGroup: $0.isGroup, parent: $0.parent.flatMap { index[$0] }, children: $0.children.map { index[$0]! }, frame: $0.groupFrame, content: $0.groupContentBounds, header: $0.groupHeaderBounds) },
             members: input.nodes.map { index[$0]! }, edges: edges)
     }
     private static func state(_ edge: LayoutEdge, label: String?) -> RoutingSnapshot.Edge {
@@ -361,7 +365,7 @@ private func routingCPUStages(_ kind: RoutingKind) -> [String] {
     switch kind {
     case .polyline, .givenCoordinates: ["visibility vertices and ordered shortest-path search", "exact Double obstacle predicates and safe lane assignment"]
     case .channel: ["port selection, ordered A* search and congestion updates"]
-    case .bsp: ["BSP hierarchy and ordered visibility search", "exact Double segment predicates and safe lane assignment"]
+    case .bsp: ["BSP hierarchy, ordered visibility search and long-route channel comparison", "exact Double segment predicates and safe lane assignment"]
     case .orthogonalGrouped: ["hierarchy channels, ordered A* search, node nudge ordering and shared lanes", "exact Double blockers and endpoint clipping reconstruction"]
     case .selfLoops: ["corner generation, ordered corner ranking and exact Double clearance/crossings"]
     case .edgeSeparation: ["shared-line grouping, lane ordering and shifted-line intersections", "exact Double no-new-obstacle predicate"]

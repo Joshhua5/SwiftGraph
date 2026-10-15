@@ -144,17 +144,12 @@ struct GroupLayoutEngine {
         }
     }
 
-    /// Contains real endpoints and obstacles, plus detached title rectangles; never reparents them.
-    func routingGraph(for group: LayoutNode) -> LayoutGraph {
+    /// Real endpoint/obstacle membership; the shared scene adds protected title rectangles.
+    func routingGraph(for group: LayoutNode, allOwnedEdges: Bool = false) -> LayoutGraph {
         let routing = subgraph(graph, nodes: descendants[group] ?? [])
-        for node in routing.nodes where node.isGroup {
-            if let header = node.groupHeaderBounds, header.width > 0, header.height > 0 {
-                let obstacle = LayoutNode(id: "header:" + node.id, width: header.width, height: header.height)
-                obstacle.bounds = header; routing.addNode(obstacle)
-            }
-        }
         let scene = ObstaclePolyline.Scene(routing.nodes)
         routing.edges = (ownedEdges[group] ?? []).filter { edge in
+            if allOwnedEdges { return true }
             guard edge.source !== edge.target else { return false }
             let direct = containers[edge.source] === group && containers[edge.target] === group
             let attached = edge.path.first.map(edge.source.bounds.contains) == true && edge.path.last.map(edge.target.bounds.contains) == true

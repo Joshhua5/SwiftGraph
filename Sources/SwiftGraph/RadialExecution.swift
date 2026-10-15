@@ -63,8 +63,9 @@ public extension LayoutBuilder {
     }
     @discardableResult func applyMindMap(backend: LayoutBackend, executor: LayoutExecutor = .shared,
                                          layerDistance: Float = 100) -> Self {
-        useRadialTree(backend: backend, executor: executor) { $0.spacing = layerDistance }
-            .routePolyline(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor).clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
+        let configuration = RadialLayoutConfiguration(spacing: layerDistance)
+        let core = RadialLayoutOperation(style: .tree, backend: backend, executor: executor, configuration: configuration)
+        return groupedPreset(core, routing: .polyline, backend: backend, executor: executor)
     }
 }
 
@@ -168,25 +169,23 @@ struct RadialPlacementPlan {
         }
     }
     func apply(_ clearances: [Float], to graph: LayoutGraph, spacing: Float) throws {
-        var cursor: Float = 0.0
         for component in components {
             var previousRadius: Float = 0.0, previousHalf: Float = 0.0
+            var placed: [Rect] = []
             for index in component.rings {
                 try Task.checkCancellation()
                 let ring = rings[index], half = (ring.diameters.max() ?? 0) / 2
-                let base = ring.depth == 0 ? 0 : previousRadius + max(spacing, previousHalf + half + 20)
-                let radius = max(base, clearances[index])
+                let base = ring.depth == 0 ? 0 : previousRadius + (style == .tree ? spacing : max(spacing, previousHalf + half + 20))
+                var radius = max(base, clearances[index])
+                if style == .tree { radius = fittedRadialDepth(ring.indices.map { graph.nodes[$0] }, angles: ring.angles, previous: placed, minimum: radius) }
                 for (i, node) in ring.indices.enumerated() {
                     graph.nodes[node].center = Point(x: radius * Float(cos(ring.angles[i])), y: radius * Float(sin(ring.angles[i])))
                 }
+                placed += ring.indices.map { graph.nodes[$0].bounds }
                 previousRadius = radius; previousHalf = half
             }
-            if style == .tree {
-                let nodes = component.indices.map { graph.nodes[$0] }, bounds = enclosingBounds(nodes)
-                for node in nodes { node.x += cursor - bounds.x }
-                cursor += bounds.width + max(20, spacing)
-            }
         }
+        if style == .tree { packForest(graph.nodes, components: components.map(\.indices), spacing: max(20, spacing)) }
     }
 }
 

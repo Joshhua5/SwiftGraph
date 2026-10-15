@@ -177,7 +177,7 @@ struct HierarchyPlacementPlan: Sendable {
             if span > 1 && span - 1 <= 64 {
                 for step in 1..<span {
                     let vertex = widths.count, rank = ranks[source] + step * (delta > 0 ? 1 : -1)
-                    widths.append(8); ranks.append(rank); incoming.append([]); outgoing.append([])
+                    widths.append(0); ranks.append(rank); incoming.append([]); outgoing.append([])
                     layers[rank].append(vertex); chains[index].append(vertex)
                 }
             }
@@ -224,9 +224,13 @@ struct HierarchyPlacementPlan: Sendable {
         }
         var xs = Array(repeating: Float(0), count: widths.count)
         for layer in ordered {
-            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + Float(max(0, layer.count - 1)) * nodeSeparation
+            let gaps = zip(layer, layer.dropFirst()).map { hierarchyGap($0, $1, originals: originalCount, separation: nodeSeparation) }
+            let total = layer.reduce(Float(0)) { $0 + widths[$1] } + gaps.reduce(0, +)
             var x = -total / 2
-            for vertex in layer { xs[vertex] = x + widths[vertex] / 2; x += widths[vertex] + nodeSeparation }
+            for (p, vertex) in layer.enumerated() {
+                xs[vertex] = x + widths[vertex] / 2
+                x += widths[vertex] + (p < gaps.count ? gaps[p] : 0)
+            }
         }
         // Reconstruct from GPU decisions. The KKT checks reject Float decisions
         // that would violate isotonic projection, allowing automatic CPU fallback.
@@ -236,7 +240,7 @@ struct HierarchyPlacementPlan: Sendable {
                 let layer = ordered[rank]
                 var desired: [Float] = [], shifts: [Float] = [], distance: Float = 0
                 for (position, vertex) in layer.enumerated() {
-                    if position > 0 { distance += (widths[layer[position - 1]] + widths[vertex]) / 2 + nodeSeparation }
+                    if position > 0 { distance += (widths[layer[position - 1]] + widths[vertex]) / 2 + hierarchyGap(layer[position - 1], vertex, originals: originalCount, separation: nodeSeparation) }
                     shifts.append(distance)
                     let neighbors = incoming[vertex] + outgoing[vertex]
                     desired.append((neighbors.isEmpty ? xs[vertex] : neighbors.reduce(Float(0)) { $0 + xs[$1] } / Float(neighbors.count)) - distance)

@@ -31,18 +31,24 @@ public final class EdgeBundlingOperation: AsyncLayoutAlgorithm {
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
     public private(set) var lastMetrics: LayoutExecutionMetrics?
+    /// Final paths for which obstacle repair could not find a clear alternative.
+    public private(set) var unroutableEdgeIndices: [Int] = []
     public init(backend: LayoutBackend, executor: LayoutExecutor = .shared, configuration: EdgeBundlingConfiguration = .init()) {
         self.backend = backend; self.executor = executor; self.configuration = configuration
     }
     public func applyLayoutAsync(_ graph: LayoutGraph) async throws {
         lastMetrics = nil
+        unroutableEdgeIndices = []
         let start = ContinuousClock.now, configuration = self.configuration
         try Task.checkCancellation(); try configuration.validate()
         let checkpoint = try GraphCheckpoint(graph), paths = graph.edges.map(\.path)
-        let result = try await executor.bundle(checkpoint.snapshot, paths: paths, configuration: configuration, backend: backend)
+        let routing = try RoutingCheckpoint(graph, labels: Array(repeating: nil, count: graph.edges.count))
+        let result = try await executor.bundle(checkpoint.snapshot, paths: paths, configuration: configuration, backend: backend, routing: routing.snapshot)
         try Task.checkCancellation()
-        guard checkpoint.matches(graph), graph.edges.map(\.path) == paths else { throw LayoutExecutionError.staleGraph }
+        guard checkpoint.matches(graph), routing.matches(graph, labels: Array(repeating: nil, count: graph.edges.count)),
+              graph.edges.map(\.path) == paths else { throw LayoutExecutionError.staleGraph }
         for edge in result.paths { graph.edges[edge.index].path = edge.points }
+        unroutableEdgeIndices = result.unroutable
         var metrics = result.metrics; metrics.totalSeconds = start.duration(to: .now).seconds; lastMetrics = metrics
     }
 }
@@ -54,7 +60,7 @@ public extension LayoutBuilder {
     }
 }
 struct BundledPath: Sendable { var index: Int; var points: [Point] }
-struct BundlingResult: Sendable { var paths: [BundledPath]; var metrics: LayoutExecutionMetrics }
+struct BundlingResult: Sendable { var paths: [BundledPath]; var metrics: LayoutExecutionMetrics; var unroutable: [Int] = [] }
 struct BundlingState: Sendable {
     var positions: [SIMD2<Float>]
     var offsets: [UInt32]
@@ -66,9 +72,13 @@ struct BundlingState: Sendable {
 /// Metal runs the iteration kernel once per subdivision cycle; compatibility, resampling, node clearance, edge
 /// fanning and simplification are the same CPU code the synchronous router uses.
 extension LayoutExecutor {
-    func bundle(_ snapshot: GeometrySnapshot, paths existing: [[Point]], configuration: EdgeBundlingConfiguration, backend: LayoutBackend) async throws -> BundlingResult {
+    func bundle(_ snapshot: GeometrySnapshot, paths input: [[Point]], configuration: EdgeBundlingConfiguration, backend: LayoutBackend, routing: RoutingSnapshot? = nil) async throws -> BundlingResult {
         let start = ContinuousClock.now
         try Task.checkCancellation(); try configuration.validate(); try options.validate()
+        let seeded = routing?.makeGraph().0 ?? snapshot.makeGraph()
+        for (edge, path) in zip(seeded.edges, input) { edge.path = path }
+        ObstaclePolyline.repair(seeded, spacing: 0)
+        let existing = seeded.edges.map(\.path)
         let edges = snapshot.edges.filter { $0.source != $0.target }
         guard edges.isEmpty || max(1, configuration.segments) < 8_388_608 / edges.count else {
             throw LayoutExecutionError.invalidInput("Bundling exceeds the 64 MiB control-point limit.")
@@ -106,6 +116,11 @@ extension LayoutExecutor {
             }
         } else { paths = try snapshot.cpuBundle(configuration, paths: existing) }
         try Task.checkCancellation()
+        let repaired = routing?.makeGraph().0 ?? snapshot.makeGraph()
+        for path in paths { repaired.edges[path.index].path = path.points }
+        let failures = Set(ObstaclePolyline.repair(repaired, spacing: 0))
+        let unroutable = repaired.edges.indices.filter { failures.contains(repaired.edges[$0]) }
+        paths = paths.map { BundledPath(index: $0.index, points: repaired.edges[$0.index].path) }
         guard paths.allSatisfy({ $0.points.allSatisfy { $0.x.isFinite && $0.y.isFinite } }) else {
             throw LayoutExecutionError.invalidInput("Non-finite bundle coordinates")
         }
@@ -113,8 +128,8 @@ extension LayoutExecutor {
         return BundlingResult(paths: paths, metrics: LayoutExecutionMetrics(requestedBackend: backend, backend: chosen,
             fallbackReason: reason, nodeCount: snapshot.nodes.count, iterations: configuration.iterations,
             computeSeconds: elapsed, totalSeconds: elapsed, gpuSeconds: gpuTime, deviceName: device,
-            cpuStages: chosen == .metal ? ["compatibility construction", "route resampling and subdivision", "node clearance, edge fanning and simplification"] : ["edge bundling"],
-            metalStages: chosen == .metal ? ["bundling iterations"] : (gpuTime == nil ? [] : ["discarded bundling iterations before CPU fallback"])))
+            cpuStages: chosen == .metal ? ["compatibility construction", "route resampling and subdivision", "node clearance, edge fanning, simplification and final obstacle repair"] : ["edge bundling"],
+            metalStages: chosen == .metal ? ["bundling iterations"] : (gpuTime == nil ? [] : ["discarded bundling iterations before CPU fallback"])), unroutable: unroutable)
     }
 }
 

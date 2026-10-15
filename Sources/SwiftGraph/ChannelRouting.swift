@@ -71,6 +71,12 @@ public final class ChannelEdgeRouter: EdgeRouter {
         precondition(gridSize > 0, "gridSize must be positive")
         let leaves = QuadTree<LayoutNode>(bounds: enclosingBounds(graph.nodes).inflated(by: 100))
         for n in graph.nodes where !n.isGroup { leaves.insert(bounds: n.bounds, item: n) }
+        for group in graph.nodes where group.isGroup {
+            if let r = group.groupHeaderBounds, r.width > 0 && r.height > 0 {
+                let header = LayoutNode(id: "header:" + group.id, width: r.width, height: r.height)
+                header.bounds = r; leaves.insert(bounds: r, item: header)
+            }
+        }
         let scene = Scene(graph: graph, leaves: leaves, vertical: OrthogonalPorts.flow(graph).vertical)
         var lattice = makeLattice(graph, grid: gridSize), fine: Lattice?
         for edge in graph.edges where edge.source !== edge.target {
@@ -88,7 +94,8 @@ public final class ChannelEdgeRouter: EdgeRouter {
     }
     private func makeLattice(_ graph: LayoutGraph, grid: Int) -> Lattice {
         var lattice = Lattice(grid: grid, origin: Point(x: graph.nodes.map(\.x).min()! - 50, y: graph.nodes.map(\.y).min()! - 50))
-        let rectangles = graph.nodes.filter { !$0.isGroup }.map { lattice.cover($0.bounds) }
+        let headers = graph.nodes.filter(\.isGroup).compactMap(\.groupHeaderBounds).filter { $0.width > 0 && $0.height > 0 }
+        let rectangles = (graph.nodes.filter { !$0.isGroup }.map(\.bounds) + headers).map { lattice.cover($0) }
         lattice.rectangles = rectangles
         let covers = graph.nodes.map { lattice.cover($0.bounds) }
         lattice.extent = GridRect(minX: covers.map(\.minX).min()!, minY: covers.map(\.minY).min()!, maxX: covers.map(\.maxX).max()!, maxY: covers.map(\.maxY).max()!)

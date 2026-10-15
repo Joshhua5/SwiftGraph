@@ -99,7 +99,9 @@ public final class EdgeSeparator: EdgeRouter {
             // The lanes' window is the corridor between the nearest nodes (less `reserve`) within the faces: centred on
             // the group and slid along it to fit, or drawn closer together when it is narrower than the full spread.
             func place(_ reserve: Float) -> (first: Float, step: Float) {
-                let low = max(centre - max(room.minus - reserve, 0), faceLow), high = min(centre + max(room.plus - reserve, 0), faceHigh)
+                let limit = 4 * spacing
+                let low = max(centre - min(limit, max(room.minus - reserve, 0)), faceLow)
+                let high = min(centre + min(limit, max(room.plus - reserve, 0)), faceHigh)
                 guard high >= low else { return (centre, 0) }
                 if high - low >= span - 1e-5 { return (min(max(centre - span / 2, low), high - span), spacing) }
                 return (low, (high - low) / Float(count - 1))
@@ -110,8 +112,11 @@ public final class EdgeSeparator: EdgeRouter {
             widestGroup = max(widestGroup, count)
             for s in group {
                 let segment = segments[s], position = first + Float(lane[segment.edge]!) * step
-                shifts[segment.edge][segment.index] = n * (position - Self.dot(n, segment.start + segment.end) / 2)
-                shiftGroup[segment.edge][segment.index] = g
+                let shift = n * (position - Self.dot(n, segment.start + segment.end) / 2)
+                if shift.length <= 4 * spacing + Self.tolerance {
+                    shifts[segment.edge][segment.index] = shift
+                    shiftGroup[segment.edge][segment.index] = g
+                } else { cramped.insert(segment.edge) }
             }
         }
         if RoutingCompute.isCancelled { return }
@@ -135,7 +140,8 @@ public final class EdgeSeparator: EdgeRouter {
             let twins = twinGroups[Self.pair(edge)]!.filter { $0 != e }.map { $0 < e ? edges[$0].path : proposed[$0] }
             let baseline = (Self.selfCrossings(edge.path), Self.reversals(edge.path), twins.map { Self.crossings(edge.path, $0) })
             func acceptable(_ path: [Point]) -> Bool {
-                return Self.hits(path, obstacles).isSubset(of: before) && Self.selfCrossings(path) <= baseline.0 && Self.reversals(path) <= baseline.1
+                let envelope = ObstaclePolyline.bounds(paths[e]).inflated(by: 4 * spacing + Self.tolerance)
+                return path.allSatisfy(envelope.contains) && Self.hits(path, obstacles).isSubset(of: before) && Self.selfCrossings(path) <= baseline.0 && Self.reversals(path) <= baseline.1
                     && zip(twins, baseline.2).allSatisfy { Self.crossings(path, $0) <= $1 }
             }
             if acceptable(all) { edge.path = all; continue }

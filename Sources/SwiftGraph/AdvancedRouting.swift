@@ -30,18 +30,21 @@ public final class EdgeBundlingRouter: EdgeRouter {
     public var nodePadding: Float = 8
     public var edgeSpacing: Float = 8
     public var simplifyTolerance: Float = 2
+    public private(set) var unroutableEdges: [LayoutEdge] = []
     public init() {}
     var settings: BundlingSettings {
         BundlingSettings(iterations: iterations, segments: segments, k: k, compatibilityThreshold: compatibilityThreshold, bundlingDistance: bundlingDistance,
                          nodePadding: nodePadding, edgeSpacing: edgeSpacing, simplifyTolerance: simplifyTolerance)
     }
     public func routeEdges(_ graph: LayoutGraph) {
+        unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0)
         let edges = graph.edges.filter { $0.source !== $0.target }
         let index = Dictionary(graph.nodes.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { a, _ in a })
         var bundler = EdgeBundler(settings, nodes: graph.nodes.map(\.bounds), solid: graph.nodes.map { !$0.isGroup },
             edges: edges.map { .init(source: index[$0.source] ?? -1, target: index[$0.target] ?? -1, from: $0.source.center, to: $0.target.center, path: $0.path) })
         guard bundler.runCPU() else { return }
         for (edge, path) in zip(edges, bundler.paths()) { edge.path = path }
+        unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0)
     }
 }
 

@@ -32,7 +32,7 @@ public final class ComponentLayoutOperation: LayoutExecutionReporting {
             lastExecutionMetrics += compositionCoreRecords(coreLayout, requested: backend, graph: graph, start: coreStart)
             return
         }
-        var graphs: [LayoutGraph] = [], bounds: [Rect] = []
+        var graphs: [LayoutGraph] = []
         for component in components {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
@@ -40,16 +40,11 @@ public final class ComponentLayoutOperation: LayoutExecutionReporting {
             try await coreLayout.applyLayoutAsync(g)
             lastExecutionMetrics += compositionCoreRecords(coreLayout, requested: backend, graph: g, start: coreStart)
             let b = g.bounds
-            translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g); bounds.append(b)
+            translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g)
         }
         let packingStart = ContinuousClock.now
-        let width = max(200, sqrt(bounds.reduce(Float(0)) { $0 + $1.width * $1.height }) * max(0.01, preferredAspectRatio))
-        var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
-        for i in graphs.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height }) {
-            if x > 0 && x + bounds[i].width > width { x = 0; y += rowHeight + componentSpacing; rowHeight = 0 }
-            translate(graphs[i], by: Point(x: x, y: y))
-            x += bounds[i].width + componentSpacing; rowHeight = max(rowHeight, bounds[i].height)
-        }
+        let shifts = packedTranslations(graphs.map(\.bounds), spacing: componentSpacing, aspectRatio: preferredAspectRatio)
+        for (g, shift) in zip(graphs, shifts) { translate(g, by: shift) }
         if backend != .cpu { lastExecutionMetrics.append(compositionCPURecord(backend, count: graph.nodes.count, start: packingStart, stages: ["component packing"])) }
     }
 }
@@ -142,7 +137,14 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
                 !selectedNodeIds.contains(node.id) && !g.nodes.contains {
                     isAncestor(node, of: $0) || isAncestor($0, of: node)
                 }
-            }.map(\.bounds)
+            }.map(\.bounds) + graph.edges.filter {
+                !selectedNodeIds.contains($0.source.id) && !selectedNodeIds.contains($0.target.id)
+            }.flatMap { edge in
+                // Moving the selection must not obstruct a route whose endpoints are untouched.
+                zip(edge.path, edge.path.dropFirst()).map { a, b in
+                    Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+                }
+            }
             var envelope = g.bounds
             for edge in g.edges {
                 for p in edge.path { envelope = envelope.union(Rect(x: p.x, y: p.y)) }
@@ -191,6 +193,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
     public var groupPadding: Float = 20
     /// Refine framed placement using incoming boundary connections after fitting the frames.
     public var optimizeIncomingEdges: Bool = true
+    var presetRouting: ((LayoutGraph) async throws -> (failures: [LayoutEdge], metrics: [LayoutExecutionMetrics]))?
     public var groupLayoutSelector: ((LayoutNode) -> any AsyncLayoutAlgorithm)?
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
@@ -222,9 +225,12 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
                 if backend != .cpu { records.append(compositionCPURecord(backend, count: projection.graph.nodes.count,
                     start: placementStart, stages: ["frame overlap repair and rigid subtree placement"])) }
             }
-            let routing = engine.routingGraph(for: group)
+            let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
             if !routing.edges.isEmpty {
-                if backend == .cpu {
+                if let presetRouting {
+                    let result = try await presetRouting(routing)
+                    failures.formUnion(result.failures); records += result.metrics
+                } else if backend == .cpu {
                     let router = PolylineEdgeRouter(); router.routeEdges(routing)
                     failures.formUnion(router.unroutableEdges)
                 } else {

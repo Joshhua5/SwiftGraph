@@ -172,6 +172,12 @@ kernel void hierarchyOrder(device uint *layers [[buffer(0)]], device const uint 
     }
 }
 
+static float2 hierarchyGap(uint a, uint b, constant HierarchyParameters &p) {
+    if (a < p.originalCount && b < p.originalCount) return p.separation;
+    if (a < p.originalCount || b < p.originalCount) return p.separation / 2;
+    return float2(min(2.0f, max(0.0f, p.separation.x)), 0);
+}
+
 kernel void hierarchyPlacement(device const uint *layers [[buffer(0)]], device const uint *rankOffsets [[buffer(1)]],
     device const uint *inOffsets [[buffer(2)]], device const uint *incoming [[buffer(3)]],
     device const uint *outOffsets [[buffer(4)]], device const uint *outgoing [[buffer(5)]],
@@ -186,9 +192,9 @@ kernel void hierarchyPlacement(device const uint *layers [[buffer(0)]], device c
         uint start = rankOffsets[rank], end = rankOffsets[rank + 1];
         float2 total = float2(0);
         for (uint i = start; i < end; ++i) total = dsAdd(total, widths[layers[i]]);
-        total = dsAdd(total, dsMultiply(p.separation, float(end - start - 1)));
+        for (uint i = start + 1; i < end; ++i) total = dsAdd(total, hierarchyGap(layers[i - 1], layers[i], p));
         float2 x = -total / 2;
-        for (uint i = start; i < end; ++i) { uint node = layers[i]; xs[node] = dsAdd(x, widths[node] / 2); x = dsAdd(x, dsAdd(widths[node], p.separation)); }
+        for (uint i = start; i < end; ++i) { uint node = layers[i]; xs[node] = dsAdd(x, widths[node] / 2); x = dsAdd(x, widths[node]); if (i + 1 < end) x = dsAdd(x, hierarchyGap(node, layers[i + 1], p)); }
     }
     if (p.action == 6) {
         uint pass = p.iteration;
@@ -198,7 +204,7 @@ kernel void hierarchyPlacement(device const uint *layers [[buffer(0)]], device c
             float2 distance = float2(0);
             for (uint i = start; i < end; ++i) {
                 uint node = layers[i], position = i - start;
-                if (i > start) distance = dsAdd(distance, dsAdd(dsAdd(widths[layers[i - 1]], widths[node]) / 2, p.separation));
+                if (i > start) distance = dsAdd(distance, dsAdd(dsAdd(widths[layers[i - 1]], widths[node]) / 2, hierarchyGap(layers[i - 1], node, p)));
                 shift[position] = distance;
                 uint degree = inOffsets[node + 1] - inOffsets[node] + outOffsets[node + 1] - outOffsets[node];
                 float2 desired = float2(0);

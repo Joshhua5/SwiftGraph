@@ -142,7 +142,9 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     var records = Array(repeating: SIMD4<Int32>(-1, -1, 0, 0), count: count)
     var scalars: [Float] = [], mode: UInt32 = 0, serial = false
     switch style {
-    case .circular: mode = 0; scalars = [c.radius]
+    case .circular:
+        let fitted = fittedCirclePlacement(order.map { nodes[$0].bounds }, minimum: c.radius)
+        mode = 0; scalars = [fitted.radius] + fitted.angles
     case .tabular, .orthogonal:
         mode = 1; scalars = [style == .tabular ? c.cellSpacing : c.gridSize, Float(Int(ceil(sqrt(Double(order.count)))))]
     case .partitionGrid:
@@ -206,7 +208,7 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     let magnitude: Double
     switch style {
     case .circular:
-        let radius = max(Double(c.radius), Double(order.count) * (size * sqrt(2) + 20) / (2 * .pi))
+        let radius = Double(scalars[0])
         magnitude = (2 * radius + 50 + size) * 4
     case .tabular, .orthogonal:
         magnitude = (size + abs(Double(scalars[0]))) * ceil(sqrt(Double(order.count))) * 4 + size

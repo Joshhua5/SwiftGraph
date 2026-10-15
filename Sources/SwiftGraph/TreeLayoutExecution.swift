@@ -50,6 +50,10 @@ public final class TreeLayoutOperation: LayoutExecutionReporting {
         var result = try await executor.placement(plan.state, backend: backend)
         if let bounds = result.bounds {
             for (node, bound) in zip(plan.targets, bounds) { node.bounds = bound }
+            if style == .tree || style == .orgChart {
+                let a = Adjacency(transaction.working)
+                packForest(a.nodes, components: Forest(a).components, spacing: max(20, style == .tree ? configuration.nodeSeparation : configuration.siblingDistance))
+            }
             if style != .treeMap { straightEdges(transaction.working) }
             result.metrics.metalStages = [style == .treeMap ? "subtree weights and rectangle partition" : "ordered tree placement"]
             result.metrics.cpuStages = [style == .treeMap ? "snapshot, forest traversal and orientation precision analysis" : "snapshot and forest traversal"]
@@ -59,6 +63,7 @@ public final class TreeLayoutOperation: LayoutExecutionReporting {
             result.metrics.cpuStages = ["tree placement"]
             if style != .treeMap { result.metrics.cpuStages.append("edge routing") }
         }
+        if style == .tree || style == .orgChart { result.metrics.cpuStages.append("component rectangle packing") }
         result.metrics.computeSeconds = computeStart.duration(to: .now).seconds
         if style == .orgChart && assistantInput != graph.nodes.map({ ($0.data as? String)?.lowercased() == "assistant" }) {
             throw LayoutExecutionError.staleGraph
@@ -133,6 +138,9 @@ func treePlacementPlan(_ graph: LayoutGraph, style: TreeLayoutStyle, configurati
             }
             if style == .orgChart {
                 for i in ordered { for j in lists[i] where flags[j] & 2 != 0 { flags[j] |= 8 } }
+                var depths = Array(repeating: -1, count: targets.count)
+                for i in ordered { depths[i] = Int(records[i].x) }
+                scalars += orgChartLevelOffsets(targets, depths: depths, minimum: c.layerDistance)
             }
         }
     }
@@ -145,7 +153,7 @@ func treePlacementPlan(_ graph: LayoutGraph, style: TreeLayoutStyle, configurati
     else if style == .orgChart {
         let assistants = flags.filter { $0 & 10 == 10 }.count
         let horizontal = Double(targets.count) * (size + abs(Double(c.siblingDistance))) + Double(assistants) * (size + 20)
-        let vertical = Double(records.map { max(0, $0.x) }.max() ?? 0) * abs(Double(c.layerDistance)) + Double(assistants) * (size + 30)
+        let vertical = Double(scalars.dropFirst(2).map(abs).max() ?? 0) + Double(assistants) * (size + 30)
         magnitude = (max(horizontal, vertical) + size) * 4
     } else {
         magnitude = (size + Double(scalars.map(abs).max() ?? 0) + 1) * Double(max(1, targets.count)) * 4

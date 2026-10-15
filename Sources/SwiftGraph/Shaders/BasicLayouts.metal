@@ -13,9 +13,8 @@ kernel void basicPlacement(device const float4* input [[buffer(0)]], device floa
     if(t>=p.orderCount) return;
     uint i=order[t]; float4 r=input[i]; float2 position=r.xy;
     if(p.mode==0) {
-        float span=0; for(uint k=0;k<p.orderCount;k++) span=max(span,length(input[order[k]].zw));
-        float radius=max(s[0],float(p.orderCount)*(span+20)/(2*M_PI_F));
-        float angle=float(t)*2*M_PI_F/float(p.orderCount);
+        float radius=s[0];
+        float angle=s[1+t];
         position=float2(radius+50)+radius*float2(cos(angle),sin(angle))-r.zw/2;
     } else if(p.mode==1) {
         float2 step=0; for(uint k=0;k<p.orderCount;k++) step=max(step,input[order[k]].zw);
