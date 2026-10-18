@@ -118,7 +118,7 @@ extension LayoutExecutor {
         try Task.checkCancellation()
         let repaired = routing?.makeGraph().0 ?? snapshot.makeGraph()
         for path in paths { repaired.edges[path.index].path = path.points }
-        let failures = Set(ObstaclePolyline.repair(repaired, spacing: 0))
+        let failures = Set(ObstaclePolyline.repair(repaired, spacing: 0, shortenDetours: true))
         let unroutable = repaired.edges.indices.filter { failures.contains(repaired.edges[$0]) }
         paths = paths.map { BundledPath(index: $0.index, points: repaired.edges[$0.index].path) }
         guard paths.allSatisfy({ $0.points.allSatisfy { $0.x.isFinite && $0.y.isFinite } }) else {

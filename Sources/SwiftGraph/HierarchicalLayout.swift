@@ -140,18 +140,30 @@ func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) 
         func near(_ area: Rect) -> [LayoutNode] {
             tree.query(area).filter { $0 !== e.source && $0 !== e.target && !($0.isGroup && (isAncestor($0, of: e.source) || isAncestor($0, of: e.target))) }
         }
-        var path = [ports[i][0]] + chain + [ports[i][1]], k = 0
-        while k + 1 < path.count {
-            let a = path[k], b = path[k + 1], box = RoutingCompute.bounds(a, b)
-            if near(box.inflated(by: 0.5)).contains(where: { $0.bounds.intersectsLine(a, b) }) {
-                let window = max(40, max(box.width, box.height) / 2)
-                if let detour = ObstaclePolyline.search(a, b, near(box.inflated(by: window)).map(\.bounds), padding: 8), detour.count > 2 {
-                    path.replaceSubrange(k...(k + 1), with: detour); k += detour.count - 1; continue
+        func route(_ points: [Point]) -> [Point] {
+            var path = points, k = 0
+            while k + 1 < path.count {
+                let a = path[k], b = path[k + 1], box = RoutingCompute.bounds(a, b)
+                if near(box.inflated(by: 0.5)).contains(where: { $0.bounds.intersectsLine(a, b) }) {
+                    let window = max(40, max(box.width, box.height) / 2)
+                    if let detour = ObstaclePolyline.search(a, b, near(box.inflated(by: window)).map(\.bounds), padding: 8), detour.count > 2 {
+                        path.replaceSubrange(k...(k + 1), with: detour); k += detour.count - 1; continue
+                    }
                 }
+                k += 1
             }
-            k += 1
+            return compactPath(path)
         }
-        e.path = compactPath(path)
+        var path = route([ports[i][0]] + chain + [ports[i][1]])
+        let length = ObstaclePolyline.length(path)
+        if !chain.isEmpty && length > 4 * max(1, (e.target.center - e.source.center).length) {
+            let direct = route([ports[i][0], ports[i][1]])
+            if ObstaclePolyline.length(direct) < length * 0.75,
+               ObstaclePolyline.clear(direct, near(ObstaclePolyline.bounds(direct).inflated(by: 1)).map(\.bounds)) {
+                path = direct
+            }
+        }
+        e.path = path
     }
 }
 private func isotonic(_ values: [Float], weights: [Float]) -> [Float] {

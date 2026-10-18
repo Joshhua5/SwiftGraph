@@ -39,7 +39,7 @@ enum PresetRouting {
                 let bundler = EdgeBundlingRouter(); bundler.k = k; bundler.routeEdges(graph)
             }
         case .layered, .curves:
-            failed = ObstaclePolyline.repair(graph)
+            failed = ObstaclePolyline.repair(graph, shortenDetours: true)
             EdgeSeparator().routeEdges(graph)
             if case let .curves(iterations) = self {
                 let curves = CurveFittingEdgeRouter(); curves.iterations = iterations; curves.routeEdges(graph)
@@ -52,7 +52,7 @@ enum PresetRouting {
         }
         // No later whole-graph router may invalidate the measured container envelope.
         SelfLoopRouter().routeEdges(graph)
-        failed += ObstaclePolyline.repair(graph, spacing: 0)
+        failed += ObstaclePolyline.repair(graph, spacing: 0, shortenDetours: true)
         EdgeEndpointClipper.clipToNodeBounds(graph)
         PortDistributor().routeEdges(graph)
         let scene = ObstaclePolyline.Scene(graph.nodes)
@@ -87,14 +87,14 @@ extension PresetRouting {
             builder.routePolyline(backend: backend, executor: executor)
             if case let .bundled(k) = self { builder.routeWithBundling(backend: backend, executor: executor) { $0.k = k } }
         case .layered, .curves:
-            builder.transform { ObstaclePolyline.repair($0) }
+            builder.transform { ObstaclePolyline.repair($0, shortenDetours: true) }
                 .separateEdges(backend: backend, executor: executor)
             if case let .curves(iterations) = self { builder.routeCurveFitting(backend: backend, executor: executor) { $0.iterations = iterations } }
         case .bsp: builder.routeBsp(backend: backend, executor: executor)
         case .channel: builder.routeChannel(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
         }
         builder.routeSelfLoops(backend: backend, executor: executor)
-            .transform { ObstaclePolyline.repair($0, spacing: 0) }
+            .transform { ObstaclePolyline.repair($0, spacing: 0, shortenDetours: true) }
             .clipEdgeEndpoints(backend: backend, executor: executor)
             .distributePorts(backend: backend, executor: executor)
         try await builder.applyAsync()
@@ -110,7 +110,8 @@ func positionNetworkHubs(_ graph: LayoutGraph, hubCount: Int) {
         let r = $1.element.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0
         return l == r ? $0.offset < $1.offset : l > r
     }.prefix(max(0, hubCount)).map(\.element)
-    let radius = fittedCircleRadius(hubs.map(\.bounds), minimum: 300)
+    let minimum = min(Float(300), Float(max(1, graph.nodes.count)) * 25)
+    let radius = fittedCircleRadius(hubs.map(\.bounds), minimum: minimum)
     for (i, hub) in hubs.enumerated() {
         hub.metadata[GraphMetadataKeys.fixed] = true
         let angle = 2 * Float.pi * Float(i) / Float(hubs.count)

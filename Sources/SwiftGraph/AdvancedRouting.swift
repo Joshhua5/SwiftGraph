@@ -44,7 +44,7 @@ public final class EdgeBundlingRouter: EdgeRouter {
             edges: edges.map { .init(source: index[$0.source] ?? -1, target: index[$0.target] ?? -1, from: $0.source.center, to: $0.target.center, path: $0.path) })
         guard bundler.runCPU() else { return }
         for (edge, path) in zip(edges, bundler.paths()) { edge.path = path }
-        unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0)
+        unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0, shortenDetours: true)
     }
 }
 

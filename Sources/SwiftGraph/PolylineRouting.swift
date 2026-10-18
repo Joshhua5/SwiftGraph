@@ -119,7 +119,9 @@ enum ObstaclePolyline {
             let start = edge.source.center, end = edge.target.center
             let gap: Float = padding.isFinite ? max(1e-5, padding) : 10
             var ladder = [gap]
-            for g in [gap / 2, gap / 4, Float(1.0)] where g < ladder[ladder.count - 1] { ladder.append(g) }
+            if comparePadding {
+                for g in [gap / 2, gap / 4, Float(1.0)] where g < ladder[ladder.count - 1] { ladder.append(g) }
+            }
             let window = ObstaclePolyline.bounds([start, end]).inflated(by: 2 * gap + (end - start).length / 4)
             let initial = Set(relevant(window, edge, start, end))
             var extra: ((Point, Point) -> Float)?
@@ -130,8 +132,8 @@ enum ObstaclePolyline {
                     guard let path = ObstaclePolyline.search(start, end, included.sorted().map { rects[$0] }, padding: level, bend: bend, extra: extra) else { break }
                     let more = violators(path, included, edge, gap: level)
                     if more.isEmpty {
-                        let length = ObstaclePolyline.length(path)
-                        if comparePadding && length > 4 * max(1, (end - start).length) {
+                        let length = ObstaclePolyline.length(path), limit = 4 * max(1, (end - start).length)
+                        if comparePadding && length > limit {
                             var best: (path: [Point], gap: Float, bends: [Bend])?
                             // A wide padded corridor may be clear but much longer than
                             // a narrower one. Compare without crossing costs as well.
@@ -139,6 +141,7 @@ enum ObstaclePolyline {
                                 if let short = route(edge, padding: alternative, bend: bend, comparePadding: false),
                                    clear(short.path, edge), ObstaclePolyline.length(short.path) < min(length * 0.75, best.map { ObstaclePolyline.length($0.path) } ?? .infinity) {
                                     best = short
+                                    if ObstaclePolyline.length(short.path) <= limit { break }
                                 }
                             }
                             if let best { return best }
@@ -343,16 +346,24 @@ enum ObstaclePolyline {
     /// route keeps its path, or a straight line if it has none, and is returned so callers can report it. Detoured
     /// edges are then separated by `spacing`.
     @discardableResult
-    static func repair(_ graph: LayoutGraph, edges: [LayoutEdge]? = nil, padding: Float = defaultPadding, spacing: Float = 10) -> [LayoutEdge] {
+    static func repair(_ graph: LayoutGraph, edges: [LayoutEdge]? = nil, padding: Float = defaultPadding, spacing: Float = 10,
+                       shortenDetours: Bool = false) -> [LayoutEdge] {
         let scene = Scene(graph.nodes)
         var detoured: [LayoutEdge] = [], failed: [LayoutEdge] = []
         for edge in (edges ?? graph.edges) where edge.source !== edge.target {
             if RoutingCompute.isCancelled { return failed }
-            if scene.clear(edge.path, edge) { continue }
+            let clear = scene.clear(edge.path, edge), length = ObstaclePolyline.length(edge.path)
+            let longDetour = shortenDetours && clear && length > 4 * max(1, (edge.target.center - edge.source.center).length)
+            if clear && !longDetour { continue }
             let found = scene.route(edge, padding: padding)
             if RoutingCompute.isCancelled { return failed }
-            if let found, scene.clear(found.path, edge) { edge.path = found.path; detoured.append(edge) }
-            else { failed.append(edge); if edge.path.count < 2 { edge.path = [edge.source.center, edge.target.center] } }
+            if let found, scene.clear(found.path, edge) {
+                if !longDetour || ObstaclePolyline.length(found.path) < length * 0.75 {
+                    edge.path = found.path; detoured.append(edge)
+                }
+            } else if !clear {
+                failed.append(edge); if edge.path.count < 2 { edge.path = [edge.source.center, edge.target.center] }
+            }
         }
         if spacing > 0, detoured.count > 1 {
             let separator = EdgeSeparator(); separator.spacing = spacing; separator.separate(detoured, scene)

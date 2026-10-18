@@ -201,16 +201,18 @@ struct OrganicQualitySearch {
         }
         var occupied = anchored.map { bounds[$0] }
         let gap = configuration.nodeSeparation
-        let rowWidth = max(200, sqrt(bounds.reduce(Float(0)) { $0 + ($1.width + gap) * ($1.height + gap) }))
+        let anchorBounds = occupied.dropFirst().reduce(occupied.first ?? Rect()) { $0.union($1) }
+        let origin = anchored.isEmpty ? Point.zero : Point(x: anchorBounds.x, y: anchorBounds.bottom + gap)
+        let rowWidth = max(anchored.isEmpty ? 200 : anchorBounds.width,
+                           sqrt(bounds.reduce(Float(0)) { $0 + ($1.width + gap) * ($1.height + gap) }))
         var x: Float = 0.0, y: Float = 0.0, rowHeight: Float = 0.0
         for c in free {
             try Task.checkCancellation()
-            let r = bounds[c], delta: Point
-            if anchored.isEmpty {
-                if x > 0 && x + r.width > rowWidth { x = 0; y += rowHeight + gap; rowHeight = 0 }
-                delta = Point(x: x - r.x, y: y - r.y)
-                x += r.width + gap; rowHeight = max(rowHeight, r.height)
-            } else { delta = try Self.nearestPlacement(r, obstacles: occupied, gap: gap) }
+            let r = bounds[c]
+            if x > 0 && x + r.width > rowWidth { x = 0; y += rowHeight + gap; rowHeight = 0 }
+            let shelf = Point(x: origin.x + x - r.x, y: origin.y + y - r.y)
+            x += r.width + gap; rowHeight = max(rowHeight, r.height)
+            let delta = anchored.isEmpty ? shelf : shelf + (try Self.nearestPlacement(r.translated(by: shelf), obstacles: occupied, gap: gap))
             for i in components[c] { positions[i] = positions[i] + delta }
             occupied.append(r.translated(by: delta))
         }

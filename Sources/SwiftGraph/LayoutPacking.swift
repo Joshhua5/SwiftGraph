@@ -27,21 +27,31 @@ func fittedCirclePlacement(_ bounds: [Rect], minimum: Float) -> (radius: Float, 
     guard bounds.count > 1 else { return (0, bounds.isEmpty ? [] : [0]) }
     if bounds.count == 2 { return (fittedCircleRadius(bounds, minimum: minimum), [0, .pi]) }
     let sizes = bounds.map { Double(hypot($0.width, $0.height) / 2 + 10) }
-    let lower = max(Double(max(0, minimum)), sizes.max() ?? 0)
-    func used(_ radius: Double) -> Double { sizes.reduce(0) { $0 + 2 * asin(min(1, $1 / max(radius, 1e-12))) } }
+    let pairs = sizes.indices.map { (sizes[$0] + sizes[($0 + 1) % sizes.count]) / 2 }
+    let lower = max(Double(max(0, minimum)), pairs.max() ?? 0)
+    func placement(_ radius: Double) -> (fits: Bool, angles: [Float]) {
+        let r = max(radius, 1e-12)
+        let steps = pairs.map { 2 * asin(min(1, $0 / r)) }
+        let total = steps.reduce(0, +), scale = total > 0 ? 2 * Double.pi / total : 0
+        var angles = [Double(0)], angle = 0.0
+        for i in 0..<(sizes.count - 1) { angle += steps[i] * scale; angles.append(angle) }
+        var fits = total <= 2 * .pi && total > 0
+        for i in sizes.indices where fits {
+            for j in sizes.indices.dropFirst(i + 1) {
+                if 2 * r * abs(sin((angles[j] - angles[i]) / 2)) + 1e-6 < sizes[i] + sizes[j] { fits = false; break }
+            }
+        }
+        return (fits, angles.map { Float($0) })
+    }
     var low = lower, high = max(1, lower)
-    while used(high) > 2 * .pi { high *= 2 }
+    while !placement(Double(Float(high).nextUp)).fits { high *= 2 }
     for _ in 0..<48 {
         let mid = (low + high) / 2
-        if used(mid) > 2 * .pi { low = mid } else { high = mid }
+        if placement(Double(Float(mid).nextUp)).fits { high = mid } else { low = mid }
     }
     // Round outward so Float conversion cannot reduce the fitted clearance.
     let radius = Float(high).nextUp
-    let halves = sizes.map { asin(min(1, $0 / Double(radius))) }
-    let gap = max(0, (2 * Double.pi - 2 * halves.reduce(0, +)) / Double(bounds.count))
-    var angles = [Float(0)], angle = 0.0
-    for i in 1..<bounds.count { angle += halves[i - 1] + halves[i] + gap; angles.append(Float(angle)) }
-    return (radius, angles)
+    return (radius, placement(Double(radius)).angles)
 }
 
 /// Stable shelf packing shared by components and spanning-forest roots.
