@@ -50,8 +50,26 @@ func fittedCirclePlacement(_ bounds: [Rect], minimum: Float) -> (radius: Float, 
         if placement(Double(Float(mid).nextUp)).fits { high = mid } else { low = mid }
     }
     // Round outward so Float conversion cannot reduce the fitted clearance.
-    let radius = Float(high).nextUp
-    return (radius, placement(Double(radius)).angles)
+    let radius = Float(high).nextUp, angles = placement(Double(radius)).angles
+    // Circles over-reserve beside wide frames; keep the angles and tighten to the rectangles themselves.
+    let tight = rectangleCircleRadius(bounds, angles: angles.map(Double.init), gap: 20, minimum: Double(max(0, minimum)))
+    return (min(radius, Float(tight).nextUp), angles)
+}
+
+/// Smallest radius at which rectangles centred on the given angles keep `gap` between every pair.
+/// For fixed angles each pair is separated on some axis beyond one radius, and stays so as the radius grows.
+func rectangleCircleRadius(_ bounds: [Rect], angles: [Double], gap: Double, minimum: Double) -> Double {
+    var radius = minimum
+    for i in bounds.indices {
+        for j in bounds.indices.dropFirst(i + 1) {
+            let dx = abs(cos(angles[j]) - cos(angles[i])), dy = abs(sin(angles[j]) - sin(angles[i]))
+            var need = Double.infinity
+            if dx > 1e-9 { need = min(need, (Double(bounds[i].width + bounds[j].width) / 2 + gap) / dx) }
+            if dy > 1e-9 { need = min(need, (Double(bounds[i].height + bounds[j].height) / 2 + gap) / dy) }
+            radius = max(radius, need)
+        }
+    }
+    return radius
 }
 
 /// Stable shelf packing shared by components and spanning-forest roots.

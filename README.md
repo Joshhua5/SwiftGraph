@@ -181,6 +181,11 @@ containment. See the `frames-mixed-layouts`, `frames-large-headers`, and
 
 All 17 `LayoutPatternType` presets are available. Builder extensions also include grain swimlanes, importance-based and cluster-based layouts, routing suffixes and explicit composition helpers.
 
+Every preset fits nested groups around measured children and routes their edges
+before fitting the containing frame. Network-topology hubs are selected per
+container; their circle grows when child frames need more space. Independent
+forest roots pack into rows while retaining each tree's internal structure.
+
 Radial, radial-tree, and radial-star layouts account for measured node sizes when
 spacing rings and repair routes through unrelated nodes. Configured radial spacing
 is a minimum; large nodes can require a larger drawing.
@@ -224,14 +229,15 @@ The routing algorithms follow their distinct Waring contracts:
 
 - **Channel:** `gridSize` sets the actual lattice pitch. Non-group nodes block cells; source/target cells remain accessible. Direction-aware A* charges bend and cell congestion costs, reset per call. Explicit ports sit one unit outside the selected side; candidates are selected greedily by distance. Endpoint doglegs join the lattice.
 - **Grouped:** channels come from both endpoint ancestor chains. Shared corridors can nudge leaf nodes when the destination is free, then reroute incident edges. Canonical shared segments receive lane offsets in both traversal directions, followed by boundary trimming. Group nodes stay fixed.
-- **BSP:** routes follow bounded partition segments split at their intersections. Nested wrapper cuts extend to the appropriate parent partition, without extending through sibling bodies. By default the outer frame sits `margin` (20) outside the outermost nodes, routes attach through orthogonal side ports (side middles and positions aligned with the other node), A* charges `bendPenalty` (40) per turn, and `EdgeSeparator` spreads shared channels (`edgeSpacing`, 6). An edge with no route through the partition keeps a straight centre-to-centre line and appears in `unroutableEdges`.
+- **BSP:** routes follow bounded partition segments split at their intersections. Nested wrapper cuts extend to the appropriate parent partition, without extending through sibling bodies. By default the outer frame sits `margin` (20) outside the outermost nodes, routes attach through orthogonal side ports (side middles and positions aligned with the other node), A* charges `bendPenalty` (40) per turn, and `EdgeSeparator` spreads shared channels (`edgeSpacing`, 10). Routes longer than four times endpoint distance compare a finer channel candidate, preserving explicit ports and requiring at least a 25% length improvement. Failed routing falls back to a visible polyline or orthogonal L/Z and is reported in `unroutableEdges`.
 - **Polyline:** a straight line when it is clear, otherwise the shortest path over padded obstacle corners, clear of every node body; finished with `EdgeSeparator`.
 
-Only the channel router interprets port constraints and candidates. When no route is found, every router keeps a direct line and lists the edge in `unroutableEdges`; no router returns an empty path. Channel and grouped routing follow the C# reference and do not change clearance or try alternative ports after their initial selection.
+Channel and BSP routers interpret port constraints and candidates. Failed searches retain visible fallback paths and report their failures; final clearance still needs checking.
 
 `PolylineEdgeRouter` search is deterministic. Padding guides detours; nearby endpoints
-can limit the extra clearance beyond node bodies. Its final `EdgeSeparator` pass uses
-`edgeSpacing` (default 6; 0 disables it).
+can limit the extra clearance beyond node bodies. Unusually long paths compare narrower
+padding levels and alternatives without crossing costs, accepting a substantially shorter
+clear path. Its final `EdgeSeparator` pass uses `edgeSpacing` (default 10; 0 disables it).
 
 `EdgeSeparator` spreads edges that share a collinear stretch, such as duplicates,
 reciprocal pairs and shared corridors, into parallel lanes. Lanes keep a consistent side along
@@ -277,8 +283,10 @@ The test bundles a copy in `Tests/Fixtures/graph-topology.json`, so it also runs
 in a clean checkout. It prints the retained output directory under
 `.build/visual/topology-<run-id>`. Open its `contact-sheet.png` for an overview or
 an individual `<preset>.png` for agent inspection. Each preset also exports a
-zoomable SVG and geometry JSON; `report.md` links all artifacts. The test checks
-finite geometry, preserved graph membership, routes, and decodable PNG output.
+zoomable SVG, geometry JSON and `<preset>.quality.json`; `report.md` links all artifacts.
+The test checks finite geometry, preserved graph membership, containment, node
+overlaps, obstacle/header clearance, routes, and decodable PNG output. Quality
+files also record world extents and detour outliers.
 Visual quality remains available for agent review.
 Rendering this dense graph is opt-in so routine test runs stay fast; the loader
 and direction tests run normally. Release mode avoids debug routing overhead.
@@ -293,6 +301,12 @@ SWIFTGRAPH_TOPOLOGY_OUTPUT=.build/visual/topology-review \
 SWIFTGRAPH_RENDER_TOPOLOGY=1 \
 swift test -c release --filter GraphTopologyRenderingTests/rendersTopologyInEverySupportedPreset
 ```
+
+To inspect saved geometry without recomputing layouts, set
+`SWIFTGRAPH_TOPOLOGY_DETAILS` to a JSON array of requests with `input` (snapshot
+path), `output` (image stem), `x`, `y`, `width`, `height`, and optional `edgeIDs`.
+Run `swift test -c release --filter GraphTopologyRenderingTests/rendersSavedTopologyDetails`.
+Selected-edge details retain original node positions and must be identified as filtered views.
 
 The JSON contains `nodes` (objects with an optional `parent` index) and `edges`
 (objects with `source`, `target`, and `bidirectional`). Indices are zero-based

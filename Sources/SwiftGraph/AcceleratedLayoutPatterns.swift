@@ -35,6 +35,7 @@ public extension LayoutBuilder {
             builder.useOrganic(backend: backend, executor: executor) { $0.iterations = organicIterations; $0.initialization = .current }
                 .useBarycenter(backend: backend, executor: executor) { $0.iterations = barycenterIterations }
                 .useRemoveOverlaps(backend: backend, executor: executor)
+                .transform { pullLeavesToNeighbours($0); packAroundLargestComponent($0) }
         }
         return groupedPreset(core, routing: .polyline, backend: backend, executor: executor)
     }

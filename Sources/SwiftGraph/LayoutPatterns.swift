@@ -51,6 +51,7 @@ public extension LayoutBuilder {
             try organic.applyLayout(graph)
             let barycenter = BarycenterLayoutAlgorithm(); barycenter.iterations = barycenterIterations
             try barycenter.applyLayout(graph); try RemoveOverlapsLayoutAlgorithm().applyLayout(graph)
+            pullLeavesToNeighbours(graph); packAroundLargestComponent(graph)
         }
         return groupedPreset(core, routing: .polyline)
     }

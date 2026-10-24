@@ -119,7 +119,9 @@ import Testing
         }
         // The topology's outer frame: small siblings sit beside it rather than across a full-radius void.
         let cpu = makeGraph(frame: Size(width: 9080, height: 8897)); try CircularLayoutAlgorithm().applyLayout(cpu)
-        #expect(cpu.bounds.width < 12_500 && cpu.bounds.height < 9000)
+        #expect(cpu.bounds.width < 9300 && cpu.bounds.height < 9000)
+        let nearest = cpu.nodes.dropFirst().map { cpu.nodes[0].bounds.left - $0.bounds.right }.min()!
+        #expect(nearest >= 19 && nearest < 30)
         for i in cpu.nodes.indices { for j in cpu.nodes.indices.dropFirst(i + 1) {
             #expect(!cpu.nodes[i].bounds.intersects(cpu.nodes[j].bounds))
         } }
@@ -132,6 +134,59 @@ import Testing
             for (a, b) in zip(graph.nodes.map(\.bounds), small.nodes.map(\.bounds)) {
                 #expect(abs(a.x - b.x) <= 0.01 && abs(a.y - b.y) <= 0.01 && a.size == b.size, "\(backend)")
             }
+        }
+    }
+
+    @Test func networkHubsSitBesideALargeFrameHub() {
+        let graph = LayoutGraph()
+        for (i, size) in [Size(width: 2000, height: 2000), Size(width: 80, height: 32), Size(width: 80, height: 32)].enumerated() {
+            let node = LayoutNode(id: "\(i)", width: size.width, height: size.height)
+            node.metadata[GraphMetadataKeys.pageRank] = Double(3 - i); graph.addNode(node)
+        }
+        positionNetworkHubs(graph, hubCount: 3)
+        let big = graph.nodes[0].bounds
+        for small in graph.nodes.dropFirst().map(\.bounds) {
+            #expect(!small.inflated(by: 19).intersects(big))
+            #expect(big.left - small.right < 25)
+        }
+        #expect(graph.nodes.allSatisfy { $0.metadata[GraphMetadataKeys.fixed] as? Bool == true })
+    }
+
+    @Test func leavesPullTowardTheirNeighbourWithoutOverlap() {
+        let graph = LayoutGraph()
+        for (id, x) in [("hub", Float(0)), ("leaf", 1000), ("wall", 300)] {
+            let node = LayoutNode(id: id, width: 80, height: 32); node.center = Point(x: x, y: 0); graph.addNode(node)
+        }
+        graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1]))
+        graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[2]))
+        // Both leaves lie on one ray; leaves move in node order, each stopping 40 units clear of whatever is nearer the hub.
+        pullLeavesToNeighbours(graph)
+        let hub = graph.nodes[0].bounds, leaf = graph.nodes[1].bounds, second = graph.nodes[2].bounds
+        #expect(abs(leaf.left - hub.right - 40) < 0.01)
+        #expect(abs(second.left - leaf.right - 40) < 0.01)
+        #expect(leaf.center.y == 0)
+        // Already closer than the clearance allows: a leaf is never pushed further away.
+        graph.nodes[1].center = Point(x: 0, y: 60); let before = graph.nodes[1].center
+        pullLeavesToNeighbours(graph)
+        #expect(graph.nodes[1].center == before)
+    }
+
+    @Test func disconnectedComponentsShelveBelowTheLargestComponent() {
+        let graph = LayoutGraph()
+        for i in 0..<6 {
+            let node = LayoutNode(id: "\(i)", width: 80, height: 32)
+            node.center = i < 3 ? Point(x: Float(i) * 200, y: 0) : Point(x: Float(i) * 3000, y: -4000)
+            graph.addNode(node)
+        }
+        graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1]))
+        graph.addEdge(LayoutEdge(source: graph.nodes[1], target: graph.nodes[2]))
+        let core = graph.nodes.prefix(3).map(\.bounds)
+        packAroundLargestComponent(graph)
+        #expect(Array(graph.nodes.prefix(3).map(\.bounds)) == core)
+        let anchor = core.dropFirst().reduce(core[0]) { $0.union($1) }
+        for node in graph.nodes.dropFirst(3) {
+            #expect(node.bounds.top >= anchor.bottom + 40 - 1e-3 && node.bounds.top < anchor.bottom + 200)
+            #expect(node.bounds.left >= anchor.left - 1e-3 && node.bounds.right <= anchor.right + 1e-3)
         }
     }
 }
