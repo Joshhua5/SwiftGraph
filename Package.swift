@@ -14,6 +14,9 @@ let package = Package(
         ),
         .executable(name: "graph-layout-benchmark", targets: ["GraphLayoutBenchmark"]),
         .executable(name: "graph-layout-visual", targets: ["GraphLayoutVisual"]),
+        .executable(name: "graph-layout-previews", targets: ["GraphLayoutPreviews"]),
+        // Separate product so Xcode generates a scheme that can host the gallery's SwiftUI previews.
+        .library(name: "GraphLayoutGallery", targets: ["GraphLayoutGallery"]),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -36,6 +39,19 @@ let package = Package(
             swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")]
         ),
         .executableTarget(name: "GraphLayoutVisual", dependencies: ["GraphEvaluationSupport"]),
+        // Example graphs, SwiftUI rendering and previews. A library so Xcode can preview it
+        // (executable targets would need ENABLE_DEBUG_DYLIB, which SwiftPM cannot set).
+        .target(
+            name: "GraphLayoutGallery",
+            dependencies: ["SwiftGraph"],
+            swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")]
+        ),
+        // macOS app that hosts the gallery in a window.
+        .executableTarget(
+            name: "GraphLayoutPreviews",
+            dependencies: ["GraphLayoutGallery"],
+            swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")]
+        ),
         .testTarget(
             name: "SwiftGraphTests",
             dependencies: ["SwiftGraph", "GraphEvaluationSupport"],

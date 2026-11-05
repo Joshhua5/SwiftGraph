@@ -46,6 +46,19 @@ public final class QuadTree<Value> {
         for (r, value) in entries.reversed() where r.intersects(area) { results.append(value) }
         for child in children where child.bounds.intersects(area) { child.query(area, results: &results) }
     }
+    /// Whether any entry touching `area` satisfies `predicate`. Stops at the first match and allocates nothing.
+    public func contains(intersecting area: Rect, where predicate: (Rect, Value) -> Bool) -> Bool {
+        for (r, value) in entries where r.intersects(area) && predicate(r, value) { return true }
+        for child in children where child.bounds.intersects(area) {
+            if child.contains(intersecting: area, where: predicate) { return true }
+        }
+        return false
+    }
+    /// Visits every entry touching `area`, in no particular order, without allocating.
+    public func forEach(intersecting area: Rect, _ body: (Rect, Value) -> Void) {
+        for (r, value) in entries where r.intersects(area) { body(r, value) }
+        for child in children where child.bounds.intersects(area) { child.forEach(intersecting: area, body) }
+    }
 }
 
 public final class ChannelGridCalculator {

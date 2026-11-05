@@ -78,7 +78,11 @@ enum ObstaclePolyline {
             for (i, r) in rects.enumerated() { tree.insert(bounds: r, item: i) }
         }
         /// Every obstacle touching `area`, in index order.
-        func within(_ area: Rect) -> [Int] { tree.query(area.inflated(by: 1e-5)).sorted() }
+        func within(_ area: Rect) -> [Int] {
+            var result: [Int] = []
+            tree.forEach(intersecting: area.inflated(by: 1e-5)) { _, i in result.append(i) }
+            return result.sorted()
+        }
         /// Obstacles of `edge` touching `area`: everything but its own ends and the groups containing them.
         func near(_ area: Rect, _ edge: LayoutEdge) -> [Int] {
             within(area).filter { i in
@@ -201,25 +205,72 @@ enum ObstaclePolyline {
     }
 
     /// Routed segments by owning edge, queried for how many a candidate segment properly crosses.
+    /// A uniform grid over the routing bounds lists each segment in every cell its line passes through (border cells
+    /// extend outwards without limit), so two segments that cross always share the cell holding the crossing point.
+    /// Unlike a bounding-box tree, a long diagonal costs only the cells it runs through.
     final class SegmentIndex {
-        private var segments: [(a: Point, b: Point, owner: Int)] = []
-        private var removed = Set<Int>()
-        private let tree: QuadTree<Int>
-        init(bounds: Rect) { tree = QuadTree<Int>(bounds: bounds.inflated(by: max(bounds.width, bounds.height))) }
-        func add(_ path: [Point], owner: Int) {
-            for (a, b) in zip(path, path.dropFirst()) {
-                tree.insert(bounds: ObstaclePolyline.bounds([a, b]).inflated(by: 1e-3), item: segments.count); segments.append((a, b, owner))
+        private var segments: [(a: Point, b: Point)] = []
+        private var alive: [Bool] = []
+        private var byOwner: [Int: [Int]] = [:]
+        private var cells: [[Int]]
+        /// Per-segment query stamps, so a segment listed in several visited cells is counted once.
+        private var stamps: [Int] = [], query = 0
+        private let origin: Point, cellWidth: Float, cellHeight: Float, side: Int, slack: Float
+        init(bounds: Rect, side: Int = 64) {
+            self.side = side
+            origin = Point(x: bounds.x, y: bounds.y)
+            cellWidth = bounds.width > 0 ? bounds.width / Float(side) : 1
+            cellHeight = bounds.height > 0 ? bounds.height / Float(side) : 1
+            // Absorbs rounding in the slab clipping; extra cells only cost time, never a missed crossing.
+            slack = max(cellWidth, cellHeight) * 0.05
+            cells = Array(repeating: [], count: side * side)
+        }
+        private func cell(_ value: Float, _ start: Float, _ size: Float) -> Int {
+            let t = ((value - start) / size).rounded(.down)
+            guard t.isFinite else { return t > 0 ? side - 1 : 0 }
+            return Int(min(max(t, 0), Float(side - 1)))
+        }
+        /// Every cell the segment passes through: per row, the segment clipped to that row's slab.
+        private func visit(_ a: Point, _ b: Point, _ body: (Int) -> Void) {
+            let firstRow = cell(min(a.y, b.y) - slack, origin.y, cellHeight), lastRow = cell(max(a.y, b.y) + slack, origin.y, cellHeight)
+            // Non-finite input can order the bounds the wrong way round; it cannot cross anything properly.
+            for row in firstRow...max(firstRow, lastRow) {
+                var low: Float = -.infinity, high: Float = .infinity
+                if row > 0 { low = origin.y + Float(row) * cellHeight - slack }
+                if row < side - 1 { high = origin.y + Float(row + 1) * cellHeight + slack }
+                var x0 = min(a.x, b.x), x1 = max(a.x, b.x)
+                if b.y != a.y {
+                    let t0 = min(1, max(0, (low - a.y) / (b.y - a.y))), t1 = min(1, max(0, (high - a.y) / (b.y - a.y)))
+                    let p = a.x + (b.x - a.x) * t0, q = a.x + (b.x - a.x) * t1
+                    x0 = min(p, q); x1 = max(p, q)
+                }
+                let first = cell(x0 - slack, origin.x, cellWidth), last = cell(x1 + slack, origin.x, cellWidth)
+                for column in first...max(first, last) { body(row * side + column) }
             }
         }
-        func remove(owner: Int) { for (i, s) in segments.enumerated() where s.owner == owner { removed.insert(i) } }
+        func add(_ path: [Point], owner: Int) {
+            for (a, b) in zip(path, path.dropFirst()) {
+                let index = segments.count
+                segments.append((a, b)); alive.append(true); stamps.append(0); byOwner[owner, default: []].append(index)
+                visit(a, b) { cells[$0].append(index) }
+            }
+        }
+        func remove(owner: Int) {
+            for i in byOwner.removeValue(forKey: owner) ?? [] { alive[i] = false }
+        }
         func crossings(_ a: Point, _ b: Point) -> Int {
             func side(_ p: Point, _ q: Point, _ r: Point) -> Float { (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) }
-            return tree.query(ObstaclePolyline.bounds([a, b]).inflated(by: 1e-3)).reduce(0) { count, i in
-                guard !removed.contains(i) else { return count }
-                let (c, d, _) = segments[i]
-                let d1 = side(a, b, c), d2 = side(a, b, d), d3 = side(c, d, a), d4 = side(c, d, b)
-                return count + (d1 * d2 < -1e-5 && d3 * d4 < -1e-5 ? 1 : 0)
+            query += 1
+            var count = 0
+            visit(a, b) { c in
+                for i in cells[c] where alive[i] && stamps[i] != query {
+                    stamps[i] = query
+                    let (c, d) = segments[i]
+                    let d1 = side(a, b, c), d2 = side(a, b, d), d3 = side(c, d, a), d4 = side(c, d, b)
+                    if d1 * d2 < -1e-5 && d3 * d4 < -1e-5 { count += 1 }
+                }
             }
+            return count
         }
     }
     /// The detour search's own measure of a path: length, bends and crossings.
@@ -295,7 +346,7 @@ enum ObstaclePolyline {
         for r in expanded { tree.insert(bounds: r, item: r) }
         func visible(_ a: Point, _ b: Point) -> Bool {
             let area = Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).inflated(by: 1e-5)
-            return !tree.query(area).contains { $0.intersectsLine(a, b) }
+            return !tree.contains(intersecting: area) { r, _ in r.intersectsLine(a, b) }
         }
         let heuristic = points.map { ($0 - end).length }
         var cost = Array(repeating: Float.infinity, count: points.count), previous = Array(repeating: -1, count: points.count)
