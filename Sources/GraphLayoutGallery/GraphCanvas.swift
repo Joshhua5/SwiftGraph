@@ -68,32 +68,53 @@ struct GraphCanvas: View {
                 let shape = Path(roundedRect: frame, cornerRadius: radius)
                 context.fill(shape, with: .color(color.opacity(0.055)))
 
-                let rawHeader = node.headerFrame.map(map) ?? CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: fontSize + 10)
-                let headerBand = CGRect(
-                    x: frame.minX,
-                    y: frame.minY,
-                    width: frame.width,
-                    height: min(frame.height, max(rawHeader.maxY - frame.minY, fontSize + 8))
-                )
-                context.drawLayer { headerLayer in
-                    headerLayer.clip(to: shape)
-                    headerLayer.fill(Path(headerBand), with: .color(color.opacity(0.11)))
+                let titleInset = max(6, 8 * scale)
+
+                if let reservedHeader = node.headerFrame.map(map) {
+                    // The layout reserved header space inside the frame, so draw a filled band over exactly
+                    // that space. Growing it to fit a minimum font size would cover the first row of children.
+                    let headerBand = CGRect(
+                        x: frame.minX,
+                        y: frame.minY,
+                        width: frame.width,
+                        height: min(frame.height, reservedHeader.maxY - frame.minY)
+                    )
+                    context.drawLayer { headerLayer in
+                        headerLayer.clip(to: shape)
+                        headerLayer.fill(Path(headerBand), with: .color(color.opacity(0.11)))
+                    }
+                    var divider = Path()
+                    divider.move(to: CGPoint(x: frame.minX, y: headerBand.maxY))
+                    divider.addLine(to: CGPoint(x: frame.maxX, y: headerBand.maxY))
+                    context.stroke(divider, with: .color(color.opacity(0.28)), lineWidth: max(0.75, 0.9 * scale))
+                    let titleBox = CGSize(width: frame.width - titleInset * 2, height: reservedHeader.height)
+                    if let title = fittedText(context, node.name, weight: .semibold, color: color, preferredSize: fontSize, in: titleBox) {
+                        context.draw(title, at: CGPoint(x: frame.minX + titleInset, y: headerBand.midY), anchor: .leading)
+                    }
+                } else if let title = fittedText(
+                    context, node.name, weight: .semibold, color: color, preferredSize: fontSize,
+                    in: CGSize(width: frame.width - titleInset * 2, height: .infinity)
+                ) {
+                    // No reserved header: hang the title as a tab above the top edge so it never covers children.
+                    let titleSize = title.measure(in: CGSize(width: CGFloat.infinity, height: .infinity))
+                    let padding = CGSize(width: max(3, 5 * scale), height: max(1.5, 2.5 * scale))
+                    let tab = CGRect(
+                        x: frame.minX + titleInset - padding.width,
+                        y: frame.minY - titleSize.height - padding.height * 2,
+                        width: titleSize.width + padding.width * 2,
+                        height: titleSize.height + padding.height * 2
+                    )
+                    let tabShape = Path(roundedRect: tab, cornerRadius: max(2.5, 4 * scale))
+                    context.fill(tabShape, with: .color(Color.canvasBackground))
+                    context.fill(tabShape, with: .color(color.opacity(0.16)))
+                    context.draw(title, at: CGPoint(x: tab.midX, y: tab.midY), anchor: .center)
                 }
-                var divider = Path()
-                divider.move(to: CGPoint(x: frame.minX, y: headerBand.maxY))
-                divider.addLine(to: CGPoint(x: frame.maxX, y: headerBand.maxY))
-                context.stroke(divider, with: .color(color.opacity(0.28)), lineWidth: max(0.75, 0.9 * scale))
 
                 let dashUnit = max(2.5, 5 * scale)
                 context.stroke(
                     shape,
                     with: .color(color.opacity(0.65)),
                     style: StrokeStyle(lineWidth: max(0.9, 1.15 * scale), dash: [dashUnit, dashUnit * 0.65])
-                )
-                context.draw(
-                    Text(node.name).font(.system(size: fontSize, weight: .semibold)).foregroundColor(color),
-                    at: CGPoint(x: frame.minX + max(6, 8 * scale), y: headerBand.midY),
-                    anchor: .leading
                 )
             }
 
@@ -148,15 +169,10 @@ struct GraphCanvas: View {
                 context.fill(shape, with: .color(Color.nodeFill))
                 context.stroke(shape, with: .color(Color.accentColor.opacity(0.88)), lineWidth: max(1.0, 1.45 * scale))
 
-                let availableWidth = max(8, frame.width - max(6, 10 * scale))
-                let estimatedWidth = CGFloat(max(1, node.name.count)) * fontSize * 0.58
-                let fittedFont = estimatedWidth > availableWidth
-                    ? max(5.5, fontSize * (availableWidth / estimatedWidth))
-                    : fontSize
-                context.draw(
-                    Text(node.name).font(.system(size: fittedFont, weight: .medium)).foregroundColor(.primary),
-                    at: CGPoint(x: frame.midX, y: frame.midY)
-                )
+                let labelBox = CGSize(width: frame.width - max(4, 10 * scale), height: frame.height)
+                if let label = fittedText(context, node.name, weight: .medium, color: .primary, preferredSize: fontSize, in: labelBox) {
+                    context.draw(label, at: CGPoint(x: frame.midX, y: frame.midY))
+                }
             }
 
             // 5. Edge labels
@@ -173,6 +189,34 @@ struct GraphCanvas: View {
                 )
             }
         }
+    }
+
+    /// Smallest point size worth drawing; text that would need to be smaller is skipped rather than overflowing.
+    private let minimumLegibleFontSize: CGFloat = 4.5
+
+    /// Resolves `string` at the largest size up to `preferredSize` that fits `box` (height capped to ~72% of
+    /// the box so text keeps some margin), measuring the real glyph width. Returns `nil` when it would be illegible.
+    private func fittedText(
+        _ context: GraphicsContext,
+        _ string: String,
+        weight: Font.Weight,
+        color: Color,
+        preferredSize: CGFloat,
+        in box: CGSize
+    ) -> GraphicsContext.ResolvedText? {
+        func resolve(_ size: CGFloat) -> GraphicsContext.ResolvedText {
+            context.resolve(Text(string).font(.system(size: size, weight: weight)).foregroundColor(color))
+        }
+        var size = min(preferredSize, box.height * 0.72)
+        guard box.width > 0, size >= minimumLegibleFontSize else { return nil }
+        var resolved = resolve(size)
+        let width = resolved.measure(in: CGSize(width: CGFloat.infinity, height: .infinity)).width
+        if width > box.width {
+            size *= box.width / width
+            guard size >= minimumLegibleFontSize else { return nil }
+            resolved = resolve(size)
+        }
+        return resolved
     }
 
     /// Pulls endpoints slightly back along the terminal segment so stroke caps don't protrude through arrowhead tips.

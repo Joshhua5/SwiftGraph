@@ -113,6 +113,9 @@ struct GraphSnapshot: Sendable {
         return out
     }
 
+    /// sin(25°): crossings shallower than this get no bridge.
+    private static let minimumBridgeAngleSine: CGFloat = 0.42
+
     /// Returns parameter `t` in `(0, 1)` along `(a, b)` if `(a, b)` properly crosses `(c, d)`.
     private static func intersectionParameter(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint) -> CGFloat? {
         let minABX = min(a.x, b.x), maxABX = max(a.x, b.x)
@@ -125,7 +128,10 @@ struct GraphSnapshot: Sendable {
         let ux = b.x - a.x, uy = b.y - a.y
         let vx = d.x - c.x, vy = d.y - c.y
         let denom = ux * vy - uy * vx
-        guard abs(denom) > 1e-4 else { return nil }
+        // Only bridge clear crossings (about 25° or more). Shallow crossings are shared or bundled
+        // tracks, where a bridge halo would chop the track into dashes.
+        let lengths = hypot(ux, uy) * hypot(vx, vy)
+        guard lengths > 1e-4, abs(denom) / lengths >= minimumBridgeAngleSine else { return nil }
         let wx = c.x - a.x, wy = c.y - a.y
         let t = (wx * vy - wy * vx) / denom
         let s = (wx * uy - wy * ux) / denom
