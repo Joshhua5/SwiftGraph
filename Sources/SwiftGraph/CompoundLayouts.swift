@@ -111,6 +111,8 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
     public var groupPadding: Float = 20
     /// Refine framed placement using incoming boundary connections after fitting the frames.
     public var optimizeIncomingEdges: Bool = true
+    /// Disable group-level polyline routing when a separate router runs after group placement.
+    public var routesEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any LayoutAlgorithm)?
     public private(set) var unroutableEdges: [LayoutEdge] = []
     var presetRouting: ((LayoutGraph) -> [LayoutEdge])?
@@ -133,14 +135,18 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
             let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
             if !routing.edges.isEmpty {
                 if let presetRouting { failures.formUnion(presetRouting(routing)) }
-                else {
+                else if routesEdges {
                     let router = PolylineEdgeRouter(); router.routeEdges(routing)
                     failures.formUnion(router.unroutableEdges)
+                } else {
+                    for edge in routing.edges where edge.path.count < 2 {
+                        edge.path = [edge.source.center, edge.target.center]
+                    }
                 }
             }
             try engine.finish(group, routed: routing.edges)
         }
-        if optimizeIncomingEdges { try engine.refineIncomingEdges(excluding: failures) }
+        if optimizeIncomingEdges && routesEdges { try engine.refineIncomingEdges(excluding: failures) }
         try transaction.commit(to: graph)
         unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
     }

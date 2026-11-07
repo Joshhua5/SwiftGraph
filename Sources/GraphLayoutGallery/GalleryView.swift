@@ -30,22 +30,23 @@ public struct GalleryView: View {
                         ForEach(examples) { Text($0.title).tag(Item.example($0.id)) }
                     }
                 }
-                Section {
+                Section("Production Topologies") {
                     ForEach(topologies) { Text($0.name).tag(Item.topology($0)) }
                     if topologies.isEmpty {
                         Text("No .json files in \(TopologyLibrary.directory.path)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                } header: {
-                    HStack {
-                        Text("Production Topologies")
-                        Spacer()
-                        Button { topologies = TopologyLibrary.scan() } label: { Image(systemName: "arrow.clockwise") }
-                            .buttonStyle(.borderless).help("Rescan the Topologies folder")
-                    }
                 }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button { topologies = TopologyLibrary.scan() } label: {
+                        Label("Rescan Topologies", systemImage: "arrow.clockwise")
+                    }
+                    .help("Rescan the Topologies folder")
+                }
+            }
         } detail: {
             switch selection {
             case .example(let id):

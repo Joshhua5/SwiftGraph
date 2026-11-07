@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import SwiftGraph
 
@@ -22,15 +23,42 @@ struct GraphExample: Identifiable, Sendable {
 
     /// Blocks until `render()` finishes. For previews only: the static preview snapshot is captured
     /// before `.task` work completes. Safe because `render()` is `@concurrent` and never needs the caller's actor.
-    func renderSynchronously() -> Result<GraphSnapshot, any Error> {
+    func renderSynchronously(timeout: TimeInterval = 3.5) -> Result<GraphSnapshot, any Error> {
         final class Box: @unchecked Sendable { var result: Result<GraphSnapshot, any Error>? }
         let box = Box(), done = DispatchSemaphore(value: 0)
-        Task.detached {
+        let task = Task.detached {
             do { box.result = .success(try await render()) } catch { box.result = .failure(error) }
             done.signal()
         }
-        done.wait()
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            task.cancel()
+            return .failure(CancellationError())
+        }
         return box.result ?? .failure(CancellationError())
+    }
+
+    /// Renders multiple examples concurrently for contact-sheet previews.
+    static func renderAllSynchronously(_ examples: [GraphExample], timeout: TimeInterval = 4.0) -> [String: Result<GraphSnapshot, any Error>] {
+        final class Box: @unchecked Sendable { var results: [String: Result<GraphSnapshot, any Error>] = [:] }
+        let box = Box(), done = DispatchSemaphore(value: 0)
+        let task = Task.detached {
+            await withTaskGroup(of: (String, Result<GraphSnapshot, any Error>).self) { group in
+                for example in examples {
+                    group.addTask {
+                        do { return (example.id, .success(try await example.render())) }
+                        catch { return (example.id, .failure(error)) }
+                    }
+                }
+                var collected: [String: Result<GraphSnapshot, any Error>] = [:]
+                for await (id, result) in group { collected[id] = result }
+                box.results = collected
+            }
+            done.signal()
+        }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            task.cancel()
+        }
+        return box.results
     }
 }
 
@@ -40,7 +68,7 @@ enum SampleGraphs {
     /// Adds a node with a width derived from its name, roughly matching the renderer's font.
     @discardableResult
     static func node(_ graph: LayoutGraph, _ id: String, in group: LayoutNode? = nil) throws -> LayoutNode {
-        let node = LayoutNode(id: id, width: Float(max(70, id.count * 8 + 24)), height: 36)
+        let node = LayoutNode(id: id, width: Float(max(74, id.count * 8 + 26)), height: 36)
         if let group { try graph.addNode(node, to: group) } else { graph.addNode(node) }
         return node
     }
@@ -140,8 +168,8 @@ enum SampleGraphs {
     static func groupedArchitecture() throws -> LayoutGraph {
         let g = LayoutGraph()
         func frame(_ title: String) -> GroupFrameOptions {
-            GroupFrameOptions(padding: LayoutInsets(top: 12, left: 20, bottom: 20, right: 20),
-                              headerSize: Size(width: Float(title.count * 8 + 24), height: 24))
+            GroupFrameOptions(padding: LayoutInsets(top: 16, left: 24, bottom: 20, right: 24),
+                              headerSize: Size(width: Float(title.count * 8 + 28), height: 26))
         }
         let client = try g.addGroup(id: "Clients", frame: frame("Clients"))
         let backend = try g.addGroup(id: "Backend", frame: frame("Backend"))
@@ -182,73 +210,163 @@ extension GraphExample {
         id: "hierarchical", title: "Hierarchical", category: "Layouts",
         summary: "Layered DAG with labelled edges, routed by the hierarchical algorithm.",
         makeGraph: SampleGraphs.buildPipeline,
-        configure: { $0.useHierarchical { $0.nodeSeparation = 40; $0.layerSeparation = 70 }.placeLabels().routeSelfLoops().clipEdgeEndpoints() })
+        configure: {
+            $0.useHierarchical { $0.nodeSeparation = 50; $0.layerSeparation = 80 }
+                .separateEdges()
+                .routeSelfLoops()
+                .clipEdgeEndpoints()
+                .distributePorts()
+                .placeLabels()
+        })
 
     static let organic = GraphExample(
         id: "organic", title: "Organic", category: "Layouts",
         summary: "Force-directed placement of a clustered social network with polyline routing.",
         makeGraph: SampleGraphs.socialNetwork,
-        configure: { $0.useStandardOrganic() })
+        configure: {
+            $0.useOrganic {
+                $0.iterations = 600
+                $0.repulsionForce = 120
+                $0.attractionForce = 0.05
+            }
+            .removeOverlaps { $0.minSpacing = 18 }
+            .routePolyline()
+            .routeSelfLoops()
+            .clipEdgeEndpoints()
+            .distributePorts()
+        })
 
     static let tree = GraphExample(
         id: "tree", title: "Tree", category: "Layouts",
         summary: "Classic top-down tree layout of an organisation.",
         makeGraph: SampleGraphs.organisation,
-        configure: { $0.useTree().clipEdgeEndpoints() })
+        configure: {
+            $0.useTree { $0.nodeSeparation = 36; $0.levelSeparation = 72 }
+                .clipEdgeEndpoints()
+                .distributePorts()
+        })
 
     static let radialTree = GraphExample(
         id: "radial-tree", title: "Radial Tree", category: "Layouts",
         summary: "Mind map placed on concentric rings around its root topic.",
         makeGraph: SampleGraphs.mindMap,
-        configure: { $0.useRadialTree().routePolyline().clipEdgeEndpoints() })
+        configure: {
+            $0.useRadialTree { $0.layerDistance = 110 }
+                .routePolyline()
+                .clipEdgeEndpoints()
+                .distributePorts()
+        })
 
     static let circular = GraphExample(
         id: "circular", title: "Circular", category: "Layouts",
         summary: "Service ring with chords and a self-loop.",
         makeGraph: SampleGraphs.serviceRing,
-        configure: { $0.useCircular().routeSelfLoops().clipEdgeEndpoints() })
+        configure: {
+            $0.useCircular { $0.radius = 220 }
+                .routePolyline()
+                .routeSelfLoops()
+                .clipEdgeEndpoints()
+                .distributePorts()
+        })
 
     static let orthogonalChannel = GraphExample(
         id: "orthogonal-channel", title: "Orthogonal + Channel", category: "Routing",
         summary: "Grid placement with obstacle-avoiding orthogonal channel routes.",
         makeGraph: SampleGraphs.circuit,
-        configure: { $0.useOrthogonal().routeChannel().clipEdgeEndpoints() })
+        configure: {
+            $0.useOrthogonal { $0.gridSize = 110 }
+                .routeChannel()
+                .separateEdges()
+                .clipEdgeEndpoints()
+                .distributePorts()
+        })
 
     static let bsp = GraphExample(
         id: "bsp", title: "BSP Routing", category: "Routing",
         summary: "Hierarchical placement re-routed through binary space partition channels.",
         makeGraph: SampleGraphs.circuit,
-        configure: { $0.useHierarchical { $0.routesEdges = false }.routeBsp().clipEdgeEndpoints() })
+        configure: {
+            $0.useHierarchical { $0.nodeSeparation = 60; $0.layerSeparation = 90; $0.routesEdges = false }
+                .routeBsp()
+                .separateEdges()
+                .clipEdgeEndpoints()
+                .distributePorts()
+        })
 
     static let bundling = GraphExample(
         id: "bundling", title: "Edge Bundling", category: "Routing",
         summary: "Bipartite traffic with edges bundled into shared tracks.",
         makeGraph: SampleGraphs.bipartite,
-        configure: { $0.routeWithBundling().clipEdgeEndpoints() })
+        configure: {
+            $0.routeWithBundling { $0.k = 0.1 }
+                .clipEdgeEndpoints()
+                .distributePorts()
+        })
 
     static let groupedArchitecture = GraphExample(
         id: "grouped", title: "Framed Groups", category: "Composition",
         summary: "Nested, titled groups laid out recursively with obstacle-avoiding cross-group routes.",
         makeGraph: SampleGraphs.groupedArchitecture,
         configure: {
-            $0.wrapWithRecursiveGroups(HierarchicalLayoutAlgorithm()) { groups in
+            let rootLayout = HierarchicalLayoutAlgorithm()
+            rootLayout.nodeSeparation = 48
+            rootLayout.layerSeparation = 72
+            $0.wrapWithRecursiveGroups(rootLayout) { groups in
                 groups.groupLayoutSelector = { group -> any LayoutAlgorithm in
                     if group.id == "Clients" { return VerticalStackLayoutAlgorithm() }
-                    return HierarchicalLayoutAlgorithm()
+                    let nested = HierarchicalLayoutAlgorithm()
+                    nested.nodeSeparation = 44
+                    nested.layerSeparation = 68
+                    return nested
                 }
-            }.clipEdgeEndpoints()
+            }
+            .separateEdges()
+            .routeSelfLoops()
+            .clipEdgeEndpoints()
+            .distributePorts()
         })
 
     static let swimlane = GraphExample(
         id: "swimlane", title: "Swimlanes", category: "Composition",
-        summary: "Build pipeline stages assigned to vertical lanes.",
+        summary: "Build pipeline stages assigned to vertical lanes with channel routing.",
         makeGraph: SampleGraphs.buildPipeline,
         configure: {
-            $0.useSwimlane { lanes in
-                let lane: [String: Int] = ["Checkout": 0, "Resolve": 0, "Lint": 0, "Compile": 1, "Unit Tests": 1,
-                                           "UI Tests": 1, "Package": 2, "Sign": 2, "Notarize": 2, "Publish": 2]
-                lanes.laneAssignment = lane
-            }.routePolyline().clipEdgeEndpoints()
+            let swimlane = SwimlaneLayoutAlgorithm()
+            swimlane.laneAssignment = [
+                "Checkout": 0, "Resolve": 0, "Lint": 0,
+                "Compile": 1, "Unit Tests": 1, "UI Tests": 1,
+                "Package": 2, "Sign": 2, "Notarize": 2, "Publish": 2,
+            ]
+            swimlane.laneWidth = 190
+            swimlane.laneSpacing = 36
+            swimlane.laneInternalPadding = 24
+            swimlane.nodeVerticalSpacing = 36
+            let titles: [Int: String] = [
+                0: "Source & Lint",
+                1: "Build & Test",
+                2: "Package & Release",
+            ]
+            $0.useAlgorithm(swimlane)
+                .routeChannel()
+                .separateEdges()
+                .clipEdgeEndpoints()
+                .distributePorts()
+                .placeLabels()
+                .transform { graph in
+                    let minY = CGFloat(graph.nodes.map(\.y).min() ?? 0)
+                    let maxY = CGFloat(graph.nodes.map { $0.bounds.bottom }.max() ?? 100)
+                    let headerHeight: CGFloat = 28
+                    let top = minY - headerHeight - 16
+                    let bottom = maxY + 18
+                    graph.root.data = swimlane.computedLanes.map { lane in
+                        GraphSnapshot.Lane(
+                            id: lane.laneId,
+                            title: titles[lane.laneId] ?? "Lane \(lane.laneId + 1)",
+                            frame: CGRect(x: CGFloat(lane.x), y: top, width: CGFloat(lane.width), height: bottom - top),
+                            headerHeight: headerHeight
+                        )
+                    }
+                }
         })
 
     /// Every built-in `LayoutPatternType`, applied to the grouped architecture graph.
@@ -257,7 +375,7 @@ extension GraphExample {
             id: "preset-\(pattern.rawValue)", title: pattern.rawValue, category: "Presets",
             summary: "The `.\(pattern.rawValue)` preset applied to a grouped service architecture.",
             makeGraph: SampleGraphs.groupedArchitecture,
-            configure: { $0.applyPattern(pattern).clipEdgeEndpoints() })
+            configure: { $0.applyPattern(pattern) })
     }
 
     static let all: [GraphExample] = [

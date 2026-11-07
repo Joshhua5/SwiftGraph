@@ -42,7 +42,12 @@ struct ProductionTopology: Decodable, Sendable {
         for index in nodes.indices {
             let node = LayoutNode(id: "\(index)", width: 80, height: 32)
             node.isGroup = groups.contains(index)
-            if node.isGroup { node.groupFrame = GroupFrameOptions(headerSize: Size(width: 80, height: 20)) }
+            if node.isGroup {
+                node.groupFrame = GroupFrameOptions(
+                    padding: LayoutInsets(top: 16, left: 20, bottom: 20, right: 20),
+                    headerSize: Size(width: 80, height: 22)
+                )
+            }
             // Deterministic starting positions, so presets that start from current geometry are reproducible.
             node.center = Point(x: Float(index % 16) * 120, y: Float(index / 16) * 80)
             graph.addNode(node)
@@ -60,7 +65,7 @@ struct ProductionTopology: Decodable, Sendable {
 
 // MARK: - Library folder
 
-/// A topology JSON file found in the repository's `Topologies` folder.
+/// A topology JSON file found in the repository's `Topologies` or `docs` folder.
 struct TopologyFile: Identifiable, Hashable, Sendable {
     var url: URL
     var id: URL { url }
@@ -68,24 +73,55 @@ struct TopologyFile: Identifiable, Hashable, Sendable {
 }
 
 enum TopologyLibrary {
-    /// `<repo>/Topologies`, resolved from this source file so the app and previews read the live folder
-    /// (new files appear on rescan without rebuilding). `SWIFTGRAPH_TOPOLOGIES` overrides the location.
+    private static var repoRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // GraphLayoutGallery
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // repository root
+    }
+
+    /// Primary topology directory (`<repo>/Topologies`, or `SWIFTGRAPH_TOPOLOGIES` if set).
     static var directory: URL {
         if let override = ProcessInfo.processInfo.environment["SWIFTGRAPH_TOPOLOGIES"], !override.isEmpty {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
-        return URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // GraphLayoutGallery
-            .deletingLastPathComponent() // Sources
-            .deletingLastPathComponent() // repository root
-            .appendingPathComponent("Topologies", isDirectory: true)
+        return repoRoot.appendingPathComponent("Topologies", isDirectory: true)
+    }
+
+    private static var searchDirectories: [URL] {
+        var dirs: [URL] = []
+        if let override = ProcessInfo.processInfo.environment["SWIFTGRAPH_TOPOLOGIES"], !override.isEmpty {
+            dirs.append(URL(fileURLWithPath: override, isDirectory: true))
+        }
+        dirs += [
+            repoRoot.appendingPathComponent("Topologies", isDirectory: true),
+            repoRoot.appendingPathComponent("docs", isDirectory: true),
+            repoRoot.appendingPathComponent("Tests/Fixtures", isDirectory: true),
+        ]
+        return dirs
     }
 
     static func scan() -> [TopologyFile] {
-        let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        return urls.filter { $0.pathExtension.lowercased() == "json" }
-            .map { TopologyFile(url: $0) }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        var seenNames = Set<String>()
+        var files: [TopologyFile] = []
+        for dir in searchDirectories {
+            let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+            for url in urls where url.pathExtension.lowercased() == "json" {
+                let file = TopologyFile(url: url)
+                guard !seenNames.contains(file.name),
+                      (try? ProductionTopology.load(from: url)) != nil else { continue }
+                seenNames.insert(file.name)
+                files.append(file)
+            }
+        }
+        return files.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    static func resolve(named name: String) -> TopologyFile {
+        if let found = scan().first(where: { $0.name == name }) {
+            return found
+        }
+        return TopologyFile(url: directory.appendingPathComponent("\(name).json"))
     }
 }
 
@@ -101,16 +137,22 @@ enum TopologyLayout: Hashable, Sendable, Identifiable {
         case hierarchical = "Hierarchical", organic = "Organic", tree = "Tree", radialTree = "Radial Tree"
         case balloon = "Balloon", circular = "Circular", orthogonal = "Orthogonal", barycenter = "Barycenter"
 
-        func make() -> any LayoutAlgorithm {
+        func make(routesEdges: Bool = true) -> any LayoutAlgorithm {
             switch self {
-            case .hierarchical: HierarchicalLayoutAlgorithm()
-            case .organic: OrganicLayoutAlgorithm()
-            case .tree: TreeLayoutAlgorithm()
-            case .radialTree: RadialTreeLayoutAlgorithm()
-            case .balloon: BalloonLayoutAlgorithm()
-            case .circular: CircularLayoutAlgorithm()
-            case .orthogonal: OrthogonalLayoutAlgorithm()
-            case .barycenter: BarycenterLayoutAlgorithm()
+            case .hierarchical:
+                let hierarchical = HierarchicalLayoutAlgorithm()
+                hierarchical.routesEdges = routesEdges
+                return hierarchical
+            case .organic:
+                let organic = OrganicLayoutAlgorithm()
+                organic.iterations = 300
+                return organic
+            case .tree: return TreeLayoutAlgorithm()
+            case .radialTree: return RadialTreeLayoutAlgorithm()
+            case .balloon: return BalloonLayoutAlgorithm()
+            case .circular: return CircularLayoutAlgorithm()
+            case .orthogonal: return OrthogonalLayoutAlgorithm()
+            case .barycenter: return BarycenterLayoutAlgorithm()
             }
         }
     }
@@ -146,20 +188,37 @@ enum TopologyRouting: String, CaseIterable, Hashable, Sendable, Identifiable {
         switch self {
         case .layoutDefault:
             if case .preset = layout { return }
-            builder.routePolyline()
+            builder.routeSelfLoops().clipEdgeEndpoints()
+                .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
+            return
         case .straight:
             builder.transform { graph in
                 for edge in graph.edges { edge.path = [edge.source.center, edge.target.center] }
             }
-        case .polyline: builder.routePolyline()
-        case .channel: builder.routeChannel()
-        case .orthogonalGrouped: builder.routeOrthogonalGrouped()
-        case .bsp: builder.routeBsp()
-        case .octilinear: builder.routeOctilinear()
-        case .bundled: builder.routePolyline().routeWithBundling()
-        case .curves: builder.routePolyline().routeCurveFitting()
+        case .polyline:
+            builder.routePolyline()
+        case .channel:
+            builder.routeChannel()
+                .transform { if $0.edges.count <= 150 { EdgeSeparator().routeEdges($0) } }
+        case .orthogonalGrouped:
+            builder.routeOrthogonalGrouped()
+                .transform { if $0.edges.count <= 150 { EdgeSeparator().routeEdges($0) } }
+        case .bsp:
+            builder.routeBsp()
+                .transform { if $0.edges.count <= 150 { EdgeSeparator().routeEdges($0) } }
+        case .octilinear:
+            builder.routeOctilinear()
+        case .bundled:
+            builder.routePolyline().routeWithBundling()
+        case .curves:
+            builder.routePolyline().clipEdgeEndpoints()
+                .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
+                .routeCurveFitting()
+            builder.routeSelfLoops().clipEdgeEndpoints()
+            return
         }
         builder.routeSelfLoops().clipEdgeEndpoints()
+            .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
     }
 }
 
@@ -174,8 +233,14 @@ extension GraphExample {
             makeGraph: { try ProductionTopology.load(from: url).makeGraph() },
             configure: { builder in
                 switch layout {
-                case .preset(let pattern): builder.applyPattern(pattern)
-                case .algorithm(let algorithm): builder.wrapWithRecursiveGroups(algorithm.make())
+                case .preset(let pattern):
+                    builder.applyPattern(pattern)
+                case .algorithm(let algorithm):
+                    let keepDefaultRoutes = (routing == .layoutDefault)
+                    builder.wrapWithRecursiveGroups(algorithm.make(routesEdges: keepDefaultRoutes)) { groups in
+                        groups.routesEdges = keepDefaultRoutes
+                        groups.optimizeIncomingEdges = false
+                    }
                 }
                 routing.apply(to: builder, after: layout)
             })
