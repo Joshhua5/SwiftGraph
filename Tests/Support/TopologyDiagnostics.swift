@@ -77,7 +77,7 @@ struct TopologyDiagnostics: Codable, Sendable {
                         obstacleIntersections.append([edge.id, node.id])
                     }
                 }
-                if node.id != source.id && node.id != target.id, let header = node.headerBounds {
+                if node.id != source.id && node.id != target.id, let header = node.routeBlockingHeader {
                     let r = header.inflated(by: -epsilon)
                     if r.width > 0 && r.height > 0 && r.intersects(envelope.inflated(by: epsilon)) && segments.contains(where: { r.intersectsLine($0, $1) }) {
                         headerIntersections.append([edge.id, node.id])

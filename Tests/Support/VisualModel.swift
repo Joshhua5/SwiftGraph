@@ -40,6 +40,12 @@ struct VisualNode: Codable, Equatable, Sendable {
     var group: Bool
     var contentBounds: Rect? = nil
     var headerBounds: Rect? = nil
+    /// The title part of `headerBounds` that routes must avoid. Optional so older snapshots still decode;
+    /// those fall back to the whole header band.
+    var titleBounds: Rect? = nil
+
+    /// The rectangle routes are forbidden to cross for this frame's header.
+    var routeBlockingHeader: Rect? { titleBounds ?? headerBounds }
 }
 
 struct VisualEdge: Codable, Equatable, Sendable {
@@ -76,7 +82,8 @@ struct VisualSnapshot: Codable, Equatable, Sendable {
         nodes = drawing.graph.nodes.map {
             VisualNode(id: $0.id, name: $0.name, bounds: $0.bounds,
                        parent: $0.parent === drawing.graph.root ? nil : $0.parent?.id, group: $0.isGroup,
-                       contentBounds: $0.groupContentBounds, headerBounds: $0.groupHeaderBounds)
+                       contentBounds: $0.groupContentBounds, headerBounds: $0.groupHeaderBounds,
+                       titleBounds: $0.groupTitleBounds)
         }
         edges = drawing.graph.edges.enumerated().map { index, edge in
             VisualEdge(id: "e\(index)", source: edge.source.id, target: edge.target.id,
@@ -280,7 +287,7 @@ enum VisualGeometry {
                        paths[i].contains(where: { frame.bounds.inflated(by: -epsilon).intersectsLine($0.0, $0.1) }) {
                         failures.append(.init(kind: "edge-frame-intersection", elements: [edge.id, frame.id]))
                     }
-                    if let header = frame.headerBounds, header.height > 0,
+                    if let header = frame.routeBlockingHeader, header.height > 0,
                        paths[i].contains(where: { header.inflated(by: -epsilon).intersectsLine($0.0, $0.1) }) {
                         failures.append(.init(kind: "edge-header-intersection", elements: [edge.id, frame.id]))
                     }

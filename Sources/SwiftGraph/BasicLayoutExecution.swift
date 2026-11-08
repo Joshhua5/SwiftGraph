@@ -192,10 +192,12 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
         for a in order.indices {
             for b in (a + 1)..<order.count {
                 let x = nodes[order[a]].bounds, y = nodes[order[b]].bounds, delta = y.center - x.center
-                let forceConflict = abs(delta.x) < (x.width + y.width) / 2 + c.minSpacing - 1e-9 &&
-                    abs(delta.y) < (x.height + y.height) / 2 + c.minSpacing - 1e-9
-                let pairConflict = min(x.right, y.right) - max(x.left, y.left) + c.minSpacing > 1e-9 &&
-                    min(x.bottom, y.bottom) - max(x.top, y.top) + c.minSpacing > 1e-9
+                // Same tolerance as forceScan / separateOverlaps, so "already clear" means what they mean.
+                let tolerance = spacingTolerance(x, y, spacing: c.minSpacing)
+                let forceConflict = abs(delta.x) < (x.width + y.width) / 2 + c.minSpacing - tolerance &&
+                    abs(delta.y) < (x.height + y.height) / 2 + c.minSpacing - tolerance
+                let pairConflict = min(x.right, y.right) - max(x.left, y.left) + c.minSpacing > tolerance &&
+                    min(x.bottom, y.bottom) - max(x.top, y.top) + c.minSpacing > tolerance
                 if forceConflict || pairConflict { conflicts = true; break }
             }
             if conflicts { break }
@@ -231,9 +233,13 @@ func basicPlacementState(_ graph: LayoutGraph, style: BasicLayoutStyle, configur
     if style == .alignment && c.alignmentGridSize > 0 {
         for node in nodes {
             for (value, mode) in [(node.x, c.horizontalAlignment), (node.y, c.verticalAlignment)] where mode == .snapToGrid {
+                // The GPU snaps with rint(x / grid). A quotient within a few ulps of a half could round to the other
+                // grid line if the division is off by an ulp, so it is unsafe. An exact half (the Float quotient equals
+                // the true one and is exactly k + 0.5) rounds half-to-even identically on both sides, so it stays safe.
                 let q = value / c.alignmentGridSize
                 let d = abs(q - q.rounded(.toNearestOrEven))
-                if d > 0 && abs(d - 0.5) <= Float(0.5).ulp * 8 { discreteSafe = false }
+                let exactHalf = d == 0.5 && Double(q) == Double(value) / Double(c.alignmentGridSize)
+                if !exactHalf && d > 0 && abs(d - 0.5) <= Float(0.5).ulp * 8 { discreteSafe = false }
             }
         }
     } else if style == .removeOverlaps {

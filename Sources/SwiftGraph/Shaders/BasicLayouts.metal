@@ -4,6 +4,13 @@ struct Parameters { uint count, orderCount, mode, stage, start, end, padding0, p
 float2 center(float4 r) { return r.xy + r.zw * 0.5f; }
 bool intersects(float4 a, float4 b) { return a.x < b.x+b.z && a.x+a.z > b.x && a.y < b.y+b.w && a.y+a.w > b.y; }
 float4 inflate(float4 a, float gap) { return float4(a.xy-gap, a.zw+2*gap); }
+// A few ulps at the largest coordinate involved, so a gap of exactly `spacing` recomputed in float is not a conflict.
+// Must match spacingTolerance(_:_:spacing:) in BasicLayouts.swift exactly for CPU/GPU parity.
+float spacingTolerance(float4 a, float4 b, float spacing) {
+    float4 ea = abs(float4(a.xy, a.xy + a.zw)), eb = abs(float4(b.xy, b.xy + b.zw));
+    float4 m = max(ea, eb);
+    return 4.0f * FLT_EPSILON * max(max(max(m.x, m.y), max(m.z, m.w)), abs(spacing));
+}
 
 kernel void basicPlacement(device const float4* input [[buffer(0)]], device float4* output [[buffer(1)]],
     device const uint* flags [[buffer(2)]], device const int4* records [[buffer(3)]],
@@ -165,7 +172,8 @@ kernel void orderedPlacement(device const float4* input [[buffer(0)]], device fl
             float shift=0;
             for(uint a=t;a<=end;a++) for(uint b=end+1;b<p.orderCount;b++) {
                 float4 ra=output[indices[a]],rb=output[indices[b]]; float2 delta=center(rb)-center(ra),need=(ra.zw+rb.zw)/2+spacing;
-                if(abs(delta.x)<need.x-1e-9f && abs(delta.y)<need.y-1e-9f) {
+                float tolerance=spacingTolerance(ra,rb,spacing);
+                if(abs(delta.x)<need.x-tolerance && abs(delta.y)<need.y-tolerance) {
                     float scale=min(delta.x!=0?need.x/abs(delta.x):INFINITY,delta.y!=0?need.y/abs(delta.y):INFINITY);
                     shift=max(shift,(horizontal?delta.x:delta.y)*(scale-1));
                 }
@@ -185,7 +193,8 @@ kernel void orderedPlacement(device const float4* input [[buffer(0)]], device fl
             if(scratch[b].x>=scratch[a].y+spacing) break;
             uint i=indices[a],j=indices[b]; float4 ra=output[i],rb=output[j];
             float2 need=min(ra.xy+ra.zw,rb.xy+rb.zw)-max(ra.xy,rb.xy)+spacing;
-            if(need.x<=1e-9f || need.y<=1e-9f) continue;
+            float tolerance=spacingTolerance(ra,rb,spacing);
+            if(need.x<=tolerance || need.y<=tolerance) continue;
             bool horizontal=need.x<=need.y; float2 ca=center(ra),cb=center(rb);
             bool forward=horizontal?(ca.x==cb.x?i<j:ca.x<cb.x):(ca.y==cb.y?i<j:ca.y<cb.y);
             float step=(horizontal?need.x:need.y)/2*(forward?1:-1);

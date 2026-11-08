@@ -4,31 +4,50 @@ import Foundation
 public final class BspGridCalculator {
     private var trees: [LayoutNode: BspTreeNode] = [:]
     private var graph: LayoutGraph?
+    /// Registered nodes of `graph`. A detached view (`subgraph`) lists every descendant directly under its root
+    /// while the nodes keep their real parents, so the hierarchy is recovered from those parents.
+    private var members: Set<LayoutNode> = []
     public init() {}
+    /// Children partitioned together under `node`. For the root of a detached view these are the members whose real
+    /// parent is outside the view, not every member, so nested frames are never partitioned alongside their contents.
+    private func children(of node: LayoutNode) -> [LayoutNode] {
+        guard let graph else { return node.children }
+        if node === graph.root {
+            return node.children.filter { child in child.parent.map { $0 === graph.root || !members.contains($0) } ?? true }
+        }
+        return node.children.filter(members.contains)
+    }
+    /// The node whose partition contains `node`: its real parent when that is in the view, else the root.
+    private func owner(of node: LayoutNode) -> LayoutNode? {
+        guard let graph, node !== graph.root else { return nil }
+        if let parent = node.parent, parent === graph.root || members.contains(parent) { return parent }
+        return graph.root
+    }
     public func buildTree(_ graph: LayoutGraph) {
-        self.graph = graph; trees = [:]
+        self.graph = graph; trees = [:]; members = Set(graph.nodes)
         var stack = [graph.root], visited = Set<LayoutNode>()
         while let node = stack.popLast() {
             guard visited.insert(node).inserted else { continue }
             var source = node, wrappers = Set<LayoutNode>()
-            while source.children.count == 1 && wrappers.insert(source).inserted { source = source.children[0] }
-            if source.children.count > 1 {
-                let bounds = effectiveBounds(node, children: source.children, source: source)
-                trees[node] = build(bounds, nodes: source.children, axis: .vertical)
+            while children(of: source).count == 1 && wrappers.insert(source).inserted { source = children(of: source)[0] }
+            let partitioned = children(of: source)
+            if partitioned.count > 1 {
+                let bounds = effectiveBounds(node, children: partitioned, source: source)
+                trees[node] = build(bounds, nodes: partitioned, axis: .vertical)
             }
-            stack.append(contentsOf: node.children.reversed())
+            stack.append(contentsOf: children(of: node).reversed())
         }
     }
     private func effectiveBounds(_ parent: LayoutNode, children: [LayoutNode], source: LayoutNode) -> Rect {
-        if let owner = parent.parent, let tree = trees[owner], let leaf = findLeaf(tree, target: parent) { return leaf.bounds }
+        if let owner = owner(of: parent), let tree = trees[owner], let leaf = findLeaf(tree, target: parent) { return leaf.bounds }
         if parent === graph?.root { return enclosingBounds(children) }
         if source !== parent {
-            var outermost = source, current = source.parent, seen = Set<LayoutNode>()
-            while let n = current, n !== parent.parent, seen.insert(n).inserted { outermost = n; current = n.parent }
+            var outermost = source, current = owner(of: source), seen = Set<LayoutNode>()
+            while let n = current, n !== owner(of: parent), seen.insert(n).inserted { outermost = n; current = owner(of: n) }
             return outermost.bounds
         }
-        var outermost = parent, current = parent.parent, seen = Set<LayoutNode>()
-        while let n = current, n !== graph?.root, n.children.count == 1, seen.insert(n).inserted { outermost = n; current = n.parent }
+        var outermost = parent, current = owner(of: parent), seen = Set<LayoutNode>()
+        while let n = current, n !== graph?.root, self.children(of: n).count == 1, seen.insert(n).inserted { outermost = n; current = owner(of: n) }
         return outermost.bounds
     }
     private func build(_ bounds: Rect, nodes: [LayoutNode], axis: BspTreeNode.Axis) -> BspTreeNode {
@@ -91,7 +110,7 @@ public final class BspGridCalculator {
         while let node = stack.popLast() {
             guard visited.insert(node).inserted else { continue }
             if let tree = trees[node] { collect(tree, laneInset, &result) }
-            stack.append(contentsOf: node.children.reversed())
+            stack.append(contentsOf: children(of: node).reversed())
         }
         return result
     }

@@ -137,22 +137,28 @@ enum TopologyLayout: Hashable, Sendable, Identifiable {
         case hierarchical = "Hierarchical", organic = "Organic", tree = "Tree", radialTree = "Radial Tree"
         case balloon = "Balloon", circular = "Circular", orthogonal = "Orthogonal", barycenter = "Barycenter"
 
-        func make(routesEdges: Bool = true) -> any LayoutAlgorithm {
+        func make(routesEdges: Bool = true, backend: LayoutBackend = .cpu) -> any AsyncLayoutAlgorithm {
             switch self {
             case .hierarchical:
-                let hierarchical = HierarchicalLayoutAlgorithm()
-                hierarchical.routesEdges = routesEdges
+                let hierarchical = HierarchicalLayoutOperation(backend: backend)
+                hierarchical.configuration.routesEdges = routesEdges
                 return hierarchical
             case .organic:
-                let organic = OrganicLayoutAlgorithm()
-                organic.iterations = 300
+                let organic = OrganicLayoutOperation(backend: backend)
+                organic.configuration.iterations = 300
                 return organic
-            case .tree: return TreeLayoutAlgorithm()
-            case .radialTree: return RadialTreeLayoutAlgorithm()
-            case .balloon: return BalloonLayoutAlgorithm()
-            case .circular: return CircularLayoutAlgorithm()
-            case .orthogonal: return OrthogonalLayoutAlgorithm()
-            case .barycenter: return BarycenterLayoutAlgorithm()
+            case .tree:
+                return TreeLayoutOperation(style: .tree, backend: backend)
+            case .radialTree:
+                return RadialLayoutOperation(style: .tree, backend: backend)
+            case .balloon:
+                return TreeLayoutOperation(style: .balloon, backend: backend)
+            case .circular:
+                return BasicLayoutOperation(style: .circular, backend: backend)
+            case .orthogonal:
+                return BasicLayoutOperation(style: .orthogonal, backend: backend)
+            case .barycenter:
+                return BarycenterLayoutOperation(backend: backend)
             }
         }
     }
@@ -184,11 +190,18 @@ enum TopologyRouting: String, CaseIterable, Hashable, Sendable, Identifiable {
 
     var id: String { rawValue }
 
-    func apply(to builder: LayoutBuilder, after layout: TopologyLayout) {
+    private func separateEdgesIfSmall(_ builder: LayoutBuilder, backend: LayoutBackend) {
+        builder.transformAsync { graph in
+            guard graph.edges.count <= 150 else { return }
+            try await RoutingLayoutOperation(.edgeSeparation, backend: backend).applyLayoutAsync(graph)
+        }
+    }
+
+    func apply(to builder: LayoutBuilder, after layout: TopologyLayout, backend: LayoutBackend = .cpu) {
         switch self {
         case .layoutDefault:
             if case .preset = layout { return }
-            builder.routeSelfLoops().clipEdgeEndpoints()
+            builder.routeSelfLoops(backend: backend).clipEdgeEndpoints(backend: backend)
                 .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
             return
         case .straight:
@@ -196,28 +209,28 @@ enum TopologyRouting: String, CaseIterable, Hashable, Sendable, Identifiable {
                 for edge in graph.edges { edge.path = [edge.source.center, edge.target.center] }
             }
         case .polyline:
-            builder.routePolyline()
+            builder.routePolyline(backend: backend)
         case .channel:
-            builder.routeChannel()
-                .transform { if $0.edges.count <= 150 { EdgeSeparator().routeEdges($0) } }
+            builder.routeChannel(backend: backend)
+            separateEdgesIfSmall(builder, backend: backend)
         case .orthogonalGrouped:
-            builder.routeOrthogonalGrouped()
-                .transform { if $0.edges.count <= 150 { EdgeSeparator().routeEdges($0) } }
+            builder.routeOrthogonalGrouped(backend: backend)
+            separateEdgesIfSmall(builder, backend: backend)
         case .bsp:
-            builder.routeBsp()
-                .transform { if $0.edges.count <= 150 { EdgeSeparator().routeEdges($0) } }
+            builder.routeBsp(backend: backend)
+            separateEdgesIfSmall(builder, backend: backend)
         case .octilinear:
-            builder.routeOctilinear()
+            builder.routeOctilinear(backend: backend)
         case .bundled:
-            builder.routePolyline().routeWithBundling()
+            builder.routePolyline(backend: backend).routeWithBundling(backend: backend)
         case .curves:
-            builder.routePolyline().clipEdgeEndpoints()
+            builder.routePolyline(backend: backend).clipEdgeEndpoints(backend: backend)
                 .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
-                .routeCurveFitting()
-            builder.routeSelfLoops().clipEdgeEndpoints()
+                .routeCurveFitting(backend: backend)
+            builder.routeSelfLoops(backend: backend).clipEdgeEndpoints(backend: backend)
             return
         }
-        builder.routeSelfLoops().clipEdgeEndpoints()
+        builder.routeSelfLoops(backend: backend).clipEdgeEndpoints(backend: backend)
             .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
     }
 }
@@ -231,18 +244,21 @@ extension GraphExample {
             id: "topology|\(file.name)|\(layout.id)|\(routing.id)", title: file.name, category: "Production Topologies",
             summary: "\(layout.title) layout · \(routing.rawValue) routing",
             makeGraph: { try ProductionTopology.load(from: url).makeGraph() },
-            configure: { builder in
+            configure: { builder, backend in
                 switch layout {
                 case .preset(let pattern):
-                    builder.applyPattern(pattern)
+                    builder.applyPattern(pattern, backend: backend)
                 case .algorithm(let algorithm):
                     let keepDefaultRoutes = (routing == .layoutDefault)
-                    builder.wrapWithRecursiveGroups(algorithm.make(routesEdges: keepDefaultRoutes)) { groups in
+                    builder.wrapWithRecursiveGroups(
+                        algorithm.make(routesEdges: keepDefaultRoutes, backend: backend),
+                        backend: backend
+                    ) { groups in
                         groups.routesEdges = keepDefaultRoutes
                         groups.optimizeIncomingEdges = false
                     }
                 }
-                routing.apply(to: builder, after: layout)
+                routing.apply(to: builder, after: layout, backend: backend)
             })
     }
 }

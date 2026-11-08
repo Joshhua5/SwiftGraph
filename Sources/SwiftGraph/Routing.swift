@@ -53,7 +53,7 @@ public enum EdgeEndpointClipper {
     private static func clipStart(_ path: [Point], to rect: Rect) -> [Point] {
         let inside = (RoutingCompute.current.flatMap { $0.stages.isEmpty || path.count >= 64 ? $0.contains(path, rect) : nil }) ?? path.map(rect.contains)
         guard inside.first == true, inside.last == false else { return path }
-        let core = rect.inflated(by: -1e-5)
+        let core = ObstaclePolyline.interior(rect)
         for k in stride(from: path.count - 2, through: 0, by: -1) {
             let a = path[k], b = path[k + 1]
             // A segment may cross the node without a vertex inside it; grazing the boundary does not count.

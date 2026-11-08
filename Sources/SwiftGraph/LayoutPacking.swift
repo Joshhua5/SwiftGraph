@@ -74,20 +74,74 @@ func rectangleCircleRadius(_ bounds: [Rect], angles: [Double], gap: Double, mini
 
 /// Stable shelf packing shared by components and spanning-forest roots.
 /// Returns translations from the original bounds, including negative local origins.
+/// Shelf-packs rectangles (tallest first) so the packed envelope's width/height is as close as possible to
+/// `aspectRatio`. The row width is chosen by trying the widths of the first `k` rectangles in a row, because a
+/// width derived from total area alone can be too narrow to fit even two of them side by side.
 func packedTranslations(_ bounds: [Rect], spacing: Float, aspectRatio: Float = 1) -> [Point] {
     guard !bounds.isEmpty else { return [] }
     let gap = max(0, spacing), ratio = max(0.01, aspectRatio)
-    let area = bounds.reduce(Double(0)) { $0 + Double($1.width + gap) * Double($1.height + gap) }
-    let target = max(bounds.map(\.width).max() ?? 0, Float(sqrt(area * Double(ratio))))
-    var result = Array(repeating: Point.zero, count: bounds.count)
-    var x: Float = 0, y: Float = 0, rowHeight: Float = 0
-    for i in bounds.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height }) {
-        let b = bounds[i]
-        if x > 0 && x + b.width > target { x = 0; y += rowHeight + gap; rowHeight = 0 }
-        result[i] = Point(x: x - b.x, y: y - b.y)
-        x += b.width + gap; rowHeight = max(rowHeight, b.height)
+    let order = bounds.indices.sorted(by: { bounds[$0].height == bounds[$1].height ? $0 < $1 : bounds[$0].height > bounds[$1].height })
+
+    func shelve(rowWidth: Float) -> (result: [Point], width: Float, height: Float) {
+        var result = Array(repeating: Point.zero, count: bounds.count)
+        var x: Float = 0, y: Float = 0, rowHeight: Float = 0, width: Float = 0
+        for i in order {
+            let b = bounds[i]
+            if x > 0 && x + b.width > rowWidth { x = 0; y += rowHeight + gap; rowHeight = 0 }
+            result[i] = Point(x: x - b.x, y: y - b.y)
+            width = max(width, x + b.width)
+            x += b.width + gap; rowHeight = max(rowHeight, b.height)
+        }
+        return (result, width, y + rowHeight)
     }
-    return result
+
+    let area = bounds.reduce(Double(0)) { $0 + Double($1.width + gap) * Double($1.height + gap) }
+    var candidates = [max(bounds.map(\.width).max() ?? 0, Float(sqrt(area * Double(ratio))))]
+    var prefix: Float = 0
+    // Bounded so very large component sets stay linear-ish; beyond this the area estimate is already accurate.
+    for (k, i) in order.prefix(256).enumerated() {
+        prefix += bounds[i].width + (k > 0 ? gap : 0)
+        candidates.append(prefix)
+    }
+
+    var best: (result: [Point], score: Double, area: Double)?
+    for rowWidth in candidates {
+        let packed = shelve(rowWidth: rowWidth)
+        let achieved = Double(max(packed.width, 1e-3)) / Double(max(packed.height, 1e-3))
+        let score = abs(log(achieved / Double(ratio)))
+        let envelope = Double(packed.width) * Double(packed.height)
+        // Prefer the closest aspect ratio; break near-ties by the smaller envelope, then by candidate order.
+        if let current = best, score > current.score - 1e-6,
+           !(abs(score - current.score) <= 1e-6 && envelope < current.area - 1e-3) { continue }
+        best = (packed.result, score, envelope)
+    }
+    return best?.result ?? []
+}
+
+/// The smallest translation that moves `rect` clear of every rectangle in `blocked`, choosing among offsets that
+/// put `rect` flush against a blocked edge on each axis (plus zero). Ties go to the smaller x, then the smaller y,
+/// exactly as an exhaustive x-then-y scan keeping the first strictly nearer clear offset would. Offsets are tried
+/// nearest-first against a spatial index, so the first clear one is the answer, instead of testing all (2k + 1)²
+/// offsets against all k rectangles. Returns nil when no offset is clear.
+func nearestClearOffset(_ rect: Rect, avoiding blocked: [Rect]) throws -> Point? {
+    guard let first = blocked.first else { return .zero }
+    let xs = Set([Float(0.0)] + blocked.flatMap { [$0.left - rect.right, $0.right - rect.left] }).sorted()
+    let ys = Set([Float(0.0)] + blocked.flatMap { [$0.top - rect.bottom, $0.bottom - rect.top] }).sorted()
+    var candidates: [Point] = []
+    candidates.reserveCapacity(xs.count * ys.count)
+    for x in xs { for y in ys { candidates.append(Point(x: x, y: y)) } }
+    candidates.sort { a, b in
+        let la = a.lengthSquared, lb = b.lengthSquared
+        if la != lb { return la < lb }
+        return a.x != b.x ? a.x < b.x : a.y < b.y
+    }
+    let index = QuadTree<Int>(bounds: blocked.dropFirst().reduce(first) { $0.union($1) }.inflated(by: 1))
+    for (i, r) in blocked.enumerated() { index.insert(bounds: r, item: i) }
+    for (tried, offset) in candidates.enumerated() {
+        if tried % 4096 == 0 { try Task.checkCancellation() }
+        if index.query(rect.translated(by: offset)).isEmpty { return offset }
+    }
+    return nil
 }
 
 func packForest(_ nodes: [LayoutNode], components: [[Int]], spacing: Float) {

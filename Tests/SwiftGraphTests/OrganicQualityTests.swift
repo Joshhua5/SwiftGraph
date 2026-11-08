@@ -4,6 +4,35 @@ import Testing
 @testable import GraphEvaluationSupport
 
 @Suite struct OrganicQualityTests {
+    @Test func nearestClearOffsetMatchesTheExhaustiveScan() throws {
+        // The scan `nearestClearOffset` replaced: every flush offset, x then y, keeping the first strictly nearer one.
+        func exhaustive(_ rect: Rect, _ blocked: [Rect]) -> Point? {
+            let xs = Set([Float(0)] + blocked.flatMap { [$0.left - rect.right, $0.right - rect.left] }).sorted()
+            let ys = Set([Float(0)] + blocked.flatMap { [$0.top - rect.bottom, $0.bottom - rect.top] }).sorted()
+            var best: Point?
+            for x in xs {
+                for y in ys {
+                    let p = Point(x: x, y: y)
+                    if let best, p.lengthSquared >= best.lengthSquared { continue }
+                    if !blocked.contains(where: { $0.intersects(rect.translated(by: p)) }) { best = p }
+                }
+            }
+            return best
+        }
+        var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func next(_ range: Float) -> Float {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return Float(state >> 40) / Float(1 << 24) * range
+        }
+        for trial in 0..<200 {
+            // Sparse and crowded fields, including coincident and touching rectangles.
+            let count = 1 + trial % 40, spread: Float = trial.isMultiple(of: 3) ? 60 : 400
+            let blocked = (0..<count).map { _ in Rect(x: next(spread), y: next(spread), width: 10 + next(30), height: 10 + next(20)) }
+            let rect = Rect(x: next(spread), y: next(spread), width: 10 + next(30), height: 10 + next(20))
+            #expect(try nearestClearOffset(rect, avoiding: blocked) == exhaustive(rect, blocked), "trial \(trial)")
+        }
+    }
+
     @Test func legacyGeometryRemainsExact() async throws {
         for fixture in try OrganicLegacyFixture.load() {
             let g = VisualGraphs.graph(fixture.count, shape: fixture.shape)

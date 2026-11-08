@@ -113,13 +113,18 @@ struct BarycenterBackendTests {
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal device unavailable"))
     func localOriginAndConcurrentRequestsPreserveGeometry() async throws {
-        let a = graph(17), b = graph(17, origin: 1e12), executor = LayoutExecutor()
+        // Float storage limits world coordinates to one ulp at the offset; see the organic local-origin test.
+        let offset: Double = 1e5, tolerance = 4 * Float(offset + 2_000).ulp
+        let a = graph(17), b = graph(17, origin: offset), executor = LayoutExecutor()
         let c = configuration(1), pin = b.nodes[0].bounds
         let first = Task { try await BarycenterLayoutOperation(backend: .metal, executor: executor, configuration: c).applyLayoutAsync(a) }
         let second = Task { try await BarycenterLayoutOperation(backend: .metal, executor: executor, configuration: c).applyLayoutAsync(b) }
         try await first.value; try await second.value
         #expect(b.nodes[0].bounds == pin)
-        for i in a.nodes.indices { #expect((b.nodes[i].center - Point(x: 1e12, y: 1e12) - a.nodes[i].center).length < 0.001) }
+        for i in a.nodes.indices {
+            let error = (b.nodes[i].center - Point(x: offset, y: offset) - a.nodes[i].center).length
+            #expect(error < tolerance, "node \(i): \(error) ≥ \(tolerance)")
+        }
         let stats = await executor.statistics()
         #expect(stats.submittedBatches == stats.completedBatches)
     }

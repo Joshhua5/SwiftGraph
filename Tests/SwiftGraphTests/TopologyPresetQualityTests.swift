@@ -141,7 +141,8 @@ import Testing
         a.x = 0; a.y = 100; b.x = 200; b.y = 100
         try RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()).applyLayout(graph)
         let edge = LayoutEdge(source: a, target: b); graph.addEdge(edge)
-        let header = try #require(group.groupHeaderBounds)
+        // Only the title part of the band blocks routes; see `groupTitleBounds`.
+        let header = try #require(group.groupTitleBounds)
         edge.path = [a.center, header.center, b.center]
         #expect(!ObstaclePolyline.Scene(graph.nodes).clear(edge.path, edge))
         PolylineEdgeRouter().routeEdges(graph)

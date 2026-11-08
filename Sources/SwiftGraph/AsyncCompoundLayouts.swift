@@ -151,19 +151,8 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
                 if edge.labelBounds.width > 0 { envelope = envelope.union(edge.labelBounds) }
             }
             let padded = obstacles.map { $0.inflated(by: 10) }
-            if padded.contains(where: { $0.intersects(envelope) }) {
-                let xs = Set([Float(0)] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
-                let ys = Set([Float(0)] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
-                var best: Point?
-                for x in xs {
-                    try Task.checkCancellation()
-                    for y in ys {
-                        let candidate = Point(x: x, y: y)
-                        if let best, candidate.lengthSquared >= best.lengthSquared { continue }
-                        if !padded.contains(where: { $0.intersects(envelope.translated(by: candidate)) }) { best = candidate }
-                    }
-                }
-                if let best { translate(g, by: best) }
+            if padded.contains(where: { $0.intersects(envelope) }), let best = try nearestClearOffset(envelope, avoiding: padded) {
+                translate(g, by: best)
             }
         }
         if backend != .cpu { lastExecutionMetrics.append(compositionCPURecord(backend, count: graph.nodes.count, start: clearanceStart, stages: ["centroid preservation and selection clearance"])) }
@@ -193,6 +182,8 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
     public var groupPadding: Float = 20
     /// Refine framed placement using incoming boundary connections after fitting the frames.
     public var optimizeIncomingEdges: Bool = true
+    /// Disable group-level polyline routing when a separate router runs after group placement.
+    public var routesEdges: Bool = true
     var presetRouting: ((LayoutGraph) async throws -> (failures: [LayoutEdge], metrics: [LayoutExecutionMetrics]))?
     public var groupLayoutSelector: ((LayoutNode) -> any AsyncLayoutAlgorithm)?
     public let backend: LayoutBackend
@@ -208,6 +199,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
         // Resolve against caller identities before suspending, then use only detached geometry.
         let layouts = original.groups.map { groupLayoutSelector?($0) ?? coreLayout }
         let refineIncoming = optimizeIncomingEdges
+        let shouldRouteEdges = routesEdges
         let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
         var records: [LayoutExecutionMetrics] = [], failures = Set<LayoutEdge>()
         for (group, layout) in zip(engine.groups, layouts) {
@@ -230,6 +222,10 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
                 if let presetRouting {
                     let result = try await presetRouting(routing)
                     failures.formUnion(result.failures); records += result.metrics
+                } else if !shouldRouteEdges {
+                    for edge in routing.edges where edge.path.count < 2 {
+                        edge.path = [edge.source.center, edge.target.center]
+                    }
                 } else if backend == .cpu {
                     let router = PolylineEdgeRouter(); router.routeEdges(routing)
                     failures.formUnion(router.unroutableEdges)
@@ -245,7 +241,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
             if backend != .cpu { records.append(compositionCPURecord(backend, count: group.children.count,
                 start: fitStart, stages: ["group frame measurement and translation"])) }
         }
-        if refineIncoming {
+        if refineIncoming && shouldRouteEdges {
             let start = ContinuousClock.now
             try engine.refineIncomingEdges(excluding: failures)
             if backend != .cpu { records.append(compositionCPURecord(backend, count: transaction.working.nodes.count,

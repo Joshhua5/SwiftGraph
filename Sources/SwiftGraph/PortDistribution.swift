@@ -92,7 +92,7 @@ public final class PortDistributor: EdgeRouter {
                 guard !orthogonal, span > 20 else { continue }
                 let knee = p[0] + (p[1] - p[0]) * min(0.25, 12.0 / span)
                 let q = [Self.with(p[0], k.side, along: clamp), knee] + p.dropFirst()
-                let blocks = ObstaclePolyline.obstacles(end.edge, graph) + [end.edge.source, end.edge.target].map { $0.bounds.inflated(by: -1e-5) }.filter { $0.width > 0 && $0.height > 0 }
+                let blocks = ObstaclePolyline.obstacles(end.edge, graph) + [end.edge.source, end.edge.target].map { ObstaclePolyline.interior($0.bounds) }.filter { $0.width > 0 && $0.height > 0 }
                 guard ObstaclePolyline.clear(Array(q.prefix(3)), blocks) else { continue }
                 end.edge.path = end.start ? q : Array(q.reversed()); scene.update(end.edge)
                 let after = scene.count(of: end.edge)
@@ -171,7 +171,7 @@ public final class PortDistributor: EdgeRouter {
         }
         q = compactPath(q)
         // Only the legs near the moved end change; they must stay off every other node and out of the edge's own.
-        let blocks = ObstaclePolyline.obstacles(e, graph) + [e.source, e.target].map { $0.bounds.inflated(by: -1e-5) }.filter { $0.width > 0 && $0.height > 0 }
+        let blocks = ObstaclePolyline.obstacles(e, graph) + [e.source, e.target].map { ObstaclePolyline.interior($0.bounds) }.filter { $0.width > 0 && $0.height > 0 }
         guard q.count >= 2, ObstaclePolyline.clear(Array(q.prefix(4)), blocks) else { return nil }
         return start ? q : Array(q.reversed())
     }

@@ -17,7 +17,7 @@ private func orthogonal(_ path: [Point]) -> Bool { zip(path, path.dropFirst()).a
 private func clear(_ path: [Point], of nodes: [LayoutNode]) -> Bool {
     !zip(path, path.dropFirst()).contains { a, b in nodes.contains { $0.bounds.inflated(by: -1e-6).intersectsLine(a, b) } }
 }
-private func onBoundary(_ p: Point, _ r: Rect) -> Bool { r.inflated(by: 1e-6).contains(p) && !r.inflated(by: -1e-6).contains(p) }
+private func onBoundary(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
 
 @Suite struct OrthogonalRoutingTests {
     @Test func channelPicksTheFacingSideAndLeavesPerpendicularFromTheBoundary() {

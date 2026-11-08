@@ -24,7 +24,7 @@ struct RouteAudit {
                 minClearance = min(minClearance, segments.map { Self.distance(leaf.bounds, $0.0, $0.1) }.min()!)
             }
             for (node, point) in [(edge.source, edge.path[0]), (edge.target, edge.path[edge.path.count - 1])] where !node.isGroup {
-                if node.bounds.inflated(by: -1e-4).contains(point) || !node.bounds.inflated(by: 1e-4).contains(point) { offBoundary.append((i, node.id)) }
+                if !liesOnOutline(point, node.bounds, minimum: 1e-4) { offBoundary.append((i, node.id)) }
             }
             bends += (1..<(edge.path.count - 1)).filter { abs(Self.cross(edge.path[$0] - edge.path[$0 - 1], edge.path[$0 + 1] - edge.path[$0])) > 1e-4 }.count
         }

@@ -5,9 +5,15 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct MetalBundlingTests {
+    /// Float geometry: with the edge from -10 to ≈2.2000012, (a + b) / 2 is exactly -`boundaryDistance` while
+    /// a + (b - a) / 2 rounds just past it, so only the legacy midpoint formula sits on the distance gate.
+    /// (The Double-era -10, 2.2 and 3.9 no longer land on the boundary once coordinates are Float.)
+    static let boundaryEnd = Float(bitPattern: 0x400C_CCD2)
+    static let boundaryDistance = Float(bitPattern: 0x4079_9997)
+
     func midpointBoundaryGraph() -> LayoutGraph {
         let graph = LayoutGraph()
-        for (i, x) in [-10.0, 2.2, -6.1, 6.1].enumerated() {
+        for (i, x) in [Float(-10), Self.boundaryEnd, -6.1, 6.1].enumerated() {
             let node = LayoutNode(id: String(i), width: 0, height: 0); node.center = Point(x: x, y: 0); graph.addNode(node)
         }
         graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1]))
@@ -19,10 +25,11 @@ struct MetalBundlingTests {
         let graph = midpointBoundaryGraph()
         var configuration = EdgeBundlingConfiguration(); configuration.iterations = 1; configuration.segments = 2
         // Offset collinear edges score about 0.27 on FDEB compatibility, so only the distance gate decides here.
-        configuration.bundlingDistance = 3.9; configuration.compatibilityThreshold = 0.1
+        configuration.bundlingDistance = Self.boundaryDistance; configuration.compatibilityThreshold = 0.1
         let midpoint = (graph.edges[0].source.center + graph.edges[0].target.center) / 2
         let alternate = graph.edges[0].source.center + (graph.edges[0].target.center - graph.edges[0].source.center) / 2
-        #expect(midpoint.x == -3.9 && alternate.x < -3.9)
+        #expect(midpoint.x == -Self.boundaryDistance && alternate.x < -Self.boundaryDistance)
+        #expect(((graph.edges[1].source.center + graph.edges[1].target.center) / 2).x == 0)
         let prepared = try GraphCheckpoint(graph).snapshot.prepareBundling(configuration, tolerance: 0.01)
         #expect(prepared.state.compatible.count == 2)
         #expect(prepared.state.offsets == [0, 1, 2])
@@ -32,7 +39,7 @@ struct MetalBundlingTests {
     func gpuBundlingKeepsMidpointBoundaryCompatibility() async throws {
         let cpu = midpointBoundaryGraph(), gpu = midpointBoundaryGraph()
         var configuration = EdgeBundlingConfiguration(); configuration.iterations = 1; configuration.segments = 2
-        configuration.bundlingDistance = 3.9; configuration.compatibilityThreshold = 0.1
+        configuration.bundlingDistance = Self.boundaryDistance; configuration.compatibilityThreshold = 0.1
         try await EdgeBundlingOperation(backend: .cpu, configuration: configuration).applyLayoutAsync(cpu)
         let operation = EdgeBundlingOperation(backend: .metal, configuration: configuration)
         try await operation.applyLayoutAsync(gpu)

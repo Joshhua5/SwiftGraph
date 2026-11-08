@@ -9,9 +9,7 @@ private func sample(_ count: Int = 4) -> LayoutGraph {
     return g
 }
 /// True when `p` lies on the outline of `r`, where layered routes now start and end.
-private func onOutline(_ p: Point, _ r: Rect) -> Bool {
-    r.inflated(by: 1e-6).contains(p) && !r.inflated(by: -1e-6).contains(p)
-}
+private func onOutline(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
 private func finite(_ g: LayoutGraph) -> Bool {
     g.nodes.allSatisfy { [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite) } && g.edges.allSatisfy { $0.path.allSatisfy { $0.x.isFinite && $0.y.isFinite } }
 }

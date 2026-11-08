@@ -88,7 +88,10 @@ public extension LayoutBuilder {
         radius: Float = 300) -> Self {
         var configuration = BasicLayoutConfiguration(); configuration.radius = radius
         let core = BasicLayoutOperation(style: .circular, backend: backend, executor: executor, configuration: configuration)
-        return groupedPreset(core, routing: .polyline, backend: backend, executor: executor)
+        // `radius` is a minimum for the outer ring only; nested rings take just the radius their members need.
+        var nestedConfiguration = configuration; nestedConfiguration.radius = 0
+        let nested = BasicLayoutOperation(style: .circular, backend: backend, executor: executor, configuration: nestedConfiguration)
+        return groupedPreset(core, nested: nested, routing: .polyline, backend: backend, executor: executor)
     }
     @discardableResult func applyEnterpriseArchitecture(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         nodeSeparation: Float = 80, layerSeparation: Float = 120, componentSpacing: Float = 50) -> Self {

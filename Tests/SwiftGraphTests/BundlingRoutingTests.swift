@@ -8,7 +8,7 @@ private func node(_ g: LayoutGraph, _ id: String, _ x: Double, _ y: Double, _ w:
 private func edge(_ g: LayoutGraph, _ a: LayoutNode, _ b: LayoutNode) -> LayoutEdge {
     let e = LayoutEdge(source: a, target: b); g.addEdge(e); return e
 }
-private func onOutline(_ p: Point, _ r: Rect) -> Bool { r.inflated(by: 1e-6).contains(p) && !r.inflated(by: -1e-6).contains(p) }
+private func onOutline(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
 private func clear(_ e: LayoutEdge, _ g: LayoutGraph) -> Bool { ObstaclePolyline.clear(e.path, ObstaclePolyline.obstacles(e, g)) }
 
 struct BundlingRoutingTests {

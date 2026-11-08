@@ -33,15 +33,17 @@ struct GroupFrameTests {
     @Test func framesFitHeadersInsetsAndEmptyMinimums() throws {
         let graph = LayoutGraph()
         let frame = GroupFrameOptions(padding: LayoutInsets(top: 7, left: 11, bottom: 13, right: 17),
-                                      headerSize: Size(width: 300, height: 28), minimumSize: Size(width: 350, height: 120))
+                                      headerSize: Size(width: 300, height: 28), headerSpacing: 9,
+                                      minimumSize: Size(width: 350, height: 120))
         let group = try graph.addGroup(id: "title", frame: frame)
         let node = try leaf(graph, "node", group)
         let empty = try graph.addGroup(id: "empty", frame: frame)
         let layout = RecursiveGroupLayout(TreeLayoutAlgorithm()); try layout.applyLayout(graph)
         #expect(group.width == 350 && group.height == 120)
         #expect(empty.width == 350 && empty.height == 120)
-        #expect(node.x == group.x + 11 && node.y == group.y + 7 + 28)
+        #expect(node.x == group.x + 11 && node.y == group.y + 7 + 28 + 9)
         #expect(group.groupHeaderBounds == Rect(x: group.x + 11, y: group.y + 7, width: 322, height: 28))
+        #expect(group.groupContentBounds!.y == group.groupHeaderBounds!.bottom + 9)
         #expect(contains(group.groupContentBounds!, node.bounds))
         #expect(!group.bounds.intersects(empty.bounds))
         let before = graph.nodes.map(\.bounds), headers = graph.nodes.map(\.groupHeaderBounds)
@@ -154,7 +156,91 @@ struct GroupFrameTests {
         let upward = LayoutEdge(source: start, target: target); graph.addEdge(upward)
         try layout.applyLayout(graph)
         for (p, q) in zip(upward.path, upward.path.dropFirst()) {
-            #expect(!titled.groupHeaderBounds!.inflated(by: -1e-4).intersectsLine(p, q))
+            #expect(!titled.groupTitleBounds!.inflated(by: -1e-4).intersectsLine(p, q))
+        }
+    }
+
+    @Test func titleBoundsCoverOnlyTheTitleWidthOfTheHeaderBand() throws {
+        let graph = LayoutGraph(), group = try graph.addGroup(id: "group", frame: .init(headerSize: Size(width: 50, height: 24)))
+        let a = try leaf(graph, "a", group), b = try leaf(graph, "b", group)
+        a.x = 0; b.x = 200
+        try RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()).applyLayout(graph)
+        let band = try #require(group.groupHeaderBounds), title = try #require(group.groupTitleBounds)
+        #expect(band.width > 200)
+        #expect(title == Rect(x: band.x, y: band.y, width: 50, height: band.height))
+        // Without a title width the whole band stays reserved.
+        let untitled = try graph.addGroup(id: "untitled", frame: .init(headerSize: Size(width: 0, height: 24)))
+        try leaf(graph, "c", untitled)
+        try RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()).applyLayout(graph)
+        #expect(untitled.groupTitleBounds == untitled.groupHeaderBounds)
+    }
+
+    @Test func bspOnADetachedGroupViewKeepsNestedPartitions() throws {
+        // Group routing runs on `subgraph`, which lists every descendant under a fresh root. The BSP partition must
+        // still treat `top` and `bottom` as frames around their members, not as siblings of them; otherwise the frame
+        // outlines cut away every lane inside them and `a -> b` wraps round the outside instead of dropping straight.
+        let graph = LayoutGraph(), outer = try graph.addGroup(id: "outer")
+        let top = try graph.addGroup(id: "top", parent: outer), bottom = try graph.addGroup(id: "bottom", parent: outer)
+        let a = try leaf(graph, "a", top), a2 = try leaf(graph, "a2", top)
+        let b = try leaf(graph, "b", bottom), b2 = try leaf(graph, "b2", bottom)
+        a.x = 0; a2.x = 200; b.x = 0; b2.x = 200; bottom.y = 300
+        try RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()).applyLayout(graph)
+        #expect(abs(a.center.x - b.center.x) < 1e-3)
+
+        let view = subgraph(graph, nodes: [top, a, a2, bottom, b, b2])
+        let edge = LayoutEdge(source: a, target: b); view.edges = [edge]
+        let router = BspEdgeRouter(); router.edgeSpacing = 0; router.routeEdges(view)
+        #expect(router.unroutableEdges.isEmpty)
+        #expect(edge.path.count == 2, "\(edge.path)")
+        #expect(edge.path.first.map { abs($0.y - a.bounds.bottom) < 1e-3 } == true)
+        #expect(edge.path.last.map { abs($0.y - b.bounds.top) < 1e-3 } == true)
+    }
+
+    /// Two groups of three chained leaves plus a top-level leaf, already framed.
+    private func framedChains() throws -> LayoutGraph {
+        let graph = LayoutGraph(), left = try graph.addGroup(id: "left"), right = try graph.addGroup(id: "right")
+        var leaves: [LayoutNode] = []
+        for (i, parent) in [(0, left), (1, left), (2, left), (3, right), (4, right), (5, right)] { leaves.append(try leaf(graph, "n\(i)", parent)) }
+        leaves.append(try leaf(graph, "lone"))
+        for (a, b) in [(0, 1), (1, 2), (3, 4), (4, 5), (2, 3), (5, 6)] { graph.addEdge(LayoutEdge(source: leaves[a], target: leaves[b])) }
+        try RecursiveGroupLayout(HierarchicalLayoutAlgorithm()).applyLayout(graph)
+        return graph
+    }
+
+    @Test func treeMapOnADetachedViewFollowsGroupsNotEdges() async throws {
+        // A detached view lists every member under its root. The tree map must still nest leaves in their groups
+        // rather than treating the graph as ungrouped and chaining n0 -> n1 -> n2 ... through the edge forest.
+        let reference = try framedChains()
+        try TreeMapLayoutAlgorithm().applyLayout(reference)
+        let cpu = try framedChains()
+        try TreeMapLayoutAlgorithm().applyLayout(subgraph(cpu, nodes: cpu.nodes))
+        #expect(cpu.nodes.map(\.bounds) == reference.nodes.map(\.bounds))
+        for node in reference.nodes where node.parent?.isGroup == true && node.parent !== reference.root {
+            let parent = try #require(node.parent)
+            #expect(parent.bounds.union(node.bounds) == parent.bounds, "\(node.id) escapes \(parent.id)")
+        }
+        guard LayoutExecutor.isMetalAvailable else { return }
+        let metal = try framedChains()
+        try await TreeLayoutOperation(style: .treeMap, backend: .metal, executor: LayoutExecutor()).applyLayoutAsync(subgraph(metal, nodes: metal.nodes))
+        for (a, b) in zip(metal.nodes, reference.nodes) {
+            #expect(abs(a.bounds.x - b.bounds.x) < 1e-3 && abs(a.bounds.y - b.bounds.y) < 1e-3 &&
+                    abs(a.bounds.width - b.bounds.width) < 1e-3 && abs(a.bounds.height - b.bounds.height) < 1e-3, "\(a.id): Metal \(a.bounds) vs CPU \(b.bounds)")
+        }
+    }
+
+    @Test func routesEnterAFirstRowNodeFromAboveBesideTheTitle() throws {
+        // `inner` sits under the right-hand part of the header band, clear of the 50-wide title.
+        let graph = LayoutGraph(), group = try graph.addGroup(id: "group", frame: .init(headerSize: Size(width: 50, height: 24)))
+        let anchor = try leaf(graph, "anchor", group), inner = try leaf(graph, "inner", group), outside = try leaf(graph, "outside")
+        anchor.x = 0; inner.x = 200; outside.x = 200; outside.y = -300
+        let edge = LayoutEdge(source: outside, target: inner); graph.addEdge(edge)
+        let layout = RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()); try layout.applyLayout(graph)
+        #expect(layout.unroutableEdges.isEmpty)
+        // A drop straight down through the band; wrapping round through the side padding would be far longer.
+        let direct = inner.bounds.top - outside.bounds.bottom
+        #expect(ObstaclePolyline.length(edge.path) <= direct * 1.1)
+        for (p, q) in zip(edge.path, edge.path.dropFirst()) {
+            #expect(!group.groupTitleBounds!.inflated(by: -1e-4).intersectsLine(p, q))
         }
     }
 

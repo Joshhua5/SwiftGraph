@@ -70,8 +70,8 @@ enum ObstaclePolyline {
         private let headers: Set<Int>
         init(_ all: [LayoutNode]) {
             let sized = all.filter { $0.bounds.width > 0 && $0.bounds.height > 0 }
-            let titled = all.filter { $0.isGroup && ($0.groupHeaderBounds?.width ?? 0) > 0 && ($0.groupHeaderBounds?.height ?? 0) > 0 }
-            nodes = sized + titled; rects = sized.map(\.bounds) + titled.compactMap(\.groupHeaderBounds)
+            let titled = all.filter { $0.groupTitleBounds != nil }
+            nodes = sized + titled; rects = sized.map(\.bounds) + titled.compactMap(\.groupTitleBounds)
             headers = Set(sized.count..<(sized.count + titled.count))
             bounds = rects.isEmpty ? Rect() : rects.dropFirst().reduce(rects[0]) { $0.union($1) }.inflated(by: 1)
             tree = QuadTree<Int>(bounds: bounds)
@@ -297,7 +297,7 @@ enum ObstaclePolyline {
             $0 !== edge.source && $0 !== edge.target &&
             !($0.isGroup && (isAncestor($0, of: edge.source) || isAncestor($0, of: edge.target)))
         }.map(\.bounds)
-        let headers = graph.nodes.compactMap { $0.isGroup && $0 !== edge.source && $0 !== edge.target ? $0.groupHeaderBounds : nil }
+        let headers = graph.nodes.compactMap { $0 !== edge.source && $0 !== edge.target ? $0.groupTitleBounds : nil }
         return (bodies + headers).filter { $0.width > 0 && $0.height > 0 }
     }
     static func interior(_ rect: Rect) -> Rect {

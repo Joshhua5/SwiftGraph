@@ -116,7 +116,10 @@ import ImageIO
     @Test func comparisonUsesToleranceAndFlagsQualityWithoutFailing() {
         let g = VisualGraphs.graph(2); VisualGraphs.finish(g, route: true)
         let a = snapshot(g); var b = a
-        b.nodes[0].bounds.x += 0.0005
+        // Move by half the comparison tolerance: a real (representable) change that must still count as unchanged.
+        let x = a.nodes[0].bounds.x
+        b.nodes[0].bounds.x = x + VisualComparison.tolerance(x, x) / 2
+        #expect(b.nodes[0].bounds.x != x)
         #expect(!VisualComparison.compare(a, b).changed)
         b.nodes[0].bounds = b.nodes[1].bounds
         let diff = VisualComparison.compare(a, b)

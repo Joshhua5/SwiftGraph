@@ -23,9 +23,10 @@ import Testing
         for e in g.edges where e.source !== e.target {
             #expect(e.path.count >= 2, "\(pattern) \(e.source.id)->\(e.target.id)")
             guard let first = e.path.first, let last = e.path.last else { continue }
-            // Channel ports sit one unit outside the node.
-            #expect(!e.source.bounds.inflated(by: -1e-4).contains(first) && e.source.bounds.inflated(by: 1.5).contains(first), "\(pattern) source of \(e.source.id)->\(e.target.id)")
-            #expect(!e.target.bounds.inflated(by: -1e-4).contains(last) && e.target.bounds.inflated(by: 1.5).contains(last), "\(pattern) target of \(e.source.id)->\(e.target.id)")
+            // Channel ports sit one unit outside the node. The inner margin follows Float precision (`outlineTolerance`).
+            func strictlyInside(_ p: Point, _ r: Rect) -> Bool { r.inflated(by: -outlineTolerance(1e-4, p, r)).contains(p) }
+            #expect(!strictlyInside(first, e.source.bounds) && e.source.bounds.inflated(by: 1.5).contains(first), "\(pattern) source of \(e.source.id)->\(e.target.id)")
+            #expect(!strictlyInside(last, e.target.bounds) && e.target.bounds.inflated(by: 1.5).contains(last), "\(pattern) target of \(e.source.id)->\(e.target.id)")
         }
     }
 

@@ -120,9 +120,41 @@ struct OrganicQualitySearch {
         a.inflated(by: max(0, gap - 1e-4)).intersects(b)
     }
 
+    /// Movable nodes are spread outward by this factor when pairwise pushing alone cannot clear the overlaps.
+    static let separationExpansion: Float = 1.5
+    /// Most expansions before falling back to per-node placement (1.5⁶ ≈ 11× the original spread).
+    static let maximumSeparationExpansions = 6
+
     func separate(_ positions: inout [Point]) throws {
         let gap = configuration.nodeSeparation
-        for _ in 0..<32 {
+        // Pairwise pushing clears a nearly converged layout in a few rounds, but a barely-iterated layout can arrive
+        // here as one dense heap: each push shoves its pair into their neighbours, and the heap barely spreads (285
+        // overlapping pairs fall only to 93 after 129 rounds on a 129-node tree). Spreading the movable nodes outward
+        // from their centre keeps the arrangement but lowers the density until pushing converges. The first batch of
+        // rounds runs unchanged, so layouts that already converged are untouched.
+        let movable = positions.indices.filter { !fixed[$0] }
+        for expansion in 0...Self.maximumSeparationExpansions {
+            if expansion > 0 {
+                guard !movable.isEmpty else { break }
+                let centre = movable.reduce(Point.zero) { $0 + positions[$1] } / Float(movable.count)
+                for i in movable { positions[i] = centre + (positions[i] - centre) * Self.separationExpansion }
+            }
+            if try pushApart(&positions, gap: gap, rounds: 32) { return }
+        }
+        // A finite placement fallback: fixed nodes first, then each movable node in stable order.
+        var occupied = rectangles(positions).enumerated().filter { fixed[$0.offset] }.map(\.element)
+        for i in positions.indices where !fixed[i] {
+            try Task.checkCancellation()
+            let r = rectangles([positions[i]], nodes: [snapshot.nodes[i]])[0]
+            let offset = try Self.nearestPlacement(r, obstacles: occupied, gap: gap)
+            positions[i] = positions[i] + offset; occupied.append(r.translated(by: offset))
+        }
+    }
+
+    /// Up to `rounds` sweeps that push every conflicting pair apart along its shallower axis. Returns `true` once a
+    /// sweep moves nothing, i.e. no pair conflicts.
+    private func pushApart(_ positions: inout [Point], gap: Float, rounds: Int) throws -> Bool {
+        for _ in 0..<rounds {
             try Task.checkCancellation()
             var moved = false, bounds = rectangles(positions)
             for i in positions.indices {
@@ -137,16 +169,9 @@ struct OrganicQualitySearch {
                     moved = true
                 }
             }
-            if !moved { return }
+            if !moved { return true }
         }
-        // A finite placement fallback: fixed nodes first, then each movable node in stable order.
-        var occupied = rectangles(positions).enumerated().filter { fixed[$0.offset] }.map(\.element)
-        for i in positions.indices where !fixed[i] {
-            try Task.checkCancellation()
-            let r = rectangles([positions[i]], nodes: [snapshot.nodes[i]])[0]
-            let offset = try Self.nearestPlacement(r, obstacles: occupied, gap: gap)
-            positions[i] = positions[i] + offset; occupied.append(r.translated(by: offset))
-        }
+        return false
     }
 
     private func rectangles(_ positions: [Point], nodes: [GeometrySnapshot.Node]) -> [Rect] {
@@ -155,20 +180,10 @@ struct OrganicQualitySearch {
 
     static func nearestPlacement(_ rect: Rect, obstacles: [Rect], gap: Float) throws -> Point {
         guard obstacles.contains(where: { conflict(rect, $0, gap) }) else { return .zero }
-        let padded = obstacles.map { $0.inflated(by: gap + 1e-4) }
-        let xs = Set([Float(0.0)] + padded.flatMap { [$0.left - rect.right, $0.right - rect.left] }).sorted()
-        let ys = Set([Float(0.0)] + padded.flatMap { [$0.top - rect.bottom, $0.bottom - rect.top] }).sorted()
-        var best: Point?
-        for x in xs {
-            try Task.checkCancellation()
-            for y in ys {
-                let p = Point(x: x, y: y)
-                if let best, p.lengthSquared >= best.lengthSquared { continue }
-                if !padded.contains(where: { $0.intersects(rect.translated(by: p)) }) { best = p }
-            }
+        guard let offset = try nearestClearOffset(rect, avoiding: obstacles.map { $0.inflated(by: gap + 1e-4) }) else {
+            throw LayoutExecutionError.invalidInput("Organic placement exceeded finite coordinates.")
         }
-        guard let best else { throw LayoutExecutionError.invalidInput("Organic placement exceeded finite coordinates.") }
-        return best
+        return offset
     }
 
     /// Force magnitudes determine the arrangement, not the final world-coordinate scale.

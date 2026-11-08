@@ -20,15 +20,39 @@ public struct LayoutInsets: Hashable, Codable, Sendable {
 public struct GroupFrameOptions: Hashable, Codable, Sendable {
     public var padding: LayoutInsets
     public var headerSize: Size
+    /// Gap between the bottom of the header band and the group's content. Ignored when the header has no height.
+    public var headerSpacing: Float
     public var minimumSize: Size
-    public init(padding: LayoutInsets = LayoutInsets(), headerSize: Size = Size(), minimumSize: Size = Size()) {
-        self.padding = padding; self.headerSize = headerSize; self.minimumSize = minimumSize
+    public init(padding: LayoutInsets = LayoutInsets(), headerSize: Size = Size(), headerSpacing: Float = 12,
+                minimumSize: Size = Size()) {
+        self.padding = padding; self.headerSize = headerSize; self.headerSpacing = headerSpacing; self.minimumSize = minimumSize
     }
+    public init(from decoder: Decoder) throws {
+        // Payloads written before `headerSpacing` existed still decode, with the default gap.
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        padding = try c.decode(LayoutInsets.self, forKey: .padding)
+        headerSize = try c.decode(Size.self, forKey: .headerSize)
+        headerSpacing = try c.decodeIfPresent(Float.self, forKey: .headerSpacing) ?? 12
+        minimumSize = try c.decode(Size.self, forKey: .minimumSize)
+    }
+    /// The vertical space the header occupies above the content: the band plus its trailing gap.
+    var headerExtent: Float { headerSize.height > 0 ? headerSize.height + headerSpacing : 0 }
     func validate() throws {
-        guard [padding.top, padding.left, padding.bottom, padding.right, headerSize.width,
-               headerSize.height, minimumSize.width, minimumSize.height].allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+        guard [padding.top, padding.left, padding.bottom, padding.right, headerSize.width, headerSize.height,
+               headerSpacing, minimumSize.width, minimumSize.height].allSatisfy({ $0.isFinite && $0 >= 0 }) else {
             throw LayoutExecutionError.invalidInput("Frame dimensions and padding must be finite and nonnegative.")
         }
+    }
+}
+
+public extension LayoutNode {
+    /// The part of a group's header band that its title occupies: the band's leading `headerSize.width`
+    /// (the whole band when no width was given). Routes must avoid this rectangle, but may cross the rest of the
+    /// band, so edges can enter a group's first row from above instead of wrapping round through the side padding.
+    var groupTitleBounds: Rect? {
+        guard isGroup, let band = groupHeaderBounds, band.width > 0, band.height > 0 else { return nil }
+        let titleWidth = groupFrame?.headerSize.width ?? 0
+        return Rect(x: band.x, y: band.y, width: titleWidth > 0 ? min(band.width, titleWidth) : band.width, height: band.height)
     }
 }
 

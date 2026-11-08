@@ -121,7 +121,11 @@ struct LayoutBackendTests {
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable))
     func localOriginPreservesSmallDistancesAtLargeOffsets() async throws {
-        let a = graph(17), b = graph(17, origin: 1e12)
+        // Geometry is stored as Float, so world coordinates at an offset can be no finer than one ulp there. The GPU
+        // solves around a local origin; the result must match the unshifted layout to a few ulps at the offset,
+        // which accumulating forces in world coordinates would miss by far more. 1e5 is still ~100× the extent.
+        let offset: Double = 1e5, tolerance = 4 * Float(offset + 2_000).ulp
+        let a = graph(17), b = graph(17, origin: offset)
         for g in [a, b] { g.nodes[0].metadata[GraphMetadataKeys.fixed] = true }
         let originalPin = b.nodes[0].bounds
         let executor = LayoutExecutor(), c = configuration(1)
@@ -129,8 +133,8 @@ struct LayoutBackendTests {
         try await OrganicLayoutOperation(backend: .metal, executor: executor, configuration: c).applyLayoutAsync(b)
         #expect(b.nodes[0].bounds == originalPin)
         for i in a.nodes.indices {
-            let translated = b.nodes[i].center - Point(x: 1e12, y: 1e12)
-            #expect((translated - a.nodes[i].center).length < 0.001)
+            let translated = b.nodes[i].center - Point(x: offset, y: offset)
+            #expect((translated - a.nodes[i].center).length < tolerance, "node \(i): \((translated - a.nodes[i].center).length) ≥ \(tolerance)")
         }
     }
 

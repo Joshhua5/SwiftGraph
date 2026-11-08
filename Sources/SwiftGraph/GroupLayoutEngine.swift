@@ -172,8 +172,8 @@ struct GroupLayoutEngine {
         }
         let content = envelope ?? Rect(x: group.x, y: group.y)
         group.width = max(options.minimumSize.width, max(content.width, options.headerSize.width) + p.left + p.right)
-        group.height = max(options.minimumSize.height, content.height + options.headerSize.height + p.top + p.bottom)
-        let delta = Point(x: group.x + p.left - content.x, y: group.y + p.top + options.headerSize.height - content.y)
+        group.height = max(options.minimumSize.height, content.height + options.headerExtent + p.top + p.bottom)
+        let delta = Point(x: group.x + p.left - content.x, y: group.y + p.top + options.headerExtent - content.y)
         moveContents(group, by: delta)
         updateFrameRectangles(group)
         guard [group.width, group.height, group.bounds.right, group.bounds.bottom].allSatisfy(\.isFinite) else {
@@ -204,8 +204,8 @@ struct GroupLayoutEngine {
         let options = options(for: group), p = options.padding
         let width = max(0, group.width - p.left - p.right)
         group.groupHeaderBounds = Rect(x: group.x + p.left, y: group.y + p.top, width: width, height: options.headerSize.height)
-        group.groupContentBounds = Rect(x: group.x + p.left, y: group.y + p.top + options.headerSize.height,
-                                       width: width, height: max(0, group.height - p.top - p.bottom - options.headerSize.height))
+        group.groupContentBounds = Rect(x: group.x + p.left, y: group.y + p.top + options.headerExtent,
+                                       width: width, height: max(0, group.height - p.top - p.bottom - options.headerExtent))
     }
     private func moveSubtree(_ node: LayoutNode, by delta: Point) {
         node.bounds = node.bounds.translated(by: delta)
@@ -247,7 +247,7 @@ extension GroupLayoutEngine {
         func obstacles() -> LayoutGraph {
             let routing = subgraph(graph, nodes: graph.nodes)
             for group in groups where group !== graph.root {
-                if let header = group.groupHeaderBounds, header.width > 0, header.height > 0 {
+                if let header = group.groupTitleBounds {
                     let node = LayoutNode(id: "header:" + group.id, width: header.width, height: header.height)
                     node.bounds = header; routing.addNode(node)
                 }

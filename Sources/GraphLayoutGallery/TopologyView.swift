@@ -4,13 +4,25 @@ import SwiftUI
 /// A production topology file with pickers for its layout and edge routing.
 struct TopologyView: View {
     let file: TopologyFile
+    private var externalBackend: Binding<LayoutBackend>?
+    @State private var ownedBackend: LayoutBackend = .cpu
     @State private var layout: TopologyLayout
     @State private var routing: TopologyRouting
 
-    init(file: TopologyFile, layout: TopologyLayout = .default, routing: TopologyRouting = .layoutDefault) {
+    init(
+        file: TopologyFile,
+        layout: TopologyLayout = .default,
+        routing: TopologyRouting = .layoutDefault,
+        backend: Binding<LayoutBackend>? = nil
+    ) {
         self.file = file
+        self.externalBackend = backend
         _layout = State(initialValue: layout)
         _routing = State(initialValue: routing)
+    }
+
+    private var backendBinding: Binding<LayoutBackend> {
+        externalBackend ?? $ownedBackend
     }
 
     private var example: GraphExample { .topology(file, layout: layout, routing: routing) }
@@ -35,7 +47,7 @@ struct TopologyView: View {
             }
             .padding([.horizontal, .top])
             // Fresh identity per configuration so the cached snapshot is discarded and the layout reruns.
-            GraphExampleView(example: example).id(example.id)
+            GraphExampleView(example: example, backend: backendBinding).id(example.id)
         }
     }
 }

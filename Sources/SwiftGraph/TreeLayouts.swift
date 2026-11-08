@@ -204,17 +204,30 @@ public final class OrgChartLayoutAlgorithm: LayoutAlgorithm {
     }
 }
 
+/// The nesting a tree map partitions: the group hierarchy, or the edge forest when the graph has no groups.
+/// A detached view (`subgraph`) lists every member directly under its root while members keep their real parents,
+/// so nesting is recovered from those parents: a member is top-level when its parent is the root or outside the view.
+func treeMapChildren(_ graph: LayoutGraph) -> [LayoutNode: [LayoutNode]] {
+    let members = Set(graph.nodes)
+    func isTopLevel(_ node: LayoutNode) -> Bool { node.parent.map { $0 === graph.root || !members.contains($0) } ?? true }
+    var children: [LayoutNode: [LayoutNode]] = [:]
+    if graph.nodes.allSatisfy(isTopLevel) && !graph.edges.isEmpty {
+        let a = Adjacency(graph), f = Forest(a)
+        children[graph.root] = f.roots.map { a.nodes[$0] }
+        for i in a.nodes.indices { children[a.nodes[i]] = f.children[i].map { a.nodes[$0] } }
+    } else {
+        children[graph.root] = graph.root.children.filter { members.contains($0) && isTopLevel($0) }
+        for node in graph.nodes { children[node] = node.children.filter(members.contains) }
+    }
+    return children
+}
+
 public final class TreeMapLayoutAlgorithm: LayoutAlgorithm {
     public var padding: Float = 5
     public init() {}
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
-        var children: [LayoutNode: [LayoutNode]] = [:], order: [LayoutNode] = [], seen = Set<LayoutNode>()
-        if graph.root.children.count == graph.nodes.count && !graph.edges.isEmpty {
-            let a = Adjacency(graph), f = Forest(a)
-            children[graph.root] = f.roots.map { a.nodes[$0] }
-            for i in a.nodes.indices { children[a.nodes[i]] = f.children[i].map { a.nodes[$0] } }
-        }
+        var children = treeMapChildren(graph), order: [LayoutNode] = [], seen = Set<LayoutNode>()
         var stack = [graph.root]
         while let node = stack.popLast() {
             guard seen.insert(node).inserted else { continue }

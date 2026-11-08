@@ -145,7 +145,9 @@ func treeMetalCommandBoundariesAndDiscardedOrigin(_ count: Int) async throws {
     try await square.applyLayoutAsync(squareGPU)
     expectTreeMetalGeometry(squareGPU, squareCPU)
     #expect(square.lastMetrics?.backend == .metal)
-    c.padding = Float(100).nextUp
+    // A padding that leaves a split rectangle a few ulps from square in Float (≈ 99.99966). With Float geometry
+    // `Float(100).nextUp` now yields an exactly square rectangle, which both sides orient identically.
+    c.padding = Float(bitPattern: 0x42C7_FFD3)
     let graph = nestedSquare(), before = graph.nodes.map(\.bounds)
     let explicit = TreeLayoutOperation(style: .treeMap, backend: .metal, configuration: c)
     await #expect(throws: LayoutExecutionError.precisionLimit) { try await explicit.applyLayoutAsync(graph) }

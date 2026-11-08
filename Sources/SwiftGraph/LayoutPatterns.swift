@@ -43,7 +43,9 @@ public extension LayoutBuilder {
     }
     @discardableResult func applyStandardCircular(radius: Float = 300) -> Self {
         let layout = CircularLayoutAlgorithm(); layout.radius = radius
-        return groupedPreset(layout, routing: .polyline)
+        // `radius` is a minimum for the outer ring only; nested rings take just the radius their members need.
+        let nested = CircularLayoutAlgorithm(); nested.radius = 0
+        return groupedPreset(layout, nested: nested, routing: .polyline)
     }
     @discardableResult func applyProgressiveRefinement(organicIterations: Int = 600, barycenterIterations: Int = 10) -> Self {
         let core = PresetPlacement { graph in

@@ -72,7 +72,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
         let leaves = QuadTree<LayoutNode>(bounds: enclosingBounds(graph.nodes).inflated(by: 100))
         for n in graph.nodes where !n.isGroup { leaves.insert(bounds: n.bounds, item: n) }
         for group in graph.nodes where group.isGroup {
-            if let r = group.groupHeaderBounds, r.width > 0 && r.height > 0 {
+            if let r = group.groupTitleBounds {
                 let header = LayoutNode(id: "header:" + group.id, width: r.width, height: r.height)
                 header.bounds = r; leaves.insert(bounds: r, item: header)
             }
@@ -94,7 +94,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
     }
     private func makeLattice(_ graph: LayoutGraph, grid: Int) -> Lattice {
         var lattice = Lattice(grid: grid, origin: Point(x: graph.nodes.map(\.x).min()! - 50, y: graph.nodes.map(\.y).min()! - 50))
-        let headers = graph.nodes.filter(\.isGroup).compactMap(\.groupHeaderBounds).filter { $0.width > 0 && $0.height > 0 }
+        let headers = graph.nodes.compactMap(\.groupTitleBounds)
         let rectangles = (graph.nodes.filter { !$0.isGroup }.map(\.bounds) + headers).map { lattice.cover($0) }
         lattice.rectangles = rectangles
         let covers = graph.nodes.map { lattice.cover($0.bounds) }
@@ -435,7 +435,7 @@ enum RoutingFallback {
         let from = OrthogonalPorts.ranked(edge.source, other: edge.target, active: edge.sourcePort, candidates: edge.sourcePortCandidates, vertical: flow).prefix(2)
         let to = OrthogonalPorts.ranked(edge.target, other: edge.source, active: edge.targetPort, candidates: edge.targetPortCandidates, vertical: flow).prefix(2)
         let obstacles = ObstaclePolyline.obstacles(edge, graph)
-        let ends = [edge.source.bounds, edge.target.bounds].filter { $0.width > 0 && $0.height > 0 }.map { $0.inflated(by: -1e-5) }
+        let ends = [edge.source.bounds, edge.target.bounds].filter { $0.width > 0 && $0.height > 0 }.map(ObstaclePolyline.interior)
         var lz: [[Point]] = [], combos: [(Point, Point, Point, Point)] = []
         for a in from { for b in to {
             let ps = OrthogonalPorts.point(edge.source, side: a, toward: edge.target.bounds), pt = OrthogonalPorts.point(edge.target, side: b, toward: edge.source.bounds)

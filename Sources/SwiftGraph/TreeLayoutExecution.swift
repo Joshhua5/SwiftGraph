@@ -86,12 +86,7 @@ func treePlacementPlan(_ graph: LayoutGraph, style: TreeLayoutStyle, configurati
     var mode: UInt32 = 0, scalars: [Float]
     if style == .treeMap {
         mode = 3; scalars = [c.padding]
-        var children: [LayoutNode: [LayoutNode]] = [:]
-        if graph.root.children.count == graph.nodes.count && !graph.edges.isEmpty {
-            let a = Adjacency(graph), f = Forest(a)
-            children[graph.root] = f.roots.map { a.nodes[$0] }
-            for i in a.nodes.indices { children[a.nodes[i]] = f.children[i].map { a.nodes[$0] } }
-        }
+        var children = treeMapChildren(graph)
         var indices = index, seen = Set<LayoutNode>(), stack = [graph.root]
         while let node = stack.popLast() {
             try Task.checkCancellation()

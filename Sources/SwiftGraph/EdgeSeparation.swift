@@ -288,6 +288,11 @@ public final class EdgeSeparator: EdgeRouter {
             let d1 = shifts[k - 1], d2 = shifts[k]
             if d1 == d2 { result.append(path[k] + d1); continue }
             let p1 = path[k - 1] + d1, v1 = path[k] - path[k - 1], p2 = path[k] + d2, v2 = path[k + 1] - path[k]
+            // An axis-aligned right angle takes its corner straight from the two shifted legs. The general intersection
+            // below multiplies in Float, which can leave the corner an ulp off one leg (y = -19.999992 against -20) and
+            // turn an orthogonal run into a slightly diagonal one.
+            if v1.x == 0 && v1.y != 0 && v2.y == 0 && v2.x != 0 { result.append(Point(x: p1.x, y: p2.y)); continue }
+            if v1.y == 0 && v1.x != 0 && v2.x == 0 && v2.y != 0 { result.append(Point(x: p2.x, y: p1.y)); continue }
             let denominator = cross(v1, v2), limit = min(4 * max(d1.length, d2.length), 0.5 * min(v1.length, v2.length))
             if abs(denominator) > 1e-6 * v1.length * v2.length {
                 let corner = p1 + v1 * (cross(p2 - p1, v2) / denominator)

@@ -1,3 +1,4 @@
+import SwiftGraph
 import SwiftUI
 
 /// Lays out one example asynchronously and draws the result.
@@ -5,21 +6,40 @@ struct GraphExampleView: View {
     let example: GraphExample
     var showsHeader = true
 
+    private var externalBackend: Binding<LayoutBackend>?
+    @State private var ownedBackend: LayoutBackend = .cpu
     @State private var snapshot: GraphSnapshot?
     @State private var errorMessage: String?
+    @State private var renderedBackend: LayoutBackend?
     @State private var showLabels = true
     @State private var zoom: CGFloat = 1
     @State private var baseZoom: CGFloat = 1
     @State private var pan: CGSize = .zero
     @State private var dragStartPan: CGSize = .zero
 
-    init(example: GraphExample, showsHeader: Bool = true) {
-        self.example = example; self.showsHeader = showsHeader
+    private var backend: LayoutBackend {
+        externalBackend?.wrappedValue ?? ownedBackend
+    }
+
+    private var backendBinding: Binding<LayoutBackend> {
+        externalBackend ?? $ownedBackend
+    }
+
+    init(example: GraphExample, backend: Binding<LayoutBackend>? = nil, showsHeader: Bool = true) {
+        self.example = example
+        self.externalBackend = backend
+        self.showsHeader = showsHeader
     }
 
     /// Starts with an already computed layout, so static preview snapshots never show the spinner.
-    init(example: GraphExample, showsHeader: Bool = true, prerendered result: Result<GraphSnapshot, any Error>) {
-        self.init(example: example, showsHeader: showsHeader)
+    init(
+        example: GraphExample,
+        backend: Binding<LayoutBackend>? = nil,
+        showsHeader: Bool = true,
+        prerendered result: Result<GraphSnapshot, any Error>
+    ) {
+        self.init(example: example, backend: backend, showsHeader: showsHeader)
+        _renderedBackend = State(initialValue: backend?.wrappedValue ?? .cpu)
         switch result {
         case .success(let value): _snapshot = State(initialValue: value)
         case .failure(let error): _errorMessage = State(initialValue: String(describing: error))
@@ -60,9 +80,19 @@ struct GraphExampleView: View {
             }
         }
         .padding()
-        .task(id: example.id) {
-            guard snapshot == nil, errorMessage == nil else { return }
-            do { snapshot = try await example.render() } catch { errorMessage = String(describing: error) }
+        .task(id: "\(example.id)|\(backend)") {
+            let currentBackend = backend
+            guard renderedBackend != currentBackend || (snapshot == nil && errorMessage == nil) else { return }
+            errorMessage = nil
+            do {
+                snapshot = try await example.render(backend: currentBackend)
+                renderedBackend = currentBackend
+            } catch is CancellationError {
+                return
+            } catch {
+                errorMessage = String(describing: error)
+                renderedBackend = currentBackend
+            }
         }
     }
 
@@ -80,6 +110,15 @@ struct GraphExampleView: View {
                 Text("\(nodeSummary) · \(snapshot.edges.count) edges · \(snapshot.duration.formatted(.units(allowed: [.milliseconds], width: .narrow)))")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
+            Picker("Backend", selection: backendBinding) {
+                Text("CPU").tag(LayoutBackend.cpu)
+                Text("Metal").tag(LayoutBackend.metal)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .controlSize(.small)
+            .help("Layout Execution Backend (CPU vs Metal)")
             HStack(spacing: 4) {
                 Button {
                     zoom = max(0.4, zoom / 1.25); baseZoom = zoom

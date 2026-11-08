@@ -297,6 +297,16 @@ private func rectilinearRoute(_ a: Point, _ b: Point, _ obstacles: [Rect]) -> [P
 
 /// Force-scan overlap removal (Misue et al. 1995): sweeps each axis in center order and shifts everything
 /// beyond a conflict by the same amount, so no left/right or above/below relation between nodes changes.
+/// A few ulps at the largest coordinate involved. Spacing checks subtract this rather than a fixed epsilon: with Float
+/// geometry a gap of exactly `spacing`, recomputed from centres or edges, can land an ulp short and would otherwise be
+/// "separated" again by a rounding-sized step, so overlap removal was not idempotent.
+/// Must match `spacingTolerance` in Shaders/BasicLayouts.metal exactly for CPU/GPU parity.
+func spacingTolerance(_ a: Rect, _ b: Rect, spacing: Float) -> Float {
+    let m = max(max(max(abs(a.left), abs(b.left)), max(abs(a.top), abs(b.top))),
+                max(max(abs(a.right), abs(b.right)), max(abs(a.bottom), abs(b.bottom))))
+    return 4 * Float.ulpOfOne * max(m, abs(spacing))
+}
+
 func forceScan(_ nodes: [LayoutNode], spacing: Float) throws {
     for horizontal in [true, false] {
         try Task.checkCancellation()
@@ -312,7 +322,8 @@ func forceScan(_ nodes: [LayoutNode], spacing: Float) throws {
                 for j in order[(k + 1)...] {
                     let a = nodes[m].bounds, b = nodes[j].bounds, d = b.center - a.center
                     let needX = (a.width + b.width) / 2 + spacing, needY = (a.height + b.height) / 2 + spacing
-                    guard abs(d.x) < needX - 1e-9 && abs(d.y) < needY - 1e-9 else { continue }
+                    let tolerance = spacingTolerance(a, b, spacing: spacing)
+                    guard abs(d.x) < needX - tolerance && abs(d.y) < needY - tolerance else { continue }
                     // Scale the center offset until either axis clears; this axis takes its component.
                     let t = min(d.x != 0 ? needX / abs(d.x) : .infinity, d.y != 0 ? needY / abs(d.y) : .infinity)
                     shift = max(shift, (horizontal ? d.x : d.y) * (t - 1))
@@ -346,7 +357,8 @@ func separateOverlaps(_ nodes: [LayoutNode], spacing: Float, movable: [Bool], pa
                 let a = nodes[i].bounds, b = nodes[j].bounds
                 let needX = min(a.right, b.right) - max(a.left, b.left) + spacing
                 let needY = min(a.bottom, b.bottom) - max(a.top, b.top) + spacing
-                guard needX > 1e-9 && needY > 1e-9 else { continue }
+                let tolerance = spacingTolerance(a, b, spacing: spacing)
+                guard needX > tolerance && needY > tolerance else { continue }
                 let horizontal = needX <= needY
                 let forward = horizontal ? (a.center.x == b.center.x ? i < j : a.center.x < b.center.x)
                                          : (a.center.y == b.center.y ? i < j : a.center.y < b.center.y)

@@ -76,19 +76,8 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
                 if edge.labelBounds.width > 0 { envelope = envelope.union(edge.labelBounds) }
             }
             let padded = obstacles.map { $0.inflated(by: 10) }
-            if padded.contains(where: { $0.intersects(envelope) }) {
-                let xs = Set([Float(0)] + padded.flatMap { [$0.left - envelope.right, $0.right - envelope.left] }).sorted()
-                let ys = Set([Float(0)] + padded.flatMap { [$0.top - envelope.bottom, $0.bottom - envelope.top] }).sorted()
-                var best: Point?
-                for x in xs {
-                    try Task.checkCancellation()
-                    for y in ys {
-                        let candidate = Point(x: x, y: y)
-                        if let best, candidate.lengthSquared >= best.lengthSquared { continue }
-                        if !padded.contains(where: { $0.intersects(envelope.translated(by: candidate)) }) { best = candidate }
-                    }
-                }
-                if let best { translate(g, by: best) }
+            if padded.contains(where: { $0.intersects(envelope) }), let best = try nearestClearOffset(envelope, avoiding: padded) {
+                translate(g, by: best)
             }
         }
         let routing = subgraph(graph, nodes: graph.nodes)
