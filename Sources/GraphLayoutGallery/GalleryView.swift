@@ -84,7 +84,12 @@ private struct ExampleRow: View {
                 .help("About \(example.title)")
                 .accessibilityLabel("About \(example.title)")
                 .popover(isPresented: $showsInfo, arrowEdge: .trailing) {
-                    ExampleInfoView(title: example.title, category: example.category, info: info)
+                    if #available(macOS 15, iOS 18, *) {
+                        ExampleInfoView(title: example.title, category: example.category, info: info)
+                            .presentationSizing(.fitted)
+                    } else {
+                        ExampleInfoView(title: example.title, category: example.category, info: info)
+                    }
                 }
             }
         }
@@ -92,23 +97,33 @@ private struct ExampleRow: View {
 }
 
 /// Popover content: what an example is designed for, when to use it, and when not to.
+///
+/// Rather than fight the platform's popover sizing heuristics (which, even with explicit frames
+/// and `.presentationSizing(.fitted)`, were still clipping text), this pins a comfortably wide,
+/// generous frame and puts everything in a `ScrollView`. Scrolling only kicks in if some future
+/// sizing quirk still under-allocates height; normally the content is short enough to show flat.
 private struct ExampleInfoView: View {
     let title: String
     let category: String
     let info: ExampleInfo
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                Text(category).font(.caption).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline)
+                    Text(category).font(.caption).foregroundStyle(.secondary)
+                }
+                section("Designed for", systemImage: "scope", text: info.designedFor)
+                section("When to use", systemImage: "checkmark.circle", text: info.whenToUse)
+                section("Avoid when", systemImage: "exclamationmark.triangle", text: info.avoidWhen)
             }
-            section("Designed for", systemImage: "scope", text: info.designedFor)
-            section("When to use", systemImage: "checkmark.circle", text: info.whenToUse)
-            section("Avoid when", systemImage: "exclamationmark.triangle", text: info.avoidWhen)
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
-        .frame(width: 320, alignment: .leading)
+        // Generous and flexible rather than a single fixed value, matching Apple's documented
+        // `.fitted` usage pattern; a plain fixed-width frame wasn't enough to stop clipping.
+        .frame(minWidth: 360, idealWidth: 420, maxWidth: 480, minHeight: 160, idealHeight: 260, maxHeight: 420)
     }
 
     private func section(_ heading: String, systemImage: String, text: String) -> some View {
@@ -118,6 +133,8 @@ private struct ExampleInfoView: View {
             Text(text)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
