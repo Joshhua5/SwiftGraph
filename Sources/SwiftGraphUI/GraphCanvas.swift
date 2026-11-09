@@ -1,26 +1,55 @@
 import SwiftUI
 
 /// Draws a `GraphSnapshot` scaled to fit the available space (world y grows downwards, like SwiftUI).
-struct GraphCanvas: View {
-    let snapshot: GraphSnapshot
-    var showLabels = true
-    var zoom: CGFloat = 1
-    var pan: CGSize = .zero
+///
+/// Customize the appearance globally using `.graphStyle(_:)` or per element using
+/// `.graphNodeStyle(_:)`, `.graphGroupStyle(_:)`, `.graphEdgeStyle(_:)`, and `.graphLaneStyle(_:)`.
+public struct GraphCanvas: View {
+    public let snapshot: GraphSnapshot
+    public var showLabels: Bool?
+    public var zoom: CGFloat
+    public var pan: CGSize
 
-    private let groupColors: [Color] = [.blue, .purple, .teal, .orange, .pink]
-    private let edgeColors: [Color] = [
-        Color(red: 0.22, green: 0.42, blue: 0.78),
-        Color(red: 0.08, green: 0.52, blue: 0.56),
-        Color(red: 0.46, green: 0.32, blue: 0.76),
-        Color(red: 0.72, green: 0.36, blue: 0.14),
-        Color(red: 0.18, green: 0.56, blue: 0.34),
-        Color(red: 0.68, green: 0.22, blue: 0.44),
-    ]
+    @Environment(\.graphStyle) private var style
+    @Environment(\.graphNodeStyleResolver) private var nodeStyleResolver
+    @Environment(\.graphGroupStyleResolver) private var groupStyleResolver
+    @Environment(\.graphEdgeStyleResolver) private var edgeStyleResolver
+    @Environment(\.graphLaneStyleResolver) private var laneStyleResolver
 
-    var body: some View {
+    public init(
+        snapshot: GraphSnapshot,
+        showLabels: Bool? = nil,
+        zoom: CGFloat = 1,
+        pan: CGSize = .zero
+    ) {
+        self.snapshot = snapshot
+        self.showLabels = showLabels
+        self.zoom = zoom
+        self.pan = pan
+    }
+
+    public init(
+        snapshot: GraphSnapshot,
+        viewport: GraphViewport,
+        showLabels: Bool? = nil
+    ) {
+        self.snapshot = snapshot
+        self.showLabels = showLabels
+        self.zoom = viewport.zoom
+        self.pan = viewport.pan
+    }
+
+    public var body: some View {
+        let style = self.style
+        let nodeResolver = self.nodeStyleResolver
+        let groupResolver = self.groupStyleResolver
+        let edgeResolver = self.edgeStyleResolver
+        let laneResolver = self.laneStyleResolver
+        let labelsVisible = showLabels ?? style.showsLabels
+
         Canvas { context, size in
-            let world = snapshot.worldBounds.insetBy(dx: -28, dy: -28)
-            let fitScale = min(size.width / max(world.width, 1), size.height / max(world.height, 1), 1.6)
+            let world = snapshot.worldBounds.insetBy(dx: -style.worldPadding, dy: -style.worldPadding)
+            let fitScale = min(size.width / max(world.width, 1), size.height / max(world.height, 1), style.maxFitScale)
             let scale = fitScale * max(0.25, zoom)
             // Centre the drawing in the canvas, then apply interactive pan.
             let offset = CGPoint(
@@ -31,29 +60,36 @@ struct GraphCanvas: View {
             func map(_ r: CGRect) -> CGRect {
                 CGRect(origin: map(r.origin), size: CGSize(width: r.width * scale, height: r.height * scale))
             }
-            let fontSize = max(6.5, min(13, 11.5 * scale))
-            let edgeWidth = max(0.85, min(1.6, 1.3 * scale))
-            let arrowSize = max(4.0, min(8.0, 6.8 * scale))
+            let fontSize = max(6.5, min(13, style.baseFontSize * scale))
+            let defaultEdgeWidth = max(0.85, min(1.6, style.edgeLineWidth * scale))
+            let arrowSize = max(4.0, min(8.0, style.arrowSize * scale))
 
             // 1. Swimlanes
+            let lanePalette = style.lanePalette.isEmpty ? [Color.blue, Color.teal] : style.lanePalette
             for (index, lane) in snapshot.lanes.enumerated() {
+                let override = laneResolver?(lane, index) ?? lane.style
                 let frame = map(lane.frame)
-                let radius = max(4, 8 * scale)
+                let baseRadius = override?.cornerRadius ?? style.laneCornerRadius
+                let radius = max(4, baseRadius * scale)
                 let shape = Path(roundedRect: frame, cornerRadius: radius)
-                let tint: Color = index.isMultiple(of: 2) ? .blue : .teal
-                context.fill(shape, with: .color(tint.opacity(0.045)))
+                let tint: Color = override?.tint ?? lanePalette[index % lanePalette.count]
+                let fillOpacity = override?.fillOpacity ?? style.laneFillOpacity
+                let headerOpacity = override?.headerOpacity ?? style.laneHeaderOpacity
+                let strokeOpacity = override?.strokeOpacity ?? style.laneStrokeOpacity
+
+                context.fill(shape, with: .color(tint.opacity(fillOpacity)))
 
                 let headerHeight = max(fontSize + 8, lane.headerHeight * scale)
                 let headerRect = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: min(headerHeight, frame.height))
                 context.drawLayer { headerLayer in
                     headerLayer.clip(to: shape)
-                    headerLayer.fill(Path(headerRect), with: .color(tint.opacity(0.11)))
+                    headerLayer.fill(Path(headerRect), with: .color(tint.opacity(headerOpacity)))
                 }
                 var divider = Path()
                 divider.move(to: CGPoint(x: frame.minX, y: headerRect.maxY))
                 divider.addLine(to: CGPoint(x: frame.maxX, y: headerRect.maxY))
-                context.stroke(divider, with: .color(tint.opacity(0.28)), lineWidth: max(0.75, scale))
-                context.stroke(shape, with: .color(tint.opacity(0.35)), lineWidth: max(0.85, 1.1 * scale))
+                context.stroke(divider, with: .color(tint.opacity(strokeOpacity * 0.8)), lineWidth: max(0.75, scale))
+                context.stroke(shape, with: .color(tint.opacity(strokeOpacity)), lineWidth: max(0.85, 1.1 * scale))
                 context.draw(
                     Text(lane.title).font(.system(size: fontSize, weight: .semibold)).foregroundColor(tint),
                     at: CGPoint(x: headerRect.midX, y: headerRect.midY)
@@ -61,12 +97,20 @@ struct GraphCanvas: View {
             }
 
             // 2. Group containers (outer to inner)
+            let groupPalette = style.groupPalette.isEmpty ? [Color.blue] : style.groupPalette
             for node in snapshot.nodes where node.isGroup {
-                let color = groupColors[node.depth % groupColors.count]
+                let override = groupResolver?(node) ?? node.groupStyle
+                let color = override?.tint ?? groupPalette[node.depth % groupPalette.count]
                 let frame = map(node.frame)
-                let radius = max(4, 8 * scale)
+                let baseRadius = override?.cornerRadius ?? style.groupCornerRadius
+                let radius = max(4, baseRadius * scale)
                 let shape = Path(roundedRect: frame, cornerRadius: radius)
-                context.fill(shape, with: .color(color.opacity(0.055)))
+                let fillOpacity = override?.fillOpacity ?? style.groupFillOpacity
+                let headerOpacity = override?.headerOpacity ?? style.groupHeaderOpacity
+                let strokeOpacity = override?.strokeOpacity ?? style.groupStrokeOpacity
+                let fontWeight = override?.fontWeight ?? style.groupFontWeight
+
+                context.fill(shape, with: .color(color.opacity(fillOpacity)))
 
                 let titleInset = max(6, 8 * scale)
 
@@ -81,18 +125,31 @@ struct GraphCanvas: View {
                     )
                     context.drawLayer { headerLayer in
                         headerLayer.clip(to: shape)
-                        headerLayer.fill(Path(headerBand), with: .color(color.opacity(0.11)))
+                        headerLayer.fill(Path(headerBand), with: .color(color.opacity(headerOpacity)))
                     }
                     var divider = Path()
                     divider.move(to: CGPoint(x: frame.minX, y: headerBand.maxY))
                     divider.addLine(to: CGPoint(x: frame.maxX, y: headerBand.maxY))
                     context.stroke(divider, with: .color(color.opacity(0.28)), lineWidth: max(0.75, 0.9 * scale))
                     let titleBox = CGSize(width: frame.width - titleInset * 2, height: reservedHeader.height)
-                    if let title = fittedText(context, node.name, weight: .semibold, color: color, preferredSize: fontSize, in: titleBox) {
+                    if let title = fittedText(
+                        context,
+                        node.name,
+                        weight: fontWeight,
+                        color: color,
+                        preferredSize: fontSize,
+                        minimumSize: style.minimumLegibleFontSize,
+                        in: titleBox
+                    ) {
                         context.draw(title, at: CGPoint(x: frame.minX + titleInset, y: headerBand.midY), anchor: .leading)
                     }
                 } else if let title = fittedText(
-                    context, node.name, weight: .semibold, color: color, preferredSize: fontSize,
+                    context,
+                    node.name,
+                    weight: fontWeight,
+                    color: color,
+                    preferredSize: fontSize,
+                    minimumSize: style.minimumLegibleFontSize,
                     in: CGSize(width: frame.width - titleInset * 2, height: .infinity)
                 ) {
                     // No reserved header: hang the title as a tab above the top edge so it never covers children.
@@ -105,26 +162,41 @@ struct GraphCanvas: View {
                         height: titleSize.height + padding.height * 2
                     )
                     let tabShape = Path(roundedRect: tab, cornerRadius: max(2.5, 4 * scale))
-                    context.fill(tabShape, with: .color(Color.canvasBackground))
+                    context.fill(tabShape, with: .color(style.canvasBackground))
                     context.fill(tabShape, with: .color(color.opacity(0.16)))
                     context.draw(title, at: CGPoint(x: tab.midX, y: tab.midY), anchor: .center)
                 }
 
-                let dashUnit = max(2.5, 5 * scale)
+                let dashPattern: [CGFloat]
+                if let customDash = override?.dash {
+                    dashPattern = customDash.map { max(1, $0 * scale) }
+                } else {
+                    let dashUnit = max(2.5, style.groupDashUnit * scale)
+                    dashPattern = [dashUnit, dashUnit * 0.65]
+                }
+                let baseLineWidth = override?.lineWidth ?? style.groupStrokeWidth
                 context.stroke(
                     shape,
-                    with: .color(color.opacity(0.65)),
-                    style: StrokeStyle(lineWidth: max(0.9, 1.15 * scale), dash: [dashUnit, dashUnit * 0.65])
+                    with: .color(color.opacity(strokeOpacity)),
+                    style: StrokeStyle(lineWidth: max(0.9, baseLineWidth * scale), dash: dashPattern)
                 )
             }
 
             // 3. Edges with crossing bridges, rounded bends, port dots, and arrowheads
+            let edgePalette = style.edgePalette.isEmpty ? [Color.accentColor] : style.edgePalette
             for edge in snapshot.edges where edge.points.count >= 2 {
+                let override = edgeResolver?(edge) ?? edge.style
                 let points = edge.points.map(map)
-                let color: Color = edge.isSelfLoop ? .orange : edgeColors[edge.id % edgeColors.count].opacity(0.88)
+                let defaultColor: Color = edge.isSelfLoop
+                    ? style.selfLoopColor
+                    : edgePalette[edge.id % edgePalette.count].opacity(0.88)
+                let color = override?.color ?? defaultColor
+                let edgeWidth = override?.lineWidth.map { max(0.75, $0 * scale) } ?? defaultEdgeWidth
+                let showsArrowhead = override?.showsArrowhead ?? style.showsArrowheads
+                let showsPortDot = override?.showsPortDot ?? style.showsPortDots
 
                 // Draw bridge halos over earlier edges at crossing points.
-                if !edge.bridges.isEmpty {
+                if style.showsBridges, !edge.bridges.isEmpty {
                     var bridgePath = Path()
                     for bridge in edge.bridges {
                         bridgePath.move(to: map(bridge.start))
@@ -132,67 +204,91 @@ struct GraphCanvas: View {
                     }
                     context.stroke(
                         bridgePath,
-                        with: .color(Color.canvasBackground),
+                        with: .color(style.canvasBackground),
                         style: StrokeStyle(lineWidth: edgeWidth + max(2.5, 3.4 * scale), lineCap: .butt)
                     )
                 }
 
-                let trimmed = trimmedPoints(points, trimStart: edge.isBidirectional ? arrowSize * 0.55 : 0, trimEnd: arrowSize * 0.55)
-                let path = roundedPath(for: trimmed, cornerRadius: max(2, 6 * scale))
+                let trimEndAmount = showsArrowhead ? arrowSize * 0.55 : 0
+                let trimStartAmount = (showsArrowhead && edge.isBidirectional) ? arrowSize * 0.55 : 0
+                let trimmed = trimmedPoints(points, trimStart: trimStartAmount, trimEnd: trimEndAmount)
+                let baseCornerRadius = override?.cornerRadius ?? style.edgeCornerRadius
+                let path = roundedPath(for: trimmed, cornerRadius: max(2, baseCornerRadius * scale))
+                let dash = override?.dash?.map { max(1, $0 * scale) } ?? []
                 context.stroke(
                     path,
                     with: .color(color),
-                    style: StrokeStyle(lineWidth: edgeWidth, lineCap: .round, lineJoin: .round)
+                    style: StrokeStyle(lineWidth: edgeWidth, lineCap: .round, lineJoin: .round, dash: dash)
                 )
 
-                if !edge.isBidirectional, let start = points.first {
+                if showsPortDot, !edge.isBidirectional, let start = points.first {
                     let dotRadius = max(1.2, min(2.4, 1.8 * scale))
                     let dotRect = CGRect(x: start.x - dotRadius, y: start.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
                     context.fill(Path(ellipseIn: dotRect), with: .color(color))
                 }
 
-                if let end = points.last,
-                   let from = points.dropLast().last(where: { hypot(end.x - $0.x, end.y - $0.y) > 0.5 }) {
-                    drawArrowhead(in: &context, from: from, to: end, size: arrowSize, color: color)
-                }
-                if edge.isBidirectional, let start = points.first,
-                   let from = points.dropFirst().first(where: { hypot(start.x - $0.x, start.y - $0.y) > 0.5 }) {
-                    drawArrowhead(in: &context, from: from, to: start, size: arrowSize, color: color)
+                if showsArrowhead {
+                    if let end = points.last,
+                       let from = points.dropLast().last(where: { hypot(end.x - $0.x, end.y - $0.y) > 0.5 }) {
+                        drawArrowhead(in: &context, from: from, to: end, size: arrowSize, color: color)
+                    }
+                    if edge.isBidirectional, let start = points.first,
+                       let from = points.dropFirst().first(where: { hypot(start.x - $0.x, start.y - $0.y) > 0.5 }) {
+                        drawArrowhead(in: &context, from: from, to: start, size: arrowSize, color: color)
+                    }
                 }
             }
 
             // 4. Leaf nodes
             for node in snapshot.nodes where !node.isGroup {
+                let override = nodeResolver?(node) ?? node.nodeStyle
                 let frame = map(node.frame)
-                let radius = max(3, 6 * scale)
+                let baseRadius = override?.cornerRadius ?? style.nodeCornerRadius
+                let radius = max(3, baseRadius * scale)
                 let shape = Path(roundedRect: frame, cornerRadius: radius)
-                context.fill(shape, with: .color(Color.nodeFill))
-                context.stroke(shape, with: .color(Color.accentColor.opacity(0.88)), lineWidth: max(1.0, 1.45 * scale))
+                let fill = override?.fill ?? style.nodeFill
+                let stroke = override?.stroke ?? style.nodeStroke
+                let textColor = override?.textColor ?? style.nodeTextColor
+                let fontWeight = override?.fontWeight ?? style.nodeFontWeight
+                let baseStrokeWidth = override?.lineWidth ?? style.nodeStrokeWidth
+                let dash = override?.dash?.map { max(1, $0 * scale) } ?? []
+
+                context.fill(shape, with: .color(fill))
+                context.stroke(
+                    shape,
+                    with: .color(stroke),
+                    style: StrokeStyle(lineWidth: max(1.0, baseStrokeWidth * scale), dash: dash)
+                )
 
                 let labelBox = CGSize(width: frame.width - max(4, 10 * scale), height: frame.height)
-                if let label = fittedText(context, node.name, weight: .medium, color: .primary, preferredSize: fontSize, in: labelBox) {
+                if let label = fittedText(
+                    context,
+                    node.name,
+                    weight: fontWeight,
+                    color: textColor,
+                    preferredSize: fontSize,
+                    minimumSize: style.minimumLegibleFontSize,
+                    in: labelBox
+                ) {
                     context.draw(label, at: CGPoint(x: frame.midX, y: frame.midY))
                 }
             }
 
             // 5. Edge labels
-            guard showLabels else { return }
+            guard labelsVisible else { return }
             for edge in snapshot.edges {
                 guard let label = edge.label, let labelFrame = edge.labelFrame else { continue }
                 let frame = map(labelFrame).insetBy(dx: -2 * scale, dy: -1 * scale)
                 let badge = Path(roundedRect: frame, cornerRadius: max(2.5, 4 * scale))
-                context.fill(badge, with: .color(Color.labelBackground.opacity(0.94)))
-                context.stroke(badge, with: .color(Color.secondary.opacity(0.32)), lineWidth: max(0.6, 0.8 * scale))
+                context.fill(badge, with: .color(style.labelBackground))
+                context.stroke(badge, with: .color(style.labelStroke), lineWidth: max(0.6, 0.8 * scale))
                 context.draw(
-                    Text(label).font(.system(size: max(6, fontSize * 0.85), weight: .medium)).foregroundColor(.secondary),
+                    Text(label).font(.system(size: max(6, fontSize * 0.85), weight: .medium)).foregroundColor(style.labelTextColor),
                     at: CGPoint(x: frame.midX, y: frame.midY)
                 )
             }
         }
     }
-
-    /// Smallest point size worth drawing; text that would need to be smaller is skipped rather than overflowing.
-    private let minimumLegibleFontSize: CGFloat = 4.5
 
     /// Resolves `string` at the largest size up to `preferredSize` that fits `box` (height capped to ~72% of
     /// the box so text keeps some margin), measuring the real glyph width. Returns `nil` when it would be illegible.
@@ -202,18 +298,19 @@ struct GraphCanvas: View {
         weight: Font.Weight,
         color: Color,
         preferredSize: CGFloat,
+        minimumSize: CGFloat,
         in box: CGSize
     ) -> GraphicsContext.ResolvedText? {
         func resolve(_ size: CGFloat) -> GraphicsContext.ResolvedText {
             context.resolve(Text(string).font(.system(size: size, weight: weight)).foregroundColor(color))
         }
         var size = min(preferredSize, box.height * 0.72)
-        guard box.width > 0, size >= minimumLegibleFontSize else { return nil }
+        guard box.width > 0, size >= minimumSize else { return nil }
         var resolved = resolve(size)
         let width = resolved.measure(in: CGSize(width: CGFloat.infinity, height: .infinity)).width
         if width > box.width {
             size *= box.width / width
-            guard size >= minimumLegibleFontSize else { return nil }
+            guard size >= minimumSize else { return nil }
             resolved = resolve(size)
         }
         return resolved
@@ -296,16 +393,4 @@ struct GraphCanvas: View {
         head.closeSubpath()
         context.fill(head, with: .color(color))
     }
-}
-
-extension Color {
-    #if canImport(AppKit)
-    static let nodeFill = Color(nsColor: .controlBackgroundColor)
-    static let labelBackground = Color(nsColor: .windowBackgroundColor)
-    static let canvasBackground = Color(nsColor: .textBackgroundColor)
-    #else
-    static let nodeFill = Color(uiColor: .secondarySystemBackground)
-    static let labelBackground = Color(uiColor: .systemBackground)
-    static let canvasBackground = Color(uiColor: .systemBackground)
-    #endif
 }

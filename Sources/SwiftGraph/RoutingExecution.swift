@@ -271,18 +271,20 @@ final class RoutingComputeWorker: @unchecked Sendable {
     }
     func run(_ snapshot: RoutingSnapshot, configuration: RoutingConfiguration, backend: LayoutBackend, enabled: Bool, tolerance: Float) async throws -> RoutingResult {
         let cancellation = RoutingCancellation()
+        // Task-locals do not cross the queue hop; progress is re-bound beside the cancellation flag.
+        let progress = LayoutStageScope.capture()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
                     do {
                         try cancellation.check()
-                        let result = try RoutingCompute.$cancellation.withValue(cancellation) {
+                        let result = try progress.bind { try RoutingCompute.$cancellation.withValue(cancellation) {
                             try routingTransaction(snapshot, configuration: configuration, backend: backend, enabled: enabled, tolerance: tolerance) {
                                 if self.solver == nil { self.solver = try MetalForceSolver() }
                                 self.updateStatistics()
                                 return RoutingCompute(solver: self.solver!, tolerance: tolerance, statisticsChanged: self.updateStatistics)
                             }
-                        }
+                        } }
                         self.updateStatistics(); try cancellation.check(); continuation.resume(returning: result)
                     } catch { self.updateStatistics(); continuation.resume(throwing: error) }
                 }
@@ -307,7 +309,8 @@ private func routingTransaction(_ snapshot: RoutingSnapshot, configuration: Rout
         else { actual = .metal }
     }
     func run(_ compute: RoutingCompute?) throws -> RoutingResult {
-        if backend == .automatic { compute?.minimumPairs = RoutingCompute.automaticPairs; compute?.minimumElements = RoutingCompute.automaticElements }
+        compute?.minimumPairs = RoutingCompute.roundTripPairs; compute?.minimumElements = RoutingCompute.roundTripElements
+        compute?.dispatchesFirstCall = backend == .metal
         let (graph, relatedNodes) = snapshot.makeGraph()
         let initialSubmissions = compute?.solver.submittedBatches ?? 0
         var unroutable: [LayoutEdge] = []

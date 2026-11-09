@@ -83,6 +83,7 @@ final class DirectedHierarchy: LayoutAlgorithm {
         var bestLayers = layers, bestCrossings = crossingCount()
         for sweep in 0..<12 {
             try Task.checkCancellation()
+            LayoutStageScope.tick(sweep, of: 16)
             let forward = sweep % 2 == 0
             let indices = forward ? Array(layers.indices) : Array(layers.indices.reversed())
             var changed = false
@@ -161,6 +162,7 @@ final class DirectedHierarchy: LayoutAlgorithm {
         }
         for pass in 0..<4 {
             try Task.checkCancellation()
+            LayoutStageScope.tick(12 + pass, of: 16)
             for rank in (pass % 2 == 0 ? Array(layers.indices) : Array(layers.indices.reversed())) {
                 let layer = layers[rank]
                 var desired: [Float] = [], shift: [Float] = [], weights: [Float] = [], distance: Float = 0

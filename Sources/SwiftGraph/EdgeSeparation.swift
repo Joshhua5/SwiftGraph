@@ -53,12 +53,14 @@ public final class EdgeSeparator: EdgeRouter {
         // Runs that nearly meet at a bend count as shared: once that bend moves to its lane,
         // the runs would otherwise be pushed into each other. Runs meeting only at path ends stay apart.
         let reach = 2 * spacing
-        let groups = Self.sharedGroups(segments, reach: reach, spacing: spacing)
+        let groups = LayoutStageScope.run("Shared runs", to: 0.2) { Self.sharedGroups(segments, reach: reach, spacing: spacing) }
+        let lanes = LayoutStageScope.begin("Lanes", from: 0.2, to: 0.5)
         var shifts = paths.map { Array(repeating: Point.zero, count: max(0, $0.count - 1)) }
         var shiftGroup = paths.map { Array(repeating: -1, count: max(0, $0.count - 1)) }
         var cramped = Set<Int>()
         for (g, group) in groups.enumerated() {
             if RoutingCompute.isCancelled { return }
+            lanes.tick(g, of: groups.count)
             let u = segments[group[0]].direction, n = segments[group[0]].normal
             var spans: [Int: (low: Float, high: Float, first: Int)] = [:], runs: [Int: [(Float, Float)]] = [:]
             var perpendicular: Float = 0.0
@@ -75,17 +77,33 @@ public final class EdgeSeparator: EdgeRouter {
             guard spans.count > 1 else { continue }
             let centre = perpendicular / Float(group.count)
             // Insertion sort: the pairwise order need not be transitive when some crossing is unavoidable.
-            var ordered: [Int] = []
-            for e in spans.keys.sorted() {
-                let position = ordered.firstIndex { Self.precedes(e, $0, paths, spans[e]!.first, spans[$0]!.first, u) } ?? ordered.count
-                ordered.insert(e, at: position)
+            // Each edge's trails either way from its first shared segment are built once, not on every comparison.
+            let members = spans.keys.sorted()
+            let trails = members.map { e in
+                let k = spans[e]!.first
+                return Trails(path: paths[e], k: k, ahead: Self.trail(paths[e], k, u, true), behind: Self.trail(paths[e], k, u, false))
             }
+            // Positions in `members`, so comparisons index arrays instead of hashing edge numbers.
+            var order: [Int] = []
+            for m in members.indices {
+                let position = order.firstIndex { Self.precedes(members[m], members[$0], trails[m], trails[$0], u) } ?? order.count
+                order.insert(m, at: position)
+            }
+            let ordered = order.map { members[$0] }
             // Monotone lanes: an edge sits one lane beyond every earlier edge with a run within `reach` of one of its
             // own, so lanes keep the crossing-free order; edges whose runs are well apart along the line share a lane.
+            // An earlier edge is only tested when it could raise the lane, and only when its whole span is within reach.
             var lane: [Int: Int] = [:], count = 1
+            let orderedRuns = ordered.map { runs[$0]! }, orderedSpans = ordered.map { spans[$0]! }
+            var orderedLanes: [Int] = []
             for (i, e) in ordered.enumerated() {
-                let l = ordered[..<i].filter { f in runs[f]!.contains { a in runs[e]!.contains { Self.overlaps(a, $0, reach: reach) } } }.map { lane[$0]! + 1 }.max() ?? 0
-                lane[e] = l; count = max(count, l + 1)
+                var l = 0
+                for f in 0..<i where orderedLanes[f] + 1 > l
+                    && Self.overlaps((orderedSpans[f].low, orderedSpans[f].high), (orderedSpans[i].low, orderedSpans[i].high), reach: reach)
+                    && orderedRuns[f].contains(where: { a in orderedRuns[i].contains { Self.overlaps(a, $0, reach: reach) } }) {
+                    l = orderedLanes[f] + 1
+                }
+                orderedLanes.append(l); lane[e] = l; count = max(count, l + 1)
             }
             guard count > 1 else { continue }
             // Lanes sit `spacing` apart about the group. A node beside it pushes them to the open side, keeping a full
@@ -120,6 +138,8 @@ public final class EdgeSeparator: EdgeRouter {
             }
         }
         if RoutingCompute.isCancelled { return }
+        lanes.end()
+        let shifting = LayoutStageScope.begin("Shifts", from: 0.5, to: 0.95)
         let originals = edges.map(\.path), twinGroups = Dictionary(grouping: edges.indices) { Self.pair(edges[$0]) }
         func build(_ e: Int, _ chosen: Set<Int>) -> [Point] {
             var path = Self.shifted(paths[e], zip(shifts[e], shiftGroup[e]).map { chosen.contains($1) ? $0 : .zero })
@@ -131,6 +151,7 @@ public final class EdgeSeparator: EdgeRouter {
         // Where every edge would sit with all its shifts: an edge is judged against the twins it will meet, not their old routes.
         let proposed = edges.indices.map { moving($0).isEmpty ? originals[$0] : build($0, Set(moving($0))) }
         for (e, edge) in edges.enumerated() where shifts[e].contains(where: { $0 != .zero }) {
+            shifting.tick(e, of: edges.count)
             let moving = moving(e), all = proposed[e]
             let area = ObstaclePolyline.bounds(edge.path + all).inflated(by: 1)
             let obstacles = scene.near(area, edge).map { scene.rects[$0].inflated(by: -Self.tolerance) }.filter { $0.width > 0 && $0.height > 0 }
@@ -151,6 +172,7 @@ public final class EdgeSeparator: EdgeRouter {
             if !chosen.isEmpty { edge.path = build(e, chosen) }
             if chosen.count < moving.count { cramped.insert(e) }
         }
+        shifting.end()
         // Touching points are not crossings, so an edge shifted against its twin's old route can still end up crossing
         // its twin's new one. Any pair that ends up crossing more than it started puts the later edge back.
         for list in twinGroups.values.filter({ $0.count > 1 }).sorted(by: { $0[0] < $1[0] }) {
@@ -184,21 +206,63 @@ public final class EdgeSeparator: EdgeRouter {
     /// the stretch they share) and overlap, or come within `reach` of each other at a bend.
     private static func sharedGroups(_ segments: [Segment], reach: Float, spacing: Float) -> [[Int]] {
         guard segments.count > 1 else { return [] }
-        let boxes = segments.map { ObstaclePolyline.bounds([$0.start, $0.end]).inflated(by: reach + tolerance) }
-        let tree = QuadTree<Int>(bounds: boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }.inflated(by: 1))
-        for (i, box) in boxes.enumerated() { tree.insert(bounds: box, item: i) }
-        let candidates = RoutingCompute.current?.overlapMatrix(segments.map { (start: $0.start, end: $0.end) }, padding: reach + tolerance)
+        let candidates = RoutingCompute.current?.overlapPairs(segments.map { (start: $0.start, end: $0.end) }, padding: reach + tolerance)
         var parent = Array(segments.indices)
         func root(_ i: Int) -> Int { var i = i; while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }; return i }
-        for (i, s) in segments.enumerated() {
-            let near = candidates.map { m in (i + 1..<segments.count).filter { m[i * segments.count + $0] != 0 } } ?? tree.query(boxes[i]).filter { $0 > i }
-            for j in near where segments[j].edge != s.edge && related(s, segments[j], reach: reach, spacing: spacing) {
-                parent[root(j)] = root(i)
-            }
+        // Bundled corridors relate millions of pairs that are mostly in one group already; only a pair from two
+        // different groups can change the result, so the geometric test is skipped for the rest.
+        func join(_ i: Int, _ j: Int) {
+            guard segments[j].edge != segments[i].edge else { return }
+            let a = root(i), b = root(j)
+            if a != b && related(segments[i], segments[j], reach: reach, spacing: spacing) { parent[b] = a }
+        }
+        if let candidates {
+            for i in segments.indices { for j in candidates[i] { join(i, j) } }
+        } else {
+            let boxes = segments.map { ObstaclePolyline.bounds([$0.start, $0.end]).inflated(by: reach + tolerance) }
+            for (i, j) in boxPairs(segments, boxes) { join(min(i, j), max(i, j)) }
         }
         var groups: [Int: [Int]] = [:]
         for i in segments.indices { groups[root(i), default: []].append(i) }
         return groups.values.filter { $0.count > 1 }.sorted { $0[0] < $1[0] }
+    }
+
+    /// Every pair of segments whose boxes overlap (strictly, as `Rect.intersects`) and whose directions could pass
+    /// `related`'s angle test. Canonical directions are binned by angle in steps of twice the angle limit, so such
+    /// a pair always lies in one bin or two neighbouring ones (the bins wrap at vertical). Within a bin pair the
+    /// boxes are swept along the axis across the bin's direction, where corridor segments are thin.
+    private static func boxPairs(_ segments: [Segment], _ boxes: [Rect]) -> [(Int, Int)] {
+        let binDegrees: Float = 4, binCount = Int(180 / binDegrees)
+        var bins = Array(repeating: [Int](), count: binCount), binOf = Array(repeating: -1, count: segments.count)
+        for (i, s) in segments.enumerated() {
+            let degrees = atan2(s.direction.y, s.direction.x) * 180 / .pi + 90
+            // A direction without an angle cannot pass the angle test, so it pairs with nothing.
+            guard degrees.isFinite else { continue }
+            let bin = ((Int((degrees / binDegrees).rounded(.down)) % binCount) + binCount) % binCount
+            bins[bin].append(i); binOf[i] = bin
+        }
+        var pairs: [(Int, Int)] = []
+        for b in bins.indices where !bins[b].isEmpty {
+            let next = (b + 1) % binCount
+            // Near-horizontal bins are thin in y, near-vertical ones in x.
+            let acrossY = abs(Float(b) * binDegrees + binDegrees / 2 - 90) < 45
+            func low(_ i: Int) -> Float { acrossY ? boxes[i].top : boxes[i].left }
+            func high(_ i: Int) -> Float { acrossY ? boxes[i].bottom : boxes[i].right }
+            func alongOverlap(_ i: Int, _ j: Int) -> Bool {
+                acrossY ? boxes[i].left < boxes[j].right && boxes[i].right > boxes[j].left
+                        : boxes[i].top < boxes[j].bottom && boxes[i].bottom > boxes[j].top
+            }
+            // Pairs inside bin `b`, and between `b` and the next bin; pairs inside the next bin are its own.
+            let members = (next == b ? bins[b] : bins[b] + bins[next]).sorted { low($0) < low($1) }
+            for (k, i) in members.enumerated() {
+                for j in members[(k + 1)...] {
+                    // Sorted by low edge: once one starts past this box's high edge, all later ones do too.
+                    guard low(j) < high(i) else { break }
+                    if (binOf[i] == b || binOf[j] == b) && high(j) > low(i) && alongOverlap(i, j) { pairs.append((i, j)) }
+                }
+            }
+        }
+        return pairs
     }
 
     private static func related(_ s: Segment, _ t: Segment, reach: Float, spacing: Float) -> Bool {
@@ -219,16 +283,18 @@ public final class EdgeSeparator: EdgeRouter {
     /// Whether edge `a` belongs on the `-n` side of edge `b`. Both trails are followed past the shared stretch
     /// until they part, so consecutive shared stretches agree on the order; the leaving end decides, then the
     /// arriving end, then edge order.
-    private static func precedes(_ a: Int, _ b: Int, _ paths: [[Point]], _ ka: Int, _ kb: Int, _ u: Point) -> Bool {
+    /// One edge's path either side of its first segment in a shared group, in the group's canonical direction.
+    private struct Trails { var path: [Point], k: Int, ahead: [Point], behind: [Point] }
+    private static func precedes(_ a: Int, _ b: Int, _ ta: Trails, _ tb: Trails, _ u: Point) -> Bool {
         for ahead in [true, false] {
-            let turn = parting(trail(paths[a], ka, u, ahead), trail(paths[b], kb, u, ahead), ahead ? u : u * -1)
+            let turn = parting(ahead ? ta.ahead : ta.behind, ahead ? tb.ahead : tb.behind, ahead ? u : u * -1)
             if abs(turn) > 1e-5 { return ahead ? turn < 0 : turn > 0 }
         }
         // Paths that never part: the lower-index edge keeps to the left of its own travel, which stays
         // consistent round corners, unlike a fixed side of each track.
-        let (r, k) = a < b ? (a, ka) : (b, kb)
-        let forward = dot(paths[r][k + 1] - paths[r][k], u) > 0
-        return r == a ? !forward : forward
+        let lower = a < b ? ta : tb
+        let forward = dot(lower.path[lower.k + 1] - lower.path[lower.k], u) > 0
+        return (a < b) ? !forward : forward
     }
 
     /// Free width either side of a shared stretch: the nearer node on that side bounds it.
@@ -377,7 +443,7 @@ public final class EdgeSeparator: EdgeRouter {
         }.count
     }
     private static func hits(_ path: [Point], _ obstacles: [Rect]) -> Set<Int> {
-        if let compute = RoutingCompute.current, compute.stages.isEmpty || max(0, path.count - 1) * obstacles.count >= 512 {
+        if let compute = RoutingCompute.current {
             return compute.hits(path, obstacles)
         }
         return Set(obstacles.indices.filter { i in zip(path, path.dropFirst()).contains { obstacles[i].intersectsLine($0, $1) } })

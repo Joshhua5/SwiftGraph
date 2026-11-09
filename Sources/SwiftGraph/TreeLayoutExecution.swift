@@ -46,20 +46,26 @@ public final class TreeLayoutOperation: LayoutExecutionReporting {
         let assistantInput = graph.nodes.map { ($0.data as? String)?.lowercased() == "assistant" }
         let transaction = try LayoutTransaction(graph)
         let computeStart = ContinuousClock.now
-        let plan = try treePlacementPlan(transaction.working, style: style, configuration: configuration)
-        var result = try await executor.placement(plan.state, backend: backend)
+        let plan = try LayoutStageScope.run("Plan", to: 0.3) { try treePlacementPlan(transaction.working, style: style, configuration: configuration) }
+        let style = self.style, executor = self.executor, backend = self.backend
+        var result = try await LayoutStageScope.run("Placement", from: 0.3, to: 0.9) {
+            let result = try await executor.placement(plan.state, backend: backend)
+            if result.bounds == nil { try configuration.algorithm(style).applyLayout(transaction.working) }
+            return result
+        }
         if let bounds = result.bounds {
             for (node, bound) in zip(plan.targets, bounds) { node.bounds = bound }
             if style == .tree || style == .orgChart {
                 let a = Adjacency(transaction.working)
-                packForest(a.nodes, components: Forest(a).components, spacing: max(20, style == .tree ? configuration.nodeSeparation : configuration.siblingDistance))
+                LayoutStageScope.run("Pack forest", from: 0.9) {
+                    packForest(a.nodes, components: Forest(a).components, spacing: max(20, style == .tree ? configuration.nodeSeparation : configuration.siblingDistance))
+                }
             }
             if style != .treeMap { straightEdges(transaction.working) }
             result.metrics.metalStages = [style == .treeMap ? "subtree weights and rectangle partition" : "ordered tree placement"]
             result.metrics.cpuStages = [style == .treeMap ? "snapshot, forest traversal and orientation precision analysis" : "snapshot and forest traversal"]
             if style != .treeMap { result.metrics.cpuStages.append("edge routing") }
         } else {
-            try configuration.algorithm(style).applyLayout(transaction.working)
             result.metrics.cpuStages = ["tree placement"]
             if style != .treeMap { result.metrics.cpuStages.append("edge routing") }
         }

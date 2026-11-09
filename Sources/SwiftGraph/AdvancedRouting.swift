@@ -187,12 +187,15 @@ struct EdgeBundler {
     }
     /// The kernel on the CPU, in the same Float arithmetic as the Metal shader.
     mutating func runCPU() -> Bool {
+        let totalIterations = schedule.reduce(0) { $0 + $1.iterations }
+        var completedIterations = 0
         for c in schedule.indices {
             _ = state(cycle: c)
             let n = schedule[c].segments, stride = n + 1, count = schedule[c].iterations
             var current = points.flatMap { $0.map(normalised) }
             for iteration in 0..<count {
                 if RoutingCompute.isCancelled { return false }
+                LayoutStageScope.tick(completedIterations, of: totalIterations); completedIterations += 1
                 let step: Float = 0.1 * (1 - Float(iteration) / Float(count))
                 var next = current
                 for e in points.indices {

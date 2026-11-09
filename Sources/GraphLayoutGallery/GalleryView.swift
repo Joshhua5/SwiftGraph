@@ -11,6 +11,8 @@ public struct GalleryView: View {
     @State private var selection: Item? = GraphExample.all.first.map { .example($0.id) }
     @State private var topologies = TopologyLibrary.scan()
     @State private var backend: LayoutBackend = .cpu
+    /// The example whose info sheet is showing, if any.
+    @State private var infoExample: GraphExample?
 
     public init() {}
 
@@ -29,7 +31,10 @@ public struct GalleryView: View {
             List(selection: $selection) {
                 ForEach(categories, id: \.0) { category, examples in
                     Section(category) {
-                        ForEach(examples) { ExampleRow(example: $0).tag(Item.example($0.id)) }
+                        ForEach(examples) { example in
+                            ExampleRow(example: example) { infoExample = example }
+                                .tag(Item.example(example.id))
+                        }
                     }
                 }
                 Section("Production Topologies") {
@@ -62,20 +67,25 @@ public struct GalleryView: View {
                 Text("Select an example").foregroundStyle(.secondary)
             }
         }
+        .sheet(item: $infoExample) { example in
+            if let info = example.info {
+                ExampleInfoView(title: example.title, category: example.category, info: info)
+            }
+        }
     }
 }
 
-/// A sidebar row with an info button that opens a popover explaining the example.
+/// A sidebar row with an info button that opens a sheet explaining the example.
 private struct ExampleRow: View {
     let example: GraphExample
-    @State private var showsInfo = false
+    let showInfo: () -> Void
 
     var body: some View {
         HStack {
             Text(example.title)
             Spacer()
-            if let info = example.info {
-                Button { showsInfo.toggle() } label: {
+            if example.info != nil {
+                Button(action: showInfo) {
                     Image(systemName: "info.circle")
                 }
                 // Borderless so clicking the button doesn't also select the row.
@@ -83,47 +93,35 @@ private struct ExampleRow: View {
                 .foregroundStyle(.secondary)
                 .help("About \(example.title)")
                 .accessibilityLabel("About \(example.title)")
-                .popover(isPresented: $showsInfo, arrowEdge: .trailing) {
-                    if #available(macOS 15, iOS 18, *) {
-                        ExampleInfoView(title: example.title, category: example.category, info: info)
-                            .presentationSizing(.fitted)
-                    } else {
-                        ExampleInfoView(title: example.title, category: example.category, info: info)
-                    }
-                }
             }
         }
     }
 }
 
-/// Popover content: what an example is designed for, when to use it, and when not to.
-///
-/// Rather than fight the platform's popover sizing heuristics (which, even with explicit frames
-/// and `.presentationSizing(.fitted)`, were still clipping text), this pins a comfortably wide,
-/// generous frame and puts everything in a `ScrollView`. Scrolling only kicks in if some future
-/// sizing quirk still under-allocates height; normally the content is short enough to show flat.
+/// Sheet content: what an example is designed for, when to use it, and when not to.
 private struct ExampleInfoView: View {
     let title: String
     let category: String
     let info: ExampleInfo
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
-                    Text(category).font(.caption).foregroundStyle(.secondary)
-                }
-                section("Designed for", systemImage: "scope", text: info.designedFor)
-                section("When to use", systemImage: "checkmark.circle", text: info.whenToUse)
-                section("Avoid when", systemImage: "exclamationmark.triangle", text: info.avoidWhen)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.title2.weight(.semibold))
+                Text(category).font(.subheadline).foregroundStyle(.secondary)
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
+            section("Designed for", systemImage: "scope", text: info.designedFor)
+            section("When to use", systemImage: "checkmark.circle", text: info.whenToUse)
+            section("Avoid when", systemImage: "exclamationmark.triangle", text: info.avoidWhen)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
         }
-        // Generous and flexible rather than a single fixed value, matching Apple's documented
-        // `.fitted` usage pattern; a plain fixed-width frame wasn't enough to stop clipping.
-        .frame(minWidth: 360, idealWidth: 420, maxWidth: 480, minHeight: 160, idealHeight: 260, maxHeight: 420)
+        .padding(24)
+        .frame(width: 480)
     }
 
     private func section(_ heading: String, systemImage: String, text: String) -> some View {

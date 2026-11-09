@@ -14,7 +14,7 @@ public final class ImportanceLayoutOperation: LayoutExecutionReporting {
         lastExecutionMetrics = []
         let transaction = try LayoutTransaction(graph), working = transaction.working
         let analysis = LayoutBuilder.create(working).analyzePageRank(backend: backend, executor: executor)
-        try await analysis.applyAsync()
+        try await LayoutStageScope.run("Rank", to: 0.3) { try await analysis.applyAsync() }
         let scalingStart = ContinuousClock.now
         for node in working.nodes {
             let scale = Float(1 + 2 * (node.metadata[GraphMetadataKeys.pageRank] as? Double ?? 0))
@@ -22,7 +22,7 @@ public final class ImportanceLayoutOperation: LayoutExecutionReporting {
         }
         let scalingSeconds = scalingStart.duration(to: .now).seconds
         let coreStart = ContinuousClock.now
-        try await coreLayout.applyLayoutAsync(working)
+        try await LayoutStageScope.run("Layout", from: 0.3) { try await coreLayout.applyLayoutAsync(working) }
         try transaction.commit(to: graph)
         lastExecutionMetrics = analysis.lastExecutionMetrics
             + [LayoutExecutionMetrics(requestedBackend: backend, backend: .cpu, fallbackReason: nil,
@@ -46,7 +46,7 @@ public final class ClusterLayoutOperation: LayoutExecutionReporting {
         lastExecutionMetrics = []
         let transaction = try LayoutTransaction(graph), working = transaction.working
         let analysis = LayoutBuilder.create(working).analyzeClusters(backend: backend, executor: executor)
-        try await analysis.applyAsync()
+        try await LayoutStageScope.run("Clusters", to: 0.2) { try await analysis.applyAsync() }
         var metrics = analysis.lastExecutionMetrics
         var groups: [Int: [LayoutNode]] = [:], order: [Int] = []
         for (i, node) in working.nodes.enumerated() {
@@ -55,11 +55,14 @@ public final class ClusterLayoutOperation: LayoutExecutionReporting {
             groups[id, default: []].append(node)
         }
         var graphs: [LayoutGraph] = [], packingSeconds = 0.0
-        for id in order {
+        let slices = LayoutStageScope.slices(order.map { Double(groups[$0]!.count) })
+        for (index, id) in order.enumerated() {
             try Task.checkCancellation()
             let group = subgraph(working, nodes: groups[id]!)
             let coreStart = ContinuousClock.now
-            try await coreLayout.applyLayoutAsync(group)
+            try await LayoutStageScope.run("Cluster \(index + 1)/\(order.count)", from: 0.2 + 0.8 * slices[index].from, to: 0.2 + 0.8 * slices[index].to) {
+                try await coreLayout.applyLayoutAsync(group)
+            }
             metrics += compositionCoreRecords(coreLayout, requested: backend, graph: group, start: coreStart)
             let normalizationStart = ContinuousClock.now
             let bounds = group.bounds

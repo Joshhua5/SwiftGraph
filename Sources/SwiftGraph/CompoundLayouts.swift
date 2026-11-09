@@ -10,10 +10,13 @@ public final class ComponentLayout: LayoutAlgorithm {
         let a = Adjacency(graph), components = a.components()
         if components.count == 1 { try coreLayout.applyLayout(graph); return }
         var graphs: [LayoutGraph] = []
-        for component in components {
+        let slices = LayoutStageScope.slices(components.map { Double($0.count) })
+        for (index, component) in components.enumerated() {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
-            try coreLayout.applyLayout(g)
+            try LayoutStageScope.run("Component \(index + 1)/\(components.count)", from: slices[index].from, to: slices[index].to) {
+                try coreLayout.applyLayout(g)
+            }
             let b = g.bounds
             translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g)
         }
@@ -30,11 +33,12 @@ public final class MultiPageLayoutAlgorithm: LayoutAlgorithm {
     public init(_ coreLayout: (any LayoutAlgorithm)? = nil) { self.coreLayout = coreLayout ?? HierarchicalLayoutAlgorithm() }
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
-        let a = Adjacency(graph)
-        for (i, component) in a.components().enumerated() {
+        let a = Adjacency(graph), components = a.components()
+        let slices = LayoutStageScope.slices(components.map { Double($0.count) })
+        for (i, component) in components.enumerated() {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
-            try coreLayout.applyLayout(g)
+            try LayoutStageScope.run("Page \(i + 1)/\(components.count)", from: slices[i].from, to: slices[i].to) { try coreLayout.applyLayout(g) }
             let b = g.bounds
             translate(g, by: Point(x: Float(i % 3) * (pageWidth + pageSpacing) + (pageWidth - b.width) / 2 - b.x,
                                    y: Float(i / 3) * (pageHeight + pageSpacing) + (pageHeight - b.height) / 2 - b.y))
@@ -55,7 +59,7 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
         guard !g.nodes.isEmpty else { return }
         func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Float(g.nodes.count) }
         let initial = centroid()
-        try coreLayout.applyLayout(g)
+        try LayoutStageScope.run("Layout", to: 0.8) { try coreLayout.applyLayout(g) }
         if preserveCentroid { translate(g, by: initial - centroid()) }
         if avoidUnselectedNodes {
             let obstacles = graph.nodes.filter { node in
@@ -114,11 +118,15 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
         let layouts = original.groups.map { groupLayoutSelector?($0) ?? coreLayout }
         let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
         var failures = Set<LayoutEdge>()
-        for (group, layout) in zip(engine.groups, layouts) {
+        let groupShare = optimizeIncomingEdges && routesEdges ? 0.9 : 1.0
+        let slices = LayoutStageScope.slices(engine.groups.map { Double($0.children.count + 1) })
+        for (index, (group, layout)) in zip(engine.groups, layouts).enumerated() {
             try Task.checkCancellation()
             if !group.children.isEmpty {
                 let projection = engine.projection(for: group)
-                try layout.applyLayout(projection.graph)
+                try LayoutStageScope.run("Group \(index + 1)/\(engine.groups.count)", from: groupShare * slices[index].from, to: groupShare * slices[index].to) {
+                    try layout.applyLayout(projection.graph)
+                }
                 try engine.accept(projection, in: group)
             }
             let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
@@ -135,7 +143,9 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
             }
             try engine.finish(group, routed: routing.edges)
         }
-        if optimizeIncomingEdges && routesEdges { try engine.refineIncomingEdges(excluding: failures) }
+        if optimizeIncomingEdges && routesEdges {
+            try LayoutStageScope.run("Incoming edges", from: groupShare) { try engine.refineIncomingEdges(excluding: failures) }
+        }
         try transaction.commit(to: graph)
         unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
     }
@@ -165,13 +175,14 @@ public final class SwimlaneLayoutAlgorithm: LayoutAlgorithm {
         let heights = layers.map { $0.map { a.nodes[$0].height }.max() ?? 0 }
         let ys = offsets(heights, gap: nodeVerticalSpacing)
         var x: Float = 0.0
-        for id in lanes.keys.sorted() {
+        let ids = lanes.keys.sorted()
+        for (index, id) in ids.enumerated() {
             try Task.checkCancellation()
             let nodes = lanes[id]!
             let effectiveWidth: Float
             if let subLayout {
                 let g = subgraph(graph, nodes: nodes)
-                try subLayout.applyLayout(g)
+                try LayoutStageScope.run("Lane \(index + 1)/\(ids.count)", part: index, of: ids.count) { try subLayout.applyLayout(g) }
                 let b = g.bounds; effectiveWidth = max(laneWidth, b.width + 2 * laneInternalPadding)
                 translate(g, by: Point(x: x + effectiveWidth / 2 - b.center.x, y: laneInternalPadding - b.y))
             } else {

@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import SwiftGraph
+import SwiftGraphUI
 
 /// A named graph plus the SwiftGraph pipeline used to lay it out.
 struct GraphExample: Identifiable, Sendable {
@@ -13,14 +14,15 @@ struct GraphExample: Identifiable, Sendable {
     var makeGraph: @Sendable () throws -> LayoutGraph
     var configure: @Sendable (LayoutBuilder, LayoutBackend) -> Void
 
-    /// Builds the graph and runs the layout pipeline away from the main actor.
-    @concurrent func render(backend: LayoutBackend = .cpu) async throws -> GraphSnapshot {
-        let graph = try makeGraph()
-        let builder = LayoutBuilder.create(graph)
-        configure(builder, backend)
-        let clock = ContinuousClock(), start = clock.now
-        try await builder.applyAsync()
-        return GraphSnapshot(graph: graph, duration: clock.now - start)
+    /// Builds the graph and runs the layout pipeline away from the main actor, reporting its progress in order.
+    @concurrent func render(backend: LayoutBackend = .cpu,
+                            onProgress: @escaping @MainActor @Sendable (LayoutProgress) -> Void = { _ in }) async throws -> GraphSnapshot {
+        try await GraphSnapshot.render(
+            backend: backend,
+            makeGraph: makeGraph,
+            configure: configure,
+            onProgress: onProgress
+        )
     }
 
     /// Blocks until `render()` finishes. For previews only: the static preview snapshot is captured

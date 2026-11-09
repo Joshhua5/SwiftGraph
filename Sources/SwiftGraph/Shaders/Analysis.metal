@@ -31,11 +31,16 @@ kernel void pageRankStep(device const float2* ranks [[buffer(0)]], device float2
     for (uint k = offsets[i]; k < offsets[i + 1]; ++k) { uint j = incoming[k]; links = ds_add(links, ds_divide(ranks[j], float(degree[j]))); }
     output[i] = ds_add(p.base, ds_multiply(p.damping, ds_add(links, dangling[0])));
 }
-struct ClusterParameters { uint start; uint end; uint count; uint padding; };
+struct ClusterParameters { uint start; uint end; uint count; uint round; };
+// `order` holds every round's seeded visit order; `changed` holds one flag per round.
+// A round whose predecessor changed nothing has converged, so the GPU skips it
+// without a host readback. Skipped rounds leave their flag clear, so the skip carries forward.
 kernel void orderedClusterVotes(device uint* labels [[buffer(0)]], device const uint* offsets [[buffer(1)]], device const uint* neighbors [[buffer(2)]], device const uint* order [[buffer(3)]], device uint* counts [[buffer(4)]], device uint* labelOrder [[buffer(5)]], device uint* changed [[buffer(6)]], constant ClusterParameters& p [[buffer(7)]], uint lane [[thread_position_in_grid]]) {
     if (lane != 0) return;
+    if (p.round > 0 && changed[p.round - 1] == 0) return;
+    device const uint* roundOrder = order + ulong(p.round) * p.count;
     for (uint position = p.start; position < p.end; ++position) {
-        uint node = order[position], distinct = 0;
+        uint node = roundOrder[position], distinct = 0;
         for (uint k = offsets[node]; k < offsets[node + 1]; ++k) {
             uint label = labels[neighbors[k]];
             if (counts[label] == 0) labelOrder[distinct++] = label;
@@ -43,7 +48,7 @@ kernel void orderedClusterVotes(device uint* labels [[buffer(0)]], device const 
         }
         uint best = labels[node], bestCount = counts[best];
         for (uint k = 0; k < distinct; ++k) { uint label = labelOrder[k]; if (counts[label] > bestCount) { best = label; bestCount = counts[label]; } }
-        if (labels[node] != best) { labels[node] = best; changed[0] = 1; }
+        if (labels[node] != best) { labels[node] = best; changed[p.round] = 1; }
         for (uint k = 0; k < distinct; ++k) counts[labelOrder[k]] = 0;
     }
 }

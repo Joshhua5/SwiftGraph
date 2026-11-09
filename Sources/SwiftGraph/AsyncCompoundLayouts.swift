@@ -33,17 +33,23 @@ public final class ComponentLayoutOperation: LayoutExecutionReporting {
             return
         }
         var graphs: [LayoutGraph] = []
-        for component in components {
+        // Components share 97% of the stage by node count; packing takes the rest.
+        let slices = LayoutStageScope.slices(components.map { Double($0.count) })
+        for (index, component) in components.enumerated() {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
             let coreStart = ContinuousClock.now
-            try await coreLayout.applyLayoutAsync(g)
+            try await LayoutStageScope.run("Component \(index + 1)/\(components.count)", from: 0.97 * slices[index].from, to: 0.97 * slices[index].to) {
+                try await coreLayout.applyLayoutAsync(g)
+            }
             lastExecutionMetrics += compositionCoreRecords(coreLayout, requested: backend, graph: g, start: coreStart)
             let b = g.bounds
             translate(g, by: Point(x: -b.x, y: -b.y)); graphs.append(g)
         }
         let packingStart = ContinuousClock.now
-        let shifts = packedTranslations(graphs.map(\.bounds), spacing: componentSpacing, aspectRatio: preferredAspectRatio)
+        let shifts = LayoutStageScope.run("Pack", from: 0.97) {
+            packedTranslations(graphs.map(\.bounds), spacing: componentSpacing, aspectRatio: preferredAspectRatio)
+        }
         for (g, shift) in zip(graphs, shifts) { translate(g, by: shift) }
         if backend != .cpu { lastExecutionMetrics.append(compositionCPURecord(backend, count: graph.nodes.count, start: packingStart, stages: ["component packing"])) }
     }
@@ -79,12 +85,15 @@ public final class MultiPageLayoutOperation: LayoutExecutionReporting {
     }
     private func applyWorking(_ graph: LayoutGraph) async throws {
         try Task.checkCancellation()
-        let a = Adjacency(graph)
-        for (i, component) in a.components().enumerated() {
+        let a = Adjacency(graph), components = a.components()
+        let slices = LayoutStageScope.slices(components.map { Double($0.count) })
+        for (i, component) in components.enumerated() {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
             let coreStart = ContinuousClock.now
-            try await coreLayout.applyLayoutAsync(g)
+            try await LayoutStageScope.run("Page \(i + 1)/\(components.count)", from: slices[i].from, to: slices[i].to) {
+                try await coreLayout.applyLayoutAsync(g)
+            }
             lastExecutionMetrics += compositionCoreRecords(coreLayout, requested: backend, graph: g, start: coreStart)
             let packingStart = ContinuousClock.now
             let b = g.bounds
@@ -128,7 +137,7 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
         func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Float(g.nodes.count) }
         let initial = centroid()
         let coreStart = ContinuousClock.now
-        try await coreLayout.applyLayoutAsync(g)
+        try await LayoutStageScope.run("Layout", to: 0.8) { try await coreLayout.applyLayoutAsync(g) }
         lastExecutionMetrics += compositionCoreRecords(coreLayout, requested: backend, graph: g, start: coreStart)
         let clearanceStart = ContinuousClock.now
         if preserveCentroid { translate(g, by: initial - centroid()) }
@@ -158,11 +167,13 @@ public final class SubgraphLayoutOperation: LayoutExecutionReporting {
         if backend != .cpu { lastExecutionMetrics.append(compositionCPURecord(backend, count: graph.nodes.count, start: clearanceStart, stages: ["centroid preservation and selection clearance"])) }
         let routing = subgraph(graph, nodes: graph.nodes)
         routing.edges = graph.edges.filter { selectedNodeIds.contains($0.source.id) != selectedNodeIds.contains($0.target.id) }
-        if backend == .cpu { ChannelEdgeRouter().routeEdges(routing) }
-        else {
-            let router = RoutingLayoutOperation(.channel, backend: backend, executor: executor)
-            try await router.applyLayoutAsync(routing)
-            lastExecutionMetrics += router.lastExecutionMetrics
+        try await LayoutStageScope.run("Route edges", from: 0.8) {
+            if backend == .cpu { ChannelEdgeRouter().routeEdges(routing) }
+            else {
+                let router = RoutingLayoutOperation(.channel, backend: backend, executor: executor)
+                try await router.applyLayoutAsync(routing)
+                lastExecutionMetrics += router.lastExecutionMetrics
+            }
         }
         if avoidUnselectedNodes {
             ObstaclePolyline.repair(graph, edges: graph.edges.filter {
@@ -202,48 +213,53 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
         let shouldRouteEdges = routesEdges
         let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
         var records: [LayoutExecutionMetrics] = [], failures = Set<LayoutEdge>()
-        for (group, layout) in zip(engine.groups, layouts) {
+        // Groups share the stage by child count, leaving the tail for incoming-edge refinement.
+        let groupShare = refineIncoming && shouldRouteEdges ? 0.9 : 1.0
+        let slices = LayoutStageScope.slices(engine.groups.map { Double($0.children.count + 1) })
+        for (index, (group, layout)) in zip(engine.groups, layouts).enumerated() {
             try Task.checkCancellation()
-            let projectionStart = ContinuousClock.now
-            let projection = engine.projection(for: group)
-            if backend != .cpu { records.append(compositionCPURecord(backend, count: projection.graph.nodes.count,
-                start: projectionStart, stages: ["group edge projection"])) }
-            if !group.children.isEmpty {
-                let coreStart = ContinuousClock.now
-                try await layout.applyLayoutAsync(projection.graph)
-                records += compositionCoreRecords(layout, requested: backend, graph: projection.graph, start: coreStart)
-                let placementStart = ContinuousClock.now
-                try engine.accept(projection, in: group)
+            try await LayoutStageScope.run("Group \(index + 1)/\(engine.groups.count)", from: groupShare * slices[index].from, to: groupShare * slices[index].to) {
+                let projectionStart = ContinuousClock.now
+                let projection = engine.projection(for: group)
                 if backend != .cpu { records.append(compositionCPURecord(backend, count: projection.graph.nodes.count,
-                    start: placementStart, stages: ["frame overlap repair and rigid subtree placement"])) }
-            }
-            let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
-            if !routing.edges.isEmpty {
-                if let presetRouting {
-                    let result = try await presetRouting(routing)
-                    failures.formUnion(result.failures); records += result.metrics
-                } else if !shouldRouteEdges {
-                    for edge in routing.edges where edge.path.count < 2 {
-                        edge.path = [edge.source.center, edge.target.center]
-                    }
-                } else if backend == .cpu {
-                    let router = PolylineEdgeRouter(); router.routeEdges(routing)
-                    failures.formUnion(router.unroutableEdges)
-                } else {
-                    let router = RoutingLayoutOperation(.polyline, backend: backend, executor: executor)
-                    try await router.applyLayoutAsync(routing)
-                    failures.formUnion(router.unroutableEdgeIndices.map { routing.edges[$0] })
-                    records += router.lastExecutionMetrics
+                    start: projectionStart, stages: ["group edge projection"])) }
+                if !group.children.isEmpty {
+                    let coreStart = ContinuousClock.now
+                    try await LayoutStageScope.run("Layout", to: 0.7) { try await layout.applyLayoutAsync(projection.graph) }
+                    records += compositionCoreRecords(layout, requested: backend, graph: projection.graph, start: coreStart)
+                    let placementStart = ContinuousClock.now
+                    try engine.accept(projection, in: group)
+                    if backend != .cpu { records.append(compositionCPURecord(backend, count: projection.graph.nodes.count,
+                        start: placementStart, stages: ["frame overlap repair and rigid subtree placement"])) }
                 }
+                let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
+                if !routing.edges.isEmpty { try await LayoutStageScope.run("Route edges", from: 0.7, to: 0.95) {
+                    if let presetRouting {
+                        let result = try await presetRouting(routing)
+                        failures.formUnion(result.failures); records += result.metrics
+                    } else if !shouldRouteEdges {
+                        for edge in routing.edges where edge.path.count < 2 {
+                            edge.path = [edge.source.center, edge.target.center]
+                        }
+                    } else if backend == .cpu {
+                        let router = PolylineEdgeRouter(); router.routeEdges(routing)
+                        failures.formUnion(router.unroutableEdges)
+                    } else {
+                        let router = RoutingLayoutOperation(.polyline, backend: backend, executor: executor)
+                        try await router.applyLayoutAsync(routing)
+                        failures.formUnion(router.unroutableEdgeIndices.map { routing.edges[$0] })
+                        records += router.lastExecutionMetrics
+                    }
+                } }
+                let fitStart = ContinuousClock.now
+                try engine.finish(group, routed: routing.edges)
+                if backend != .cpu { records.append(compositionCPURecord(backend, count: group.children.count,
+                    start: fitStart, stages: ["group frame measurement and translation"])) }
             }
-            let fitStart = ContinuousClock.now
-            try engine.finish(group, routed: routing.edges)
-            if backend != .cpu { records.append(compositionCPURecord(backend, count: group.children.count,
-                start: fitStart, stages: ["group frame measurement and translation"])) }
         }
         if refineIncoming && shouldRouteEdges {
             let start = ContinuousClock.now
-            try engine.refineIncomingEdges(excluding: failures)
+            try LayoutStageScope.run("Incoming edges", from: groupShare) { try engine.refineIncomingEdges(excluding: failures) }
             if backend != .cpu { records.append(compositionCPURecord(backend, count: transaction.working.nodes.count,
                 start: start, stages: ["incoming group edge alignment and route validation"])) }
         }
@@ -304,10 +320,13 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
             let start = computeStart
             // Cores finish first; GPU then calculates lane widths and translations.
             if let subLayout {
-                for id in lanes.keys.sorted() {
+                let ids = lanes.keys.sorted()
+                for (index, id) in ids.enumerated() {
                     let g = subgraph(graph, nodes: lanes[id]!)
                     let coreStart = ContinuousClock.now
-                    try await subLayout.applyLayoutAsync(g)
+                    try await LayoutStageScope.run("Lane \(index + 1)/\(ids.count)", from: 0.8 * Double(index) / Double(ids.count), to: 0.8 * Double(index + 1) / Double(ids.count)) {
+                        try await subLayout.applyLayoutAsync(g)
+                    }
                     lastExecutionMetrics += compositionCoreRecords(subLayout, requested: backend, graph: g, start: coreStart)
                 }
             }
@@ -319,7 +338,8 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
             let original = graph.nodes.map(\.bounds)
             let state = swimlanePlacementState(graph, members: members, ranks: rank, laneWidth: laneWidth,
                 laneSpacing: laneSpacing, padding: laneInternalPadding, verticalSpacing: nodeVerticalSpacing, hasCore: subLayout != nil)
-            var result = try await executor.placement(state, backend: backend)
+            let executor = self.executor, backend = self.backend
+            var result = try await LayoutStageScope.run("Placement", from: subLayout == nil ? 0 : 0.8) { try await executor.placement(state, backend: backend) }
             if let placed = result.bounds {
                 for (node, bounds) in zip(graph.nodes, placed) { node.bounds = bounds }
                 for (lane, id) in laneIds.enumerated() {
@@ -350,14 +370,15 @@ public final class SwimlaneLayoutOperation: LayoutExecutionReporting {
         let heights = layers.map { $0.map { a.nodes[$0].height }.max() ?? 0 }
         let ys = offsets(heights, gap: nodeVerticalSpacing)
         var x: Float = 0.0
-        for id in lanes.keys.sorted() {
+        let ids = lanes.keys.sorted()
+        for (index, id) in ids.enumerated() {
             try Task.checkCancellation()
             let nodes = lanes[id]!
             let effectiveWidth: Float
             if let subLayout {
                 let g = subgraph(graph, nodes: nodes)
                 let coreStart = ContinuousClock.now
-                try await subLayout.applyLayoutAsync(g)
+                try await LayoutStageScope.run("Lane \(index + 1)/\(ids.count)", part: index, of: ids.count) { try await subLayout.applyLayoutAsync(g) }
                 lastExecutionMetrics += compositionCoreRecords(subLayout, requested: backend, graph: g, start: coreStart)
                 let b = g.bounds; effectiveWidth = max(laneWidth, b.width + 2 * laneInternalPadding)
                 translate(g, by: Point(x: x + effectiveWidth / 2 - b.center.x, y: laneInternalPadding - b.y))

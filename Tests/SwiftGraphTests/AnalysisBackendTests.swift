@@ -80,6 +80,52 @@ struct AnalysisBackendTests {
         #expect(labels(a) == labels(b))
         #expect(operation.lastMetrics?.metalStages == ["ordered in-place cluster voting and label updates"])
     }
+    /// Several hundred nodes per command, hubs that shrink the dispatch chunk, and enough rounds
+    /// to exercise GPU-side convergence across pipelined commands.
+    private func clusterGraph(nodes: Int, hubs: Int) -> LayoutGraph {
+        let graph = LayoutGraph()
+        for i in 0..<nodes { graph.addNode(LayoutNode(id: String(i), width: 10, height: 10)) }
+        var random = SeededRandom(state: 7)
+        for i in 0..<nodes {
+            for _ in 0..<3 {
+                let j = Int(random.next() * Double(nodes))
+                graph.addEdge(LayoutEdge(source: graph.nodes[i], target: graph.nodes[j]))
+            }
+            if hubs > 0 && i >= hubs { graph.addEdge(LayoutEdge(source: graph.nodes[i], target: graph.nodes[i % hubs])) }
+        }
+        return graph
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [(3_000, 4), (5_000, 0)])
+    func pipelinedClusterRoundsMatchCPUWithFewSubmissions(_ size: (nodes: Int, hubs: Int)) async throws {
+        let a = clusterGraph(nodes: size.nodes, hubs: size.hubs), b = clusterGraph(nodes: size.nodes, hubs: size.hubs)
+        try LabelPropagationClusteringAlgorithm().applyLayout(a)
+        let executor = LayoutExecutor()
+        try await AnalysisLayoutOperation(.clusters, backend: .metal, executor: executor).applyLayoutAsync(b)
+        #expect(labels(a) == labels(b))
+        let stats = await executor.statistics()
+        // One command per chunk previously meant ⌈n / 128⌉ submissions per round. Without hubs
+        // the whole 20-round schedule fits one work budget; hubs force several smaller commands.
+        #expect(stats.submittedBatches > 0)
+        if size.hubs == 0 { #expect(stats.submittedBatches == 1) }
+        #expect(stats.submittedBatches == stats.completedBatches)
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable))
+    func cancelledPipelinedClusterRoundsDrainEveryCommand() async throws {
+        let executor = LayoutExecutor(), graph = clusterGraph(nodes: 60_000, hubs: 64)
+        let operation = AnalysisLayoutOperation(.clusters, backend: .metal, executor: executor)
+        let task = Task { try await operation.applyLayoutAsync(graph) }
+        defer { task.cancel() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
+        while await executor.statistics().submittedBatches == 0 {
+            if ContinuousClock.now >= deadline { throw LayoutExecutionError.invalidInput("No analysis GPU submission") }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(graph.nodes.allSatisfy { $0.metadata[GraphMetadataKeys.cluster] == nil })
+        let stats = await executor.statistics()
+        #expect(stats.submittedBatches == stats.completedBatches)
+    }
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable))
     func orderedVotesKeepTheInPlaceChainResultRatherThanSnapshotOscillation() async throws {
         let graph = LayoutGraph()

@@ -100,25 +100,32 @@ extension LayoutExecutor {
                 guard metalEnabled else { throw OrganicLayoutError.metalUnavailable }
                 if metal == nil { metal = try MetalForceSolver() }
                 var seconds = 0.0
-                for cycle in bundler.schedule.indices {
-                    if cycle > 0 { state = bundler.state(cycle: cycle) }
-                    let result = try await metal!.bundleAsync(state, iterations: bundler.schedule[cycle].iterations, batchSize: options.iterationsPerBatch)
-                    seconds += result.gpuSeconds
-                    guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { throw OrganicLayoutError.metalFailure("Non-finite bundle coordinates") }
-                    bundler.finish(cycle: cycle, positions: result.positions.map { Point(x: $0.x, y: $0.y) })
+                let solver = metal!, cycles = bundler.schedule.count, batchSize = options.iterationsPerBatch
+                try await LayoutStageScope.run("Bundle", from: 0.05, to: 0.9) {
+                    for cycle in bundler.schedule.indices {
+                        try await LayoutStageScope.run("Cycle \(cycle + 1)/\(cycles)", part: cycle, of: cycles) {
+                            if cycle > 0 { state = bundler.state(cycle: cycle) }
+                            let result = try await solver.bundleAsync(state, iterations: bundler.schedule[cycle].iterations, batchSize: batchSize)
+                            seconds += result.gpuSeconds
+                            guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { throw OrganicLayoutError.metalFailure("Non-finite bundle coordinates") }
+                            bundler.finish(cycle: cycle, positions: result.positions.map { Point(x: $0.x, y: $0.y) })
+                        }
+                    }
                 }
                 device = metal!.deviceName; gpuTime = seconds
                 paths = zip(edges, bundler.paths()).map { BundledPath(index: $0.index, points: $1) }
             } catch LayoutExecutionError.precisionLimit where backend == .automatic {
-                chosen = .cpu; reason = .precisionLimit; paths = try snapshot.cpuBundle(configuration, paths: existing)
+                chosen = .cpu; reason = .precisionLimit
+                paths = try LayoutStageScope.run("Bundle", from: 0.05, to: 0.9) { try snapshot.cpuBundle(configuration, paths: existing) }
             } catch OrganicLayoutError.metalUnavailable where backend == .automatic {
-                chosen = .cpu; reason = .metalUnavailable; paths = try snapshot.cpuBundle(configuration, paths: existing)
+                chosen = .cpu; reason = .metalUnavailable
+                paths = try LayoutStageScope.run("Bundle", from: 0.05, to: 0.9) { try snapshot.cpuBundle(configuration, paths: existing) }
             }
-        } else { paths = try snapshot.cpuBundle(configuration, paths: existing) }
+        } else { paths = try LayoutStageScope.run("Bundle", from: 0.05, to: 0.9) { try snapshot.cpuBundle(configuration, paths: existing) } }
         try Task.checkCancellation()
         let repaired = routing?.makeGraph().0 ?? snapshot.makeGraph()
         for path in paths { repaired.edges[path.index].path = path.points }
-        let failures = Set(ObstaclePolyline.repair(repaired, spacing: 0, shortenDetours: true))
+        let failures = Set(LayoutStageScope.run("Repair", from: 0.9) { ObstaclePolyline.repair(repaired, spacing: 0, shortenDetours: true) })
         let unroutable = repaired.edges.indices.filter { failures.contains(repaired.edges[$0]) }
         paths = paths.map { BundledPath(index: $0.index, points: repaired.edges[$0.index].path) }
         guard paths.allSatisfy({ $0.points.allSatisfy { $0.x.isFinite && $0.y.isFinite } }) else {

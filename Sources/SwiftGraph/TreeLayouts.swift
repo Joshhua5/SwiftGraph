@@ -37,7 +37,8 @@ public final class TreeLayoutAlgorithm: LayoutAlgorithm {
         for i in a.nodes.indices { heights[f.depth[i]] = max(heights[f.depth[i]], a.nodes[i].height) }
         let ys = offsets(heights, gap: levelSeparation)
         var cursor: Float = 0.0
-        for root in f.roots {
+        for (rootIndex, root) in f.roots.enumerated() {
+            LayoutStageScope.tick(rootIndex, of: f.roots.count)
             var stack = [(root, false)]
             while let (i, post) = stack.popLast() {
                 if !post { stack.append((i, true)); for j in f.children[i].reversed() { stack.append((j, false)) }; continue }
@@ -108,7 +109,8 @@ public final class RadialTreeLayoutAlgorithm: LayoutAlgorithm {
     public func applyLayout(_ graph: LayoutGraph) throws {
         try Task.checkCancellation()
         let a = Adjacency(graph), f = Forest(a)
-        for root in f.roots {
+        for (rootIndex, root) in f.roots.enumerated() {
+            LayoutStageScope.tick(rootIndex, of: f.roots.count)
             var indices: [Int] = [], angles = Array(repeating: 0.0, count: a.nodes.count)
             var stack = [(root, 0.0, 2 * Double.pi)]
             while let (i, start, end) = stack.popLast() {
@@ -136,6 +138,7 @@ public final class BalloonLayoutAlgorithm: LayoutAlgorithm {
         var sizes = Array(repeating: 1, count: a.nodes.count), cursor: Float = 0.0
         for i in f.order.reversed() { sizes[i] += f.children[i].reduce(0) { $0 + sizes[$1] } }
         for (componentIndex, root) in f.roots.enumerated() {
+            LayoutStageScope.tick(componentIndex, of: f.roots.count)
             a.nodes[root].x = 0; a.nodes[root].y = 0
             var component = [a.nodes[root]], stack = [(root, Float(0.0), 2 * Float.pi)]
             while let (i, start, sweep) = stack.popLast() {
@@ -176,7 +179,8 @@ public final class OrgChartLayoutAlgorithm: LayoutAlgorithm {
         }
         let levels = orgChartLevelOffsets(a.nodes, depths: depths, minimum: layerDistance)
         var cursor: Float = 0.0
-        for root in f.roots {
+        for (rootIndex, root) in f.roots.enumerated() {
+            LayoutStageScope.tick(rootIndex, of: f.roots.count)
             var stack = [(root, false)]
             while let (i, post) = stack.popLast() {
                 let regular = f.children[i].filter { !assistant[$0] }, assistants = f.children[i].filter { assistant[$0] }
@@ -238,7 +242,8 @@ public final class TreeMapLayoutAlgorithm: LayoutAlgorithm {
         var weights: [LayoutNode: Float] = [:]
         for node in order.reversed() { weights[node] = max(1, (children[node] ?? []).reduce(Float(0.0)) { $0 + weights[$1, default: 0] }) }
         graph.root.bounds = Rect(width: 1000, height: 1000)
-        for node in order {
+        for (position, node) in order.enumerated() {
+            if position & 63 == 0 { LayoutStageScope.tick(position, of: order.count) }
             try Task.checkCancellation()
             let r = node.bounds, vertical = r.width > r.height, list = children[node] ?? []
             let inner = Rect(x: r.x + padding, y: r.y + padding, width: max(0, r.width - 2 * padding), height: max(0, r.height - 2 * padding))

@@ -26,13 +26,18 @@ public final class ChannelEdgeRouter: EdgeRouter {
     private final class SearchStorage {
         var generation: UInt32 = 0
         var seen: [UInt32], closed: [UInt32], costs: [Float], previous: [Int]
-        init(count: Int) {
+        /// Per cell: the generation whose goal port sits there, and that port's index in the search's `ends`.
+        var goalStamp: [UInt32], goal: [Int32]
+        init(count: Int, cells: Int) {
             seen = Array(repeating: 0, count: count); closed = seen
             costs = Array(repeating: 0, count: count); previous = Array(repeating: -1, count: count)
+            goalStamp = Array(repeating: 0, count: cells); goal = Array(repeating: -1, count: cells)
         }
     }
     private struct IndexedCells {
         var bounds: GridRect, width: Int, blocked: [Bool], usage: [Usage], search: SearchStorage
+        /// Bit k is set where `Lattice.groups[k]` covers the cell; nil past 64 groups, which keeps the rect scan.
+        var groupBits: [UInt64]?
         func index(_ c: Cell) -> Int? {
             guard bounds.contains(c) else { return nil }
             return (c.y - bounds.minY) * width + c.x - bounds.minX
@@ -79,8 +84,9 @@ public final class ChannelEdgeRouter: EdgeRouter {
         }
         let scene = Scene(graph: graph, leaves: leaves, vertical: OrthogonalPorts.flow(graph).vertical)
         var lattice = makeLattice(graph, grid: gridSize), fine: Lattice?
-        for edge in graph.edges where edge.source !== edge.target {
+        for (position, edge) in graph.edges.enumerated() where edge.source !== edge.target {
             if RoutingCompute.isCancelled { return }
+            LayoutStageScope.tick(position, of: graph.edges.count)
             var path = route(edge, &lattice, scene, relaxed: false) ?? route(edge, &lattice, scene, relaxed: true)
             if path == nil && gridSize >= 4 {
                 if fine == nil { fine = makeLattice(graph, grid: gridSize / 2) }
@@ -106,7 +112,17 @@ public final class ChannelEdgeRouter: EdgeRouter {
             let fits = rectangles.allSatisfy { r in [r.minX, r.minY, r.maxX, r.maxY].allSatisfy { Int32(exactly: $0) != nil } }
             let occupied = fits ? RoutingCompute.current?.occupiedCells(rectangles.map { SIMD4(Int32($0.minX), Int32($0.minY), Int32($0.maxX), Int32($0.maxY)) }) : nil
             let bounds = GridRect(minX: r.minX - 20, minY: r.minY - 20, maxX: r.maxX + 20, maxY: r.maxY + 20)
-            var indexed = IndexedCells(bounds: bounds, width: width, blocked: Array(repeating: false, count: width * height), usage: Array(repeating: Usage(), count: width * height), search: SearchStorage(count: width * height * 3))
+            var indexed = IndexedCells(bounds: bounds, width: width, blocked: Array(repeating: false, count: width * height), usage: Array(repeating: Usage(), count: width * height), search: SearchStorage(count: width * height * 3, cells: width * height))
+            if !lattice.groups.isEmpty && lattice.groups.count <= 64 {
+                var bits = Array(repeating: UInt64(0), count: width * height)
+                for (k, group) in lattice.groups.enumerated() {
+                    let r = group.rect
+                    let minX = max(r.minX, bounds.minX), maxX = min(r.maxX, bounds.maxX), minY = max(r.minY, bounds.minY), maxY = min(r.maxY, bounds.maxY)
+                    guard minX <= maxX, minY <= maxY else { continue }
+                    for y in minY...maxY { for x in minX...maxX { bits[indexed.index(Cell(x: x, y: y))!] |= 1 << UInt64(k) } }
+                }
+                indexed.groupBits = bits
+            }
             if let occupied {
                 for cell in occupied { indexed.blocked[indexed.index(Cell(x: Int(cell.x), y: Int(cell.y)))!] = true }
             } else {
@@ -122,11 +138,13 @@ public final class ChannelEdgeRouter: EdgeRouter {
         let s = edge.source, t = edge.target
         if isAncestor(s, of: t) || isAncestor(t, of: s) { return nil }
         // Groups are walls except those the edge starts or ends inside; an endpoint group's interior is never passable.
-        let walls = lattice.groups.filter { $0.node === s || $0.node === t || !(isAncestor($0.node, of: s) || isAncestor($0.node, of: t)) }.map(\.rect)
+        let isWall = lattice.groups.map { $0.node === s || $0.node === t || !(isAncestor($0.node, of: s) || isAncestor($0.node, of: t)) }
+        let walls = zip(lattice.groups, isWall).filter(\.1).map(\.0.rect)
+        let wallBits = isWall.enumerated().reduce(UInt64(0)) { $1.element && $1.offset < 64 ? $0 | 1 << UInt64($1.offset) : $0 }
         let starts = ports(s, t, edge.sourcePort, edge.sourcePortCandidates, lattice, walls, scene)
         let ends = ports(t, s, edge.targetPort, edge.targetPortCandidates, lattice, walls, scene)
         guard !starts.isEmpty, !ends.isEmpty else { return nil }
-        guard let found = search(starts, ends, lattice, walls, relaxed: relaxed) else { return nil }
+        guard let found = search(starts, ends, lattice, walls, wallBits, relaxed: relaxed) else { return nil }
         for (cell, axis) in found.cells where congestionPenalty > 0 {
             if let index = lattice.indexed?.index(cell) {
                 if axis == 1 { lattice.indexed!.usage[index].horizontal += 1 } else { lattice.indexed!.usage[index].vertical += 1 }
@@ -193,9 +211,9 @@ public final class ChannelEdgeRouter: EdgeRouter {
         let along = axis == 1 ? u.horizontal : u.vertical, across = axis == 1 ? u.vertical : u.horizontal
         return Float(along * congestionPenalty + across * max(1, congestionPenalty / 2))
     }
-    private func search(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ walls: [GridRect], relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
+    private func search(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ walls: [GridRect], _ wallBits: UInt64, relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
         if congestionPenalty == 0, let compressed = compressedSearch(starts, ends, lattice, walls) { return compressed }
-        if let indexed = lattice.indexed { return indexedSearch(starts, ends, lattice, indexed, walls, relaxed: relaxed) }
+        if let indexed = lattice.indexed { return indexedSearch(starts, ends, lattice, indexed, walls, wallBits, relaxed: relaxed) }
         return compressedSearch(starts, ends, lattice, walls)
     }
     /// Large sparse scenes use the same lattice, retaining port lines and both sides of every obstacle boundary.
@@ -281,17 +299,30 @@ public final class ChannelEdgeRouter: EdgeRouter {
         return (cells, sources[current]!, goal)
     }
 
-    private func indexedSearch(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ indexed: IndexedCells, _ walls: [GridRect], relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
+    private func indexedSearch(_ starts: [Port], _ ends: [Port], _ lattice: Lattice, _ indexed: IndexedCells, _ walls: [GridRect], _ wallBits: UInt64, relaxed: Bool) -> (cells: [(Cell, Int)], start: Port, end: Port)? {
         let storage = indexed.search
         storage.generation &+= 1
-        if storage.generation == 0 { storage.seen = Array(repeating: 0, count: storage.seen.count); storage.closed = storage.seen; storage.generation = 1 }
+        if storage.generation == 0 {
+            storage.seen = Array(repeating: 0, count: storage.seen.count); storage.closed = storage.seen
+            storage.goalStamp = Array(repeating: 0, count: storage.goalStamp.count); storage.generation = 1
+        }
         let generation = storage.generation
+        // Walls come from `groupBits` when every group has a bit; otherwise each wall rect is tested.
+        let groupBits = indexed.groupBits, scansWalls = groupBits == nil && !walls.isEmpty
         return storage.seen.withUnsafeMutableBufferPointer { seen in
             storage.closed.withUnsafeMutableBufferPointer { closed in
                 storage.costs.withUnsafeMutableBufferPointer { costs in
                     storage.previous.withUnsafeMutableBufferPointer { previous in
-                        var goals: [Int: Port] = [:], sources: [Int: Port] = [:]
-                        for e in ends { if let i = indexed.index(e.entry), goals[i].map({ e.cost < $0.cost }) ?? true { goals[i] = e } }
+                        storage.goalStamp.withUnsafeMutableBufferPointer { goalStamp in
+                            storage.goal.withUnsafeMutableBufferPointer { goal in
+                        // The cheapest end port per cell (the first on ties), found by a stamp instead of a hash.
+                        func goalAt(_ i: Int) -> Port? { goalStamp[i] == generation ? ends[Int(goal[i])] : nil }
+                        for (k, e) in ends.enumerated() {
+                            if let i = indexed.index(e.entry), goalAt(i).map({ e.cost < $0.cost }) ?? true {
+                                goalStamp[i] = generation; goal[i] = Int32(k)
+                            }
+                        }
+                        var sources: [Int: Port] = [:]
                         for s in starts { if let i = indexed.index(s.entry) { sources[i * 3 + s.axis - 1] = s } }
                         let entries = starts.map(\.entry) + ends.map(\.entry)
                         let slack = relaxed ? 20 : 4
@@ -299,6 +330,10 @@ public final class ChannelEdgeRouter: EdgeRouter {
                         let high = Cell(x: max(lattice.extent.maxX, entries.map(\.x).max()!) + slack, y: max(lattice.extent.maxY, entries.map(\.y).max()!) + slack)
                         let goalLow = Cell(x: ends.map(\.entry.x).min()!, y: ends.map(\.entry.y).min()!), goalHigh = Cell(x: ends.map(\.entry.x).max()!, y: ends.map(\.entry.y).max()!)
                         func heuristic(_ c: Cell) -> Float { Float(max(goalLow.x - c.x, 0, c.x - goalHigh.x) + max(goalLow.y - c.y, 0, c.y - goalHigh.y)) }
+                        func isWall(_ i: Int, _ c: Cell) -> Bool {
+                            if let groupBits { return groupBits[i] & wallBits != 0 }
+                            return scansWalls && walls.contains { $0.contains(c) }
+                        }
                         var queue = RoutingPriorityQueue<Int>()
                         for port in starts {
                             guard let i = indexed.index(port.entry) else { continue }
@@ -308,15 +343,17 @@ public final class ChannelEdgeRouter: EdgeRouter {
                                 queue.push(state, priority: port.cost + heuristic(port.entry))
                             }
                         }
-                        var finish: Int?
+                        var finish: Int?, pops = 0
                         let offsets = [(0, 1, 2), (0, -1, 2), (1, 0, 1), (-1, 0, 1)]
                         while let current = queue.pop() {
-                            if RoutingCompute.isCancelled { return nil }
+                            // Reading the task-local cancellation state costs more than a pop; check it in batches.
+                            pops &+= 1
+                            if pops & 255 == 0 && RoutingCompute.isCancelled { return nil }
                             if closed[current] == generation { continue }; closed[current] = generation
                             let index = current / 3, direction = current % 3 + 1
                             if direction == 3 { finish = current; break }
                             let cell = indexed.cell(index), currentCost = costs[current]
-                            if let goal = goals[index] {
+                            if let goal = goalAt(index) {
                                 let done = index * 3 + 2, cost = currentCost + goal.cost + Float(direction != goal.axis ? bendPenalty : 0)
                                 if seen[done] != generation || cost < costs[done] {
                                     seen[done] = generation; costs[done] = cost; previous[done] = current; queue.push(done, priority: cost)
@@ -324,7 +361,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                             }
                             for (dx, dy, axis) in offsets {
                                 let c = Cell(x: cell.x + dx, y: cell.y + dy)
-                                guard c.x >= low.x, c.x <= high.x, c.y >= low.y, c.y <= high.y, let i = indexed.index(c), !indexed.blocked[i], !walls.contains(where: { $0.contains(c) }) else { continue }
+                                guard c.x >= low.x, c.x <= high.x, c.y >= low.y, c.y <= high.y, let i = indexed.index(c), !indexed.blocked[i], !isWall(i, c) else { continue }
                                 let next = i * 3 + axis - 1
                                 if closed[next] == generation { continue }
                                 let cost = currentCost + 1 + Float(direction != axis ? bendPenalty : 0) + congestion(indexed.usage[i], axis)
@@ -336,11 +373,13 @@ public final class ChannelEdgeRouter: EdgeRouter {
                         }
                         guard let finish else { return nil }
                         var current = previous[finish]
-                        let goal = goals[current / 3]!
+                        let goal = goalAt(current / 3)!
                         var cells: [(Cell, Int)] = []
                         while current >= 0 { cells.append((indexed.cell(current / 3), current % 3 + 1)); let previous = previous[current]; if previous < 0 { break }; current = previous }
                         cells.reverse()
                         return (cells, sources[current]!, goal)
+                            }
+                        }
                     }
                 }
             }
@@ -495,14 +534,23 @@ struct RoutingPriorityQueue<Value> {
         guard !items.isEmpty else { return nil }
         let result = items[0].0, last = items.removeLast()
         guard !items.isEmpty else { return result }
-        var i = 0
-        while i * 4 + 1 < items.count {
-            let first = i * 4 + 1
-            var best = first
-            for j in (first + 1)..<min(first + 4, items.count) where items[j].1 < items[best].1 { best = j }
-            if last.1 <= items[best].1 { break }
-            items[i] = items[best]; i = best
+        // Searches pop millions of times; the raw buffer drops per-access bounds and exclusivity checks.
+        items.withUnsafeMutableBufferPointer { items in
+            let count = items.count
+            var i = 0
+            while i * 4 + 1 < count {
+                let first = i * 4 + 1
+                var best = first, bestPriority = items[first].1
+                var j = first + 1
+                while j < min(first + 4, count) {
+                    if items[j].1 < bestPriority { best = j; bestPriority = items[j].1 }
+                    j += 1
+                }
+                if last.1 <= bestPriority { break }
+                items[i] = items[best]; i = best
+            }
+            items[i] = last
         }
-        items[i] = last; return result
+        return result
     }
 }

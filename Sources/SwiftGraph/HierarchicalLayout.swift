@@ -39,8 +39,9 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
         var order = Array(repeating: 0, count: widths.count)
         func updateOrder() { for layer in layers { for (p, i) in layer.enumerated() { order[i] = p } } }
         updateOrder()
-        for sweep in 0..<4 {
+        try LayoutStageScope.run("Ordering", from: 0.1, to: 0.45) { for sweep in 0..<4 {
             try Task.checkCancellation()
+            LayoutStageScope.tick(sweep, of: 4)
             let forward = sweep % 2 == 0
             let indices = forward ? Array(layers.indices) : Array(layers.indices.reversed())
             var changed = false
@@ -60,7 +61,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
                 for (p, i) in layers[rank].enumerated() { order[i] = p }
             }
             if !changed && sweep > 0 { break }
-        }
+        } }
         let heights = layers.map { layer in layer.map { $0 < count ? a.nodes[$0].height : 0 }.max() ?? 0 }
         let ys = offsets(heights, gap: layerSeparation)
         var xs = Array(repeating: Float(0), count: widths.count)
@@ -73,8 +74,9 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
                 x += widths[i] + (p < gaps.count ? gaps[p] : 0)
             }
         }
-        for pass in 0..<3 {
+        try LayoutStageScope.run("Coordinates", from: 0.45, to: 0.7) { for pass in 0..<3 {
             try Task.checkCancellation()
+            LayoutStageScope.tick(pass, of: 3)
             for rank in (pass % 2 == 0 ? Array(layers.indices) : Array(layers.indices.reversed())) {
                 let layer = layers[rank]
                 var desired: [Float] = [], shift: [Float] = [], weights: [Float] = [], distance: Float = 0
@@ -88,7 +90,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
                 let fitted = isotonic(desired, weights: weights)
                 for (p, i) in layer.enumerated() { xs[i] = fitted[p] + shift[p] }
             }
-        }
+        } }
         for i in a.nodes.indices { a.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
         guard routesEdges else { return }
         var routed: [[Point]?] = [], flows: [Int?] = []
@@ -96,7 +98,7 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             guard let chain = chains[e], let s = a.index[e.source], let t = a.index[e.target] else { routed.append(nil); flows.append(nil); continue }
             routed.append(chain.map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }); flows.append((ranks[t] - ranks[s]).signum())
         }
-        try routeLayeredEdges(graph, chains: routed, flows: flows)
+        try LayoutStageScope.run("Route edges", from: 0.7) { try routeLayeredEdges(graph, chains: routed, flows: flows) }
     }
 }
 
@@ -135,7 +137,7 @@ func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) 
     let tree = QuadTree<LayoutNode>(bounds: enclosingBounds(solid).inflated(by: 1))
     for node in solid { tree.insert(bounds: node.bounds, item: node) }
     for (i, e) in graph.edges.enumerated() {
-        if i % 64 == 0 { try Task.checkCancellation() }
+        if i % 64 == 0 { try Task.checkCancellation(); LayoutStageScope.tick(i, of: graph.edges.count) }
         guard let chain = chains[i] else { continue }
         func near(_ area: Rect) -> [LayoutNode] {
             tree.query(area).filter { $0 !== e.source && $0 !== e.target && !($0.isGroup && (isAncestor($0, of: e.source) || isAncestor($0, of: e.target))) }

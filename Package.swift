@@ -12,6 +12,10 @@ let package = Package(
             name: "SwiftGraph",
             targets: ["SwiftGraph"]
         ),
+        .library(
+            name: "SwiftGraphUI",
+            targets: ["SwiftGraphUI"]
+        ),
         .executable(name: "graph-layout-benchmark", targets: ["GraphLayoutBenchmark"]),
         .executable(name: "graph-layout-visual", targets: ["GraphLayoutVisual"]),
         .executable(name: "graph-layout-previews", targets: ["GraphLayoutPreviews"]),
@@ -24,6 +28,13 @@ let package = Package(
         .target(
             name: "SwiftGraph",
             resources: [.copy("Shaders")],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .target(
+            name: "SwiftGraphUI",
+            dependencies: ["SwiftGraph"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
@@ -43,7 +54,7 @@ let package = Package(
         // (executable targets would need ENABLE_DEBUG_DYLIB, which SwiftPM cannot set).
         .target(
             name: "GraphLayoutGallery",
-            dependencies: ["SwiftGraph"],
+            dependencies: ["SwiftGraph", "SwiftGraphUI"],
             swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")]
         ),
         // macOS app that hosts the gallery in a window.
@@ -54,7 +65,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SwiftGraphTests",
-            dependencies: ["SwiftGraph", "GraphEvaluationSupport"],
+            dependencies: ["SwiftGraph", "SwiftGraphUI", "GraphEvaluationSupport"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

@@ -51,7 +51,7 @@ public enum EdgeEndpointClipper {
         return Array(clipStart(Array(start.reversed()), to: target).reversed())
     }
     private static func clipStart(_ path: [Point], to rect: Rect) -> [Point] {
-        let inside = (RoutingCompute.current.flatMap { $0.stages.isEmpty || path.count >= 64 ? $0.contains(path, rect) : nil }) ?? path.map(rect.contains)
+        let inside = RoutingCompute.current?.contains(path, rect) ?? path.map(rect.contains)
         guard inside.first == true, inside.last == false else { return path }
         let core = ObstaclePolyline.interior(rect)
         for k in stride(from: path.count - 2, through: 0, by: -1) {
@@ -104,7 +104,8 @@ public final class SelfLoopRouter: EdgeRouter {
         let loops = graph.edges.filter { $0.source === $0.target }
         var pending = Set(loops), used: [LayoutNode: [Int]] = [:]
         let loopCounts = Dictionary(grouping: loops, by: \.source).mapValues(\.count)
-        for edge in loops {
+        for (position, edge) in loops.enumerated() {
+            if position & 15 == 0 { LayoutStageScope.tick(position, of: loops.count) }
             let node = edge.source, r = node.bounds, corners = used[node, default: []]
             let ring = Float(corners.count / 4), taken = Set(corners.suffix(corners.count % 4))
             // Rings step outward by 6 along the sides; on small nodes the steps shrink to fit before the middle, so legs stay apart.
@@ -186,6 +187,24 @@ public final class SelfLoopRouter: EdgeRouter {
         return count
     }
 }
+/// `body` applied to every element of `items` on all cores, results in order. `body` must not depend on work done by
+/// another call. Workers see no `RoutingCompute.current`: a transaction is not thread-safe, so they take the exact
+/// CPU predicates, and they observe the transaction's cancellation.
+func concurrentRoutingMap<Input, T>(_ items: [Input], _ body: (Input) -> T) -> [T] {
+    guard items.count > 1 else { return items.map(body) }
+    let cancellation = RoutingCompute.cancellation
+    let output = UnsafeMutableBufferPointer<T?>.allocate(capacity: items.count)
+    output.initialize(repeating: nil)
+    defer { output.deinitialize(); output.deallocate() }
+    // Each worker writes only its own slot and reads `items`, which nothing mutates meanwhile.
+    nonisolated(unsafe) let slots = output, work = body, inputs = items
+    DispatchQueue.concurrentPerform(iterations: items.count) { k in
+        RoutingCompute.$current.withValue(nil) {
+            RoutingCompute.$cancellation.withValue(cancellation) { slots[k] = work(inputs[k]) }
+        }
+    }
+    return output.map { $0! }
+}
 /// Replaces every segment of `path` that crosses an obstacle by a visibility detour; segments with no detour are kept.
 func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Float = 8) -> [Point] {
     var result = path, k = 0
@@ -229,6 +248,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
         for e in edges where bendOf(e) == nil { e.path = [e.source.center, e.target.center]; routed.append((e, e.path)) }
         for (i, e) in edges.enumerated() {
             if RoutingCompute.isCancelled { return }
+            LayoutStageScope.tick(i, of: edges.count)
             let a = e.source.center, b = e.target.center
             guard let bend = bendOf(e) else { continue }
             let first = bends?[i] ?? bend, options = [[a, first, b], [a, b - (first - a), b]]
@@ -270,8 +290,9 @@ public final class ParallelEdgeRouter: EdgeRouter {
     public func routeEdges(_ graph: LayoutGraph) {
         var groups: [Set<LayoutNode>: [LayoutEdge]] = [:]
         for e in graph.edges where e.source !== e.target { groups[[e.source, e.target], default: []].append(e) }
-        for edges in groups.values {
+        for (position, edges) in groups.values.enumerated() {
             if RoutingCompute.isCancelled { return }
+            if position & 15 == 0 { LayoutStageScope.tick(position, of: groups.count) }
             guard edges.count > 1 else {
                 if edges[0].path.count < 2 { edges[0].path = [edges[0].source.center, edges[0].target.center] }
                 continue
@@ -302,8 +323,10 @@ public final class BusEdgeRouter: EdgeRouter {
     public init() {}
     public func routeEdges(_ graph: LayoutGraph) {
         var processed = Set<LayoutEdge>()
-        for hub in graph.nodes {
+        var legs: [(edge: LayoutEdge, fromHub: Bool, path: [Point], obstacles: [Rect], blocked: Bool)] = []
+        for (position, hub) in graph.nodes.enumerated() {
             if RoutingCompute.isCancelled { return }
+            LayoutStageScope.tick(position, of: graph.nodes.count)
             let edges = graph.edges.filter { $0.source !== $0.target && ($0.source === hub || $0.target === hub) }
             guard edges.count >= 3 else { continue }
             let others = edges.map { $0.source === hub ? $0.target : $0.source }
@@ -342,13 +365,19 @@ public final class BusEdgeRouter: EdgeRouter {
                     let e = edges[i], other = others[i]
                     let p = joints?[k * 2] ?? point(position, horizontal ? hub.center.x : hub.center.y)
                     let q = joints?[k * 2 + 1] ?? point(position, horizontal ? other.center.x : other.center.y)
-                    var path = compactPath([hub.center, p, q, other.center])
+                    let path = compactPath([hub.center, p, q, other.center])
                     let obstacles = ObstaclePolyline.obstacles(e, graph)
-                    if !ObstaclePolyline.clear(path, obstacles) { path = detourBlocked(path, obstacles) }
-                    e.path = e.source === hub ? path : Array(path.reversed())
+                    legs.append((e, e.source === hub, path, obstacles, !ObstaclePolyline.clear(path, obstacles)))
                 }
             }
         }
+        // A detour depends only on its own leg and the nodes, never on other routes, so blocked legs are searched
+        // concurrently once every hub has claimed its edges.
+        let blocked = legs.indices.filter { legs[$0].blocked }
+        let detours = concurrentRoutingMap(blocked.map { (legs[$0].path, legs[$0].obstacles) }) { detourBlocked($0.0, $0.1) }
+        if RoutingCompute.isCancelled { return }
+        for (k, i) in blocked.enumerated() { legs[i].path = detours[k] }
+        for leg in legs { leg.edge.path = leg.fromHub ? leg.path : Array(leg.path.reversed()) }
         for e in graph.edges where e.source !== e.target && !processed.contains(e) && e.path.count <= 2 { e.path = [e.source.center, e.target.center] }
     }
 }
@@ -364,8 +393,9 @@ public final class CurveFittingEdgeRouter: EdgeRouter {
     public func fitCurves(_ graph: LayoutGraph) {
         guard iterations > 0, radius > 0, radius.isFinite else { return }
         let steps = 1 << min(5, iterations)
-        for e in graph.edges where e.source !== e.target && e.path.count > 2 {
+        for (position, e) in graph.edges.enumerated() where e.source !== e.target && e.path.count > 2 {
             if RoutingCompute.isCancelled { return }
+            if position & 15 == 0 { LayoutStageScope.tick(position, of: graph.edges.count) }
             let p = e.path, obstacles = ObstaclePolyline.obstacles(e, graph)
             let arcs = (1..<(p.count - 1)).map { Self.arc(p[$0 - 1], p[$0], p[$0 + 1], radius: radius, steps: steps) }
             let rounded = [p[0]] + (1..<(p.count - 1)).flatMap { arcs[$0 - 1] ?? [p[$0]] } + [p[p.count - 1]]

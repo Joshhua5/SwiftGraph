@@ -79,20 +79,23 @@ final class MetalForceSolver {
         try Task.checkCancellation()
         return seconds
     }
-    func buffer<T>(_ values: [T]) throws -> any MTLBuffer {
-        let length = max(1, values.count * MemoryLayout<T>.stride)
-        let result: any MTLBuffer
+    func buffer(byteCount: Int) throws -> any MTLBuffer {
+        let length = max(1, byteCount)
         if let index = pool.indices.filter({ pool[$0].length >= length }).min(by: { pool[$0].length < pool[$1].length }) {
-            result = pool.remove(at: index); cachedBufferBytes -= result.length; bufferReuses += 1
-        } else {
-            var capacity = 256
-            while capacity < length && capacity <= device.maxBufferLength / 2 { capacity *= 2 }
-            capacity = max(capacity, length)
-            guard capacity <= device.maxBufferLength, let allocation = device.makeBuffer(length: capacity, options: .storageModeShared) else {
-                throw OrganicLayoutError.metalFailure("Could not allocate \(capacity) bytes")
-            }
-            result = allocation; bufferAllocations += 1
+            let result = pool.remove(at: index); cachedBufferBytes -= result.length; bufferReuses += 1
+            return result
         }
+        var capacity = 256
+        while capacity < length && capacity <= device.maxBufferLength / 2 { capacity *= 2 }
+        capacity = max(capacity, length)
+        guard capacity <= device.maxBufferLength, let allocation = device.makeBuffer(length: capacity, options: .storageModeShared) else {
+            throw OrganicLayoutError.metalFailure("Could not allocate \(capacity) bytes")
+        }
+        bufferAllocations += 1
+        return allocation
+    }
+    func buffer<T>(_ values: [T]) throws -> any MTLBuffer {
+        let result = try buffer(byteCount: values.count * MemoryLayout<T>.stride)
         if !values.isEmpty {
             values.withUnsafeBytes { bytes in result.contents().copyMemory(from: bytes.baseAddress!, byteCount: bytes.count) }
         }
@@ -164,6 +167,7 @@ final class MetalForceSolver {
                 steps: start..<min(iterations, start + min(max(1, batchSize), 64)), input: &input, output: &output, fixed: fixed, offsets: offsets, neighbors: neighbors)
             submittedBatches += 1; command.commit(); command.waitUntilCompleted()
             gpuSeconds += try check(command)
+            LayoutStageScope.tick(start + min(max(1, batchSize), 64), of: iterations)
         }
         try Task.checkCancellation()
         return (result(input, count: state.positions.count), gpuSeconds)
@@ -204,6 +208,7 @@ final class MetalForceSolver {
                     coolingIterationBudget: coolingIterationBudget,
                     treeBuffers: resources, treeCount: tree.cells.count)
                 gpuSeconds += try await submit(command)
+                LayoutStageScope.tick(iteration + treeStride, of: iterations)
             }
             try Task.checkCancellation()
             return (result(input, count: state.positions.count), gpuSeconds, cpuPreparationSeconds)
@@ -220,6 +225,8 @@ final class MetalForceSolver {
                 command.commit()
             }
             gpuSeconds += try check(command)
+            // Reported after completion, on the awaiting task; completion handlers carry no task-locals.
+            LayoutStageScope.tick(start + batch, of: iterations)
         }
         try Task.checkCancellation()
         return (result(input, count: state.positions.count), gpuSeconds, cpuPreparationSeconds)
@@ -314,6 +321,7 @@ final class MetalForceSolver {
                 command.addCompletedHandler { _ in continuation.resume() }
                 command.commit()
             }
+            LayoutStageScope.tick(start + batch, of: iterations)
             gpuSeconds += try check(command)
         }
         try Task.checkCancellation()

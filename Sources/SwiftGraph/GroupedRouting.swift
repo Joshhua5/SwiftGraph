@@ -24,15 +24,19 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
         rebuild(graph)
         var paths: [LayoutEdge: [Point]] = [:]
         let edges = graph.edges.filter { $0.source !== $0.target }
-        for edge in edges {
+        let routing = LayoutStageScope.begin("Route", to: 0.8)
+        for (position, edge) in edges.enumerated() {
             if RoutingCompute.isCancelled { return }
+            routing.tick(position, of: edges.count)
             let path = solve(edge, graph); edge.path = path; paths[edge] = path
         }
+        routing.end()
         if bundleSpacing > 0 { nudge(graph, edges: edges, paths: &paths) }
         if RoutingCompute.isCancelled { return }
         EdgeEndpointClipper.clipToNodeBounds(graph)
         if bundleSpacing > 0 {
-            let separator = EdgeSeparator(); separator.spacing = bundleSpacing; separator.routeEdges(graph)
+            let separator = EdgeSeparator(); separator.spacing = bundleSpacing
+            LayoutStageScope.run("Separate", from: 0.8) { separator.routeEdges(graph) }
         }
     }
     private func rebuild(_ graph: LayoutGraph) {
@@ -116,9 +120,8 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
             let children = kids(n)
             let xStart = lowerBound(xGrid, Int(n.x)), xEnd = lowerBound(xGrid, Int(n.bounds.right))
             let yStart = lowerBound(yGrid, Int(n.y)), yEnd = lowerBound(yGrid, Int(n.bounds.bottom))
-            let useMetalBlockers = RoutingCompute.current.map { $0.stages.isEmpty || (grid.xChannels.count + grid.yChannels.count) * children.count >= 1024 } ?? false
-            let xBlockers = useMetalBlockers ? RoutingCompute.current?.axisBlockers(grid.xChannels.map(Float.init), rectangles: children.map(\.bounds), vertical: true, closed: closed) : nil
-            let yBlockers = useMetalBlockers ? RoutingCompute.current?.axisBlockers(grid.yChannels.map(Float.init), rectangles: children.map(\.bounds), vertical: false, closed: closed) : nil
+            let xBlockers = RoutingCompute.current?.axisBlockers(grid.xChannels.map(Float.init), rectangles: children.map(\.bounds), vertical: true, closed: closed)
+            let yBlockers = RoutingCompute.current?.axisBlockers(grid.yChannels.map(Float.init), rectangles: children.map(\.bounds), vertical: false, closed: closed)
             for (i, x) in grid.xChannels.enumerated() {
                 let ix = lowerBound(xGrid, x)
                 let blockers = xBlockers?[i].map { children[$0] } ?? children.filter { closed ? $0.x <= Float(x) && Float(x) <= $0.bounds.right : $0.x < Float(x) && Float(x) < $0.bounds.right }

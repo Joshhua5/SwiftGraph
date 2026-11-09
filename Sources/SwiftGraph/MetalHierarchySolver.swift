@@ -160,6 +160,9 @@ extension MetalForceSolver {
         let orderResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, orderScratch]
         let placementResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, widths, coordinateScratch, blockScratch, ends]
         var seconds = 0.0
+        // Upper bound on submitted batches: ordering sweeps, directed transpositions, then placement.
+        // Early exits leave the remainder to the caller's stage snapping to complete.
+        var batches = 0; let maximumBatches = (directed ? 12 + 4 : 4) + 1
         func runSteps(_ steps: [(action: UInt32, iteration: Int, rank: Int)]) async throws {
             guard !steps.isEmpty else { return }
             try Task.checkCancellation()
@@ -184,6 +187,7 @@ extension MetalForceSolver {
                 encoder.endEncoding()
             }
             seconds += try await submit(command)
+            batches += 1; LayoutStageScope.tick(batches, of: maximumBatches)
         }
         let changed = orderScratch.contents().bindMemory(to: UInt32.self, capacity: 3 * n + temporarySize + 3).advanced(by: 3 * n + temporarySize + 2)
         for sweep in 0..<(directed ? 12 : 4) {

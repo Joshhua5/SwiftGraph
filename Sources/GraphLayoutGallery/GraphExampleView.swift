@@ -1,21 +1,18 @@
 import SwiftGraph
+import SwiftGraphUI
 import SwiftUI
 
-/// Lays out one example asynchronously and draws the result.
+/// Lays out one example asynchronously and draws the result using `SwiftGraphUI`.
 struct GraphExampleView: View {
     let example: GraphExample
     var showsHeader = true
 
     private var externalBackend: Binding<LayoutBackend>?
+    private var prerenderedResult: Result<GraphSnapshot, any Error>?
     @State private var ownedBackend: LayoutBackend = .cpu
     @State private var snapshot: GraphSnapshot?
-    @State private var errorMessage: String?
-    @State private var renderedBackend: LayoutBackend?
     @State private var showLabels = true
-    @State private var zoom: CGFloat = 1
-    @State private var baseZoom: CGFloat = 1
-    @State private var pan: CGSize = .zero
-    @State private var dragStartPan: CGSize = .zero
+    @State private var viewport = GraphViewport()
 
     private var backend: LayoutBackend {
         externalBackend?.wrappedValue ?? ownedBackend
@@ -39,61 +36,27 @@ struct GraphExampleView: View {
         prerendered result: Result<GraphSnapshot, any Error>
     ) {
         self.init(example: example, backend: backend, showsHeader: showsHeader)
-        _renderedBackend = State(initialValue: backend?.wrappedValue ?? .cpu)
-        switch result {
-        case .success(let value): _snapshot = State(initialValue: value)
-        case .failure(let error): _errorMessage = State(initialValue: String(describing: error))
+        self.prerenderedResult = result
+        if case .success(let value) = result {
+            _snapshot = State(initialValue: value)
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader { header }
-            ZStack {
-                RoundedRectangle(cornerRadius: 10).fill(Color.canvasBackground)
-                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
-                if let snapshot {
-                    GraphCanvas(snapshot: snapshot, showLabels: showLabels, zoom: zoom, pan: pan)
-                        .padding(8)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    pan = CGSize(
-                                        width: dragStartPan.width + value.translation.width,
-                                        height: dragStartPan.height + value.translation.height
-                                    )
-                                }
-                                .onEnded { _ in dragStartPan = pan }
-                        )
-                        .gesture(
-                            MagnificationGesture()
-                                .onChanged { value in zoom = max(0.4, min(6.0, baseZoom * value)) }
-                                .onEnded { _ in baseZoom = zoom }
-                        )
-                } else if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary).padding()
-                } else {
-                    ProgressView("Laying out…")
-                }
-            }
+            GraphView(
+                id: example.id,
+                backend: backend,
+                viewport: $viewport,
+                showLabels: showLabels,
+                prerendered: prerenderedResult,
+                onSnapshotChange: { snapshot = $0 },
+                makeGraph: example.makeGraph,
+                configure: example.configure
+            )
         }
         .padding()
-        .task(id: "\(example.id)|\(backend)") {
-            let currentBackend = backend
-            guard renderedBackend != currentBackend || (snapshot == nil && errorMessage == nil) else { return }
-            errorMessage = nil
-            do {
-                snapshot = try await example.render(backend: currentBackend)
-                renderedBackend = currentBackend
-            } catch is CancellationError {
-                return
-            } catch {
-                errorMessage = String(describing: error)
-                renderedBackend = currentBackend
-            }
-        }
     }
 
     private var header: some View {
@@ -121,23 +84,23 @@ struct GraphExampleView: View {
             .help("Layout Execution Backend (CPU vs Metal)")
             HStack(spacing: 4) {
                 Button {
-                    zoom = max(0.4, zoom / 1.25); baseZoom = zoom
+                    viewport.zoomOut()
                 } label: {
                     Image(systemName: "minus.magnifyingglass")
                 }
                 .help("Zoom Out")
 
                 Button {
-                    zoom = 1; baseZoom = 1; pan = .zero; dragStartPan = .zero
+                    viewport.reset()
                 } label: {
-                    Text("\(Int((zoom * 100).rounded()))%")
+                    Text("\(Int((viewport.zoom * 100).rounded()))%")
                         .font(.caption.monospacedDigit())
                         .frame(minWidth: 38)
                 }
                 .help("Reset Zoom & Pan")
 
                 Button {
-                    zoom = min(6.0, zoom * 1.25); baseZoom = zoom
+                    viewport.zoomIn()
                 } label: {
                     Image(systemName: "plus.magnifyingglass")
                 }

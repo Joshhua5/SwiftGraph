@@ -209,7 +209,7 @@ public final class RemoveOverlapsLayoutAlgorithm: LayoutAlgorithm {
         // Compare all preceding rectangles: a wide rectangle can overlap beyond its immediate neighbor.
         let sorted = graph.nodes.enumerated().sorted { a, b in a.element.x == b.element.x ? a.offset < b.offset : a.element.x < b.element.x }.map(\.element)
         for i in sorted.indices {
-            if i % 64 == 0 { try Task.checkCancellation() }
+            if i % 64 == 0 { try Task.checkCancellation(); LayoutStageScope.tick(i, of: sorted.count) }
             let node = sorted[i]
             for other in sorted[..<i].sorted(by: { $0.x < $1.x }) where node.y < other.bounds.bottom + minSpacing && node.bounds.bottom + minSpacing > other.y {
                 if node.x < other.bounds.right + minSpacing && node.bounds.right > other.x { node.x = other.bounds.right + minSpacing }
@@ -343,7 +343,8 @@ func forceScan(_ nodes: [LayoutNode], spacing: Float) throws {
 func separateOverlaps(_ nodes: [LayoutNode], spacing: Float, movable: [Bool], passes: Int = 200) throws -> Bool {
     let candidates = nodes.indices.filter { !nodes[$0].isGroup }
     for pass in 0..<passes {
-        if pass % 16 == 0 { try Task.checkCancellation() }
+        // Most runs settle long before the pass budget; the caller's stage snaps to complete on return.
+        if pass % 16 == 0 { try Task.checkCancellation(); LayoutStageScope.tick(asymptotic: pass, halfLife: 8) }
         // Window by the pass-start positions; pairs missed after a move are caught by the next pass,
         // and the final, motionless pass is exact.
         let order = candidates.sorted { nodes[$0].x == nodes[$1].x ? $0 < $1 : nodes[$0].x < nodes[$1].x }

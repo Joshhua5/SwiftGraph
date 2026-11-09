@@ -95,7 +95,8 @@ public extension LayoutBuilder {
     }
     @discardableResult func applyEnterpriseArchitecture(backend: LayoutBackend, executor: LayoutExecutor = .shared,
         nodeSeparation: Float = 80, layerSeparation: Float = 120, componentSpacing: Float = 50) -> Self {
-        var configuration = HierarchicalLayoutConfiguration(); configuration.nodeSeparation = nodeSeparation; configuration.layerSeparation = layerSeparation
+        // BSP reroutes every owned edge, so the core's own layered routes would be discarded unseen.
+        var configuration = HierarchicalLayoutConfiguration(); configuration.nodeSeparation = nodeSeparation; configuration.layerSeparation = layerSeparation; configuration.routesEdges = false
         let core = HierarchicalLayoutOperation(backend: backend, executor: executor, configuration: configuration)
         let components = ComponentLayoutOperation(core, backend: backend, executor: executor)
         components.componentSpacing = componentSpacing; components.preferredAspectRatio = 1.5

@@ -94,14 +94,14 @@ struct OrganicQualitySearch {
         var positions = raw
         // Preserve exact coordinates for fixed pins.
         for i in positions.indices where fixed[i] { positions[i] = snapshot.nodes[i].bounds.center }
-        compact(&positions)
-        try separate(&positions)
-        try pack(&positions)
+        LayoutStageScope.run("Compact", to: 0.2) { compact(&positions) }
+        try LayoutStageScope.run("Separate", from: 0.2, to: 0.6) { try separate(&positions) }
+        try LayoutStageScope.run("Pack", from: 0.6, to: 0.8) { try pack(&positions) }
         if !fixed.contains(true), let first = rectangles(positions).first {
             let bounds = rectangles(positions).dropFirst().reduce(first) { $0.union($1) }
             positions = positions.map { $0 - Point(x: bounds.x, y: bounds.y) }
         }
-        let score = try Self.measure(positions, snapshot, separation: configuration.nodeSeparation)
+        let score = try LayoutStageScope.run("Measure", from: 0.8) { try Self.measure(positions, snapshot, separation: configuration.nodeSeparation) }
         let index = diagnostics.candidateCount
         diagnostics.candidateCount += 1; diagnostics.solverIterations += configuration.iterations
         if score.precedes(diagnostics.final) {

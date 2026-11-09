@@ -129,7 +129,7 @@ public actor LayoutExecutor {
     var metal: MetalForceSolver?
     var routingWorker: RoutingComputeWorker?
     let metalEnabled: Bool
-    public init(options: MetalLayoutOptions = .init()) { self.options = options; metalEnabled = true }
+    public init(options: MetalLayoutOptions = .init()) { self.options = options; self.metalEnabled = true }
     // Deterministic unavailable-device testing, without a public "pretend Metal" backend.
     init(options: MetalLayoutOptions = .init(), metalEnabled: Bool) { self.options = options; self.metalEnabled = metalEnabled }
 
@@ -245,19 +245,25 @@ public actor LayoutExecutor {
         let preparationSeconds = preparationStart.duration(to: .now).seconds
         var solverSeconds = 0.0, evaluationSeconds = 0.0, cpuPreparation = 0.0
         var gpu: Double?, device: String?
-        for positions in starts {
-            for strength: Float in [0.5, 1.0, 2.0] {
+        let strengths: [Float] = [0.5, 1.0, 2.0], candidateCount = starts.count * strengths.count
+        for (startIndex, positions) in starts.enumerated() {
+            for (strengthIndex, strength) in strengths.enumerated() {
                 try Task.checkCancellation()
-                let (input, candidate) = search.candidate(positions, strength: strength)
-                let solveStart = ContinuousClock.now
-                let result = try await organic(input, configuration: candidate, backend: actual)
-                solverSeconds += solveStart.duration(to: .now).seconds
-                cpuPreparation += result.metrics.cpuPreparationSeconds
-                if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
-                device = result.metrics.deviceName
-                let evaluationStart = ContinuousClock.now
-                try search.consider(result.centers)
-                evaluationSeconds += evaluationStart.duration(to: .now).seconds
+                let index = startIndex * strengths.count + strengthIndex
+                try await LayoutStageScope.run("Candidate \(index + 1)/\(candidateCount)", part: index, of: candidateCount) {
+                    let (input, candidate) = search.candidate(positions, strength: strength)
+                    let solveStart = ContinuousClock.now
+                    let result = try await LayoutStageScope.run("Force simulation", to: 0.85) {
+                        try await organic(input, configuration: candidate, backend: actual)
+                    }
+                    solverSeconds += solveStart.duration(to: .now).seconds
+                    cpuPreparation += result.metrics.cpuPreparationSeconds
+                    if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
+                    device = result.metrics.deviceName
+                    let evaluationStart = ContinuousClock.now
+                    try LayoutStageScope.run("Evaluate", from: 0.85) { try search.consider(result.centers) }
+                    evaluationSeconds += evaluationStart.duration(to: .now).seconds
+                }
             }
         }
         try Task.checkCancellation()

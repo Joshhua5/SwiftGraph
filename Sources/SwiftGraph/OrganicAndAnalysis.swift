@@ -150,10 +150,15 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
             let checkpoint = try GraphCheckpoint(graph)
             var search = try OrganicQualitySearch(checkpoint.snapshot, configuration)
             if configuration.iterations > 0 && search.fixed.contains(false) {
-                for start in search.starts() {
-                    for strength: Float in [0.5, 1.0, 2.0] {
-                        let (input, candidate) = search.candidate(start, strength: strength)
-                        try search.consider(input.cpuOrganic(candidate))
+                let starts = search.starts(), strengths: [Float] = [0.5, 1.0, 2.0], candidateCount = starts.count * strengths.count
+                for (startIndex, start) in starts.enumerated() {
+                    for (strengthIndex, strength) in strengths.enumerated() {
+                        let index = startIndex * strengths.count + strengthIndex
+                        try LayoutStageScope.run("Candidate \(index + 1)/\(candidateCount)", part: index, of: candidateCount) {
+                            let (input, candidate) = search.candidate(start, strength: strength)
+                            let positions = try LayoutStageScope.run("Force simulation", to: 0.85) { try input.cpuOrganic(candidate) }
+                            try LayoutStageScope.run("Evaluate", from: 0.85) { try search.consider(positions) }
+                        }
                     }
                 }
             }
@@ -180,6 +185,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
         let treeStride = (preparedPositions && totalIterations >= 60) ? 15 : 1
         for iteration in 0..<totalIterations {
             try Task.checkCancellation()
+            LayoutStageScope.tick(iteration, of: totalIterations)
             var displacement = Array(repeating: Point.zero, count: nodes.count)
             if nodes.count >= 64 {
                 if iteration % treeStride == 0 { tree.build(positions) }
@@ -227,17 +233,20 @@ public final class BarycenterLayoutAlgorithm: LayoutAlgorithm {
             fixed = a.nodes.map { $0.x <= bounds.left + 1 || $0.bounds.right >= bounds.right - 1 || $0.y <= bounds.top + 1 || $0.bounds.bottom >= bounds.bottom - 1 }
         }
         var positions = a.nodes.map(\.center)
-        for _ in 0..<max(0, iterations) {
+        let solving = LayoutStageScope.begin("Solve", to: 0.85)
+        for iteration in 0..<max(0, iterations) {
             try Task.checkCancellation()
+            solving.tick(iteration, of: iterations)
             var next = positions
             for i in a.nodes.indices where !fixed[i] && !a.neighbors[i].isEmpty {
                 next[i] = a.neighbors[i].reduce(Point.zero) { $0 + positions[$1] } / Float(a.neighbors[i].count)
             }
             positions = next
         }
+        solving.end()
         for i in a.nodes.indices where !fixed[i] { a.nodes[i].center = positions[i] }
         // Averaging pulls nodes that share neighbors onto one point; spread them without moving anchors.
-        _ = try separateOverlaps(a.nodes, spacing: minSpacing, movable: fixed.map { !$0 })
+        _ = try LayoutStageScope.run("Separate overlaps", from: 0.85) { try separateOverlaps(a.nodes, spacing: minSpacing, movable: fixed.map { !$0 }) }
         straightEdges(graph)
     }
 }

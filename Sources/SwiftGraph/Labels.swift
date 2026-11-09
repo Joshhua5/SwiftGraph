@@ -71,17 +71,16 @@ public final class LabelLayoutAlgorithm {
             return i + energy(of: edges[idx], rect: edges[idx].labelBounds, others: others, flags: nil, flagOffset: 0, overlap: 100)
         }
         var best = current, bestBounds = edges.map(\.labelBounds)
-        let gpuStride = iterations > 500 ? 2 : max(1, iterations / 4)
-        for step in 0..<max(0, iterations) {
+        // A step compares two rectangles against every target: far below the round-trip threshold, and a flag
+        // would only skip an `intersects` test that costs as much, so annealing stays on the exact CPU path.
+        for _ in 0..<max(0, iterations) {
             if RoutingCompute.isCancelled { return }
             let moved = Int(random.next() * Double(edges.count)), edge = edges[moved], old = edge.labelBounds
             let others = edges.indices.filter { $0 != moved }.map { edges[$0].labelBounds }
             edge.labelBounds.x += (Float(random.next()) - 0.5) * temperature; edge.labelBounds.y += (Float(random.next()) - 0.5) * temperature
             let proposed = edge.labelBounds
-            let targets = obstacles + others
-            let pairFlags = (step % gpuStride == 0) ? compute?.candidates([old, proposed], targets) : nil
-            let before = energy(of: edge, rect: old, others: others, flags: pairFlags, flagOffset: 0, overlap: 200)
-            let after = energy(of: edge, rect: proposed, others: others, flags: pairFlags, flagOffset: targets.count, overlap: 200)
+            let before = energy(of: edge, rect: old, others: others, flags: nil, flagOffset: 0, overlap: 200)
+            let after = energy(of: edge, rect: proposed, others: others, flags: nil, flagOffset: 0, overlap: 200)
             let candidate = current - before + after
             if candidate < current || Float(random.next()) <= exp((current - candidate) / max(temperature, 1e-6)) { current = candidate }
             else { edge.labelBounds = old }

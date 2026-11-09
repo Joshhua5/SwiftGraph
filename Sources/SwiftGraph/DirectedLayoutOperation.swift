@@ -58,28 +58,43 @@ public struct DirectedLayoutOperation {
         if let constrained = constrainedConfiguration(for: original) {
             return try DirectedLayoutOperation(configuration: constrained, cache: cache).apply(original)
         }
-        guard let plan = try prepare(original) else { return .init() }
-        for component in plan.components {
+        guard let plan = try LayoutStageScope.run("Prepare", to: 0.05, { try prepare(original) }) else { return .init() }
+        let slices = plan.componentSlices
+        for (index, component) in plan.components.enumerated() {
             try Task.checkCancellation()
-            let run = DirectedComponentRun(self, plan, component)
-            for candidate in 0..<run.candidateCount {
-                try Task.checkCancellation()
-                if let placement = try run.place(candidate) { try placement.applyLayout(run.sub) }
-                run.placed()
-                try run.routeIncumbent()
-                let first = try run.measure()
-                let score = try run.routeCoordinated(after: first) ? try run.measure() : first
-                if run.settle(score) { break }
+            try LayoutStageScope.run("Component \(index + 1)/\(plan.components.count)", from: slices[index].from, to: slices[index].to) {
+                let run = DirectedComponentRun(self, plan, component)
+                for candidate in 0..<run.candidateCount {
+                    try Task.checkCancellation()
+                    let settled = try LayoutStageScope.run("Candidate \(candidate + 1)/\(run.candidateCount)",
+                        from: 0.8 * Double(candidate) / Double(run.candidateCount), to: 0.8 * Double(candidate + 1) / Double(run.candidateCount)) {
+                        if let placement = try run.place(candidate) { try LayoutStageScope.run("Hierarchy", to: 0.4) { try placement.applyLayout(run.sub) } }
+                        run.placed()
+                        return try LayoutStageScope.run("Routing", from: 0.4) {
+                            try run.routeIncumbent()
+                            let first = try run.measure()
+                            let score = try run.routeCoordinated(after: first) ? try run.measure() : first
+                            return run.settle(score)
+                        }
+                    }
+                    if settled { break }
+                }
+                try LayoutStageScope.run("Refinement", from: 0.8) {
+                    let candidates = run.refinementCandidates
+                    for (position, candidate) in candidates.enumerated() {
+                        LayoutStageScope.tick(position, of: candidates.count)
+                        try run.refine(candidate)
+                        run.keepRefined(try run.measure())
+                    }
+                }
+                run.finishRefinement()
+                try run.publish()
             }
-            for candidate in run.refinementCandidates {
-                try run.refine(candidate)
-                run.keepRefined(try run.measure())
-            }
-            run.finishRefinement()
-            try run.publish()
         }
-        pack(plan)
-        return try finish(plan, try DirectedGeometry.measure(nodes: plan.nodes, edges: plan.edges, spacing: configuration.edgeSpacing))
+        LayoutStageScope.run("Pack", from: 0.9, to: 0.95) { pack(plan) }
+        return try LayoutStageScope.run("Finish", from: 0.95) {
+            try finish(plan, try DirectedGeometry.measure(nodes: plan.nodes, edges: plan.edges, spacing: configuration.edgeSpacing))
+        }
     }
 
     /// Requests that depend on supplied geometry are first expressed as the equivalent constrained request.

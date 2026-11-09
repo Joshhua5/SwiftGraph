@@ -1,14 +1,17 @@
 import Foundation
 import SwiftGraph
+import SwiftGraphUI
 
 /// A production graph exported as compact topology JSON (the same format as `Tests/Fixtures/graph-topology.json`):
 /// array positions are node IDs, and `parent`/`source`/`target` are zero-based indices into `nodes`.
 struct ProductionTopology: Decodable, Sendable {
     struct Node: Decodable, Sendable { var parent: Int? }
-    struct Edge: Decodable, Sendable {
+    struct Edge: Decodable, Sendable, GraphEdgeDescriptor {
         var source: Int
         var target: Int
         var bidirectional: Bool
+
+        var isBidirectional: Bool { bidirectional }
     }
     var nodes: [Node]
     var edges: [Edge]

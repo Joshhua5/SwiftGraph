@@ -69,6 +69,7 @@ public final class AcceleratedOrganicLayoutAlgorithm: LayoutAlgorithm {
             } else {
                 for step in 0..<iterations {
                     try Task.checkCancellation()
+                    LayoutStageScope.tick(step, of: iterations)
                     let temperature = initialTemperature * (1 - Float(step) / Float(iterations))
                     state.positions = try cpuStep(state, parameters: parameters, temperature: temperature,
                                                   theta: backend == .cpuBarnesHut ? barnesHutTheta : nil)

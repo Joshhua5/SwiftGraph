@@ -185,7 +185,7 @@ struct MetalRoutingTests {
         await #expect(throws: LayoutExecutionError.precisionLimit) { try await explicit.applyLayoutAsync(a) }
         #expect(a.edges.map(\.path) == before)
         // Automatic only reaches Metal once a parallel group is large enough to repay the round trip.
-        for g in [a, b] { for _ in 0..<RoutingCompute.automaticElements { g.addEdge(LayoutEdge(source: g.nodes[0], target: g.nodes[1])) } }
+        for g in [a, b] { for _ in 0..<RoutingCompute.roundTripElements { g.addEdge(LayoutEdge(source: g.nodes[0], target: g.nodes[1])) } }
         let automatic = configured(.parallelEdges, backend: .automatic, executor: executor)
         automatic.configuration.minimumMetalEdgeCount = 0
         try await automatic.applyLayoutAsync(a); try await configured(.parallelEdges, backend: .cpu).applyLayoutAsync(b)
@@ -303,5 +303,18 @@ struct MetalRoutingTests {
         #expect(a.edges.map(\.path) == b.edges.map(\.path))
         #expect(await executor.statistics().submittedBatches == 0)
         #expect(automatic.lastMetrics?.backend == .cpu)
+    }
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [RoutingKind.bsp, .orthogonalGrouped, .polyline])
+    func explicitMetalWarmsUpOnceThenKeepsTinyQueriesOnCPU(_ kind: RoutingKind) async throws {
+        // Every per-edge query here is far below the round-trip threshold; only the warm-up call may reach the GPU.
+        let a = crowded(columns: 6, rows: 6, chain: 40), b = crowded(columns: 6, rows: 6, chain: 40)
+        let executor = LayoutExecutor(), cpu = configured(kind, backend: .cpu), metal = configured(kind, backend: .metal, executor: executor)
+        try await cpu.applyLayoutAsync(a); try await metal.applyLayoutAsync(b)
+        #expect(a.edges.map(\.path) == b.edges.map(\.path))
+        #expect(cpu.unroutableEdgeIndices == metal.unroutableEdgeIndices)
+        #expect(metal.lastMetrics?.backend == .metal)
+        let stats = await executor.statistics()
+        #expect(stats.submittedBatches >= 1 && stats.submittedBatches <= 3)
+        #expect(stats.submittedBatches == stats.completedBatches)
     }
 }

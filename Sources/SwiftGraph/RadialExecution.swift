@@ -32,12 +32,16 @@ public final class RadialLayoutOperation: LayoutExecutionReporting {
         let start = ContinuousClock.now, configuration = self.configuration
         try Task.checkCancellation(); try configuration.validate()
         let transaction = try LayoutTransaction(graph)
-        let result = try await executor.radial(try GraphCheckpoint(transaction.working).snapshot,
-            style: style, configuration: configuration, backend: backend)
+        let snapshot = try GraphCheckpoint(transaction.working).snapshot, executor = self.executor, style = self.style, backend = self.backend
+        let result = try await LayoutStageScope.run("Placement", to: 0.9) {
+            try await executor.radial(snapshot, style: style, configuration: configuration, backend: backend)
+        }
         for (node, bounds) in zip(transaction.working.nodes, result.bounds) { node.bounds = bounds }
         if result.routeEdges {
-            straightEdges(transaction.working)
-            ObstaclePolyline.repair(transaction.working)
+            LayoutStageScope.run("Route edges", from: 0.9) {
+                straightEdges(transaction.working)
+                ObstaclePolyline.repair(transaction.working)
+            }
         }
         try transaction.commit(to: graph)
         var metrics = result.metrics; metrics.totalSeconds = start.duration(to: .now).seconds
@@ -194,7 +198,8 @@ extension LayoutExecutor {
                 backend: LayoutBackend) async throws -> RadialResult {
         let start = ContinuousClock.now
         try Task.checkCancellation(); try configuration.validate(); try options.validate()
-        let graph = snapshot.makeGraph(), plan = try RadialPlacementPlan(graph, style: style)
+        let graph = snapshot.makeGraph(), plan = try LayoutStageScope.run("Plan", to: 0.2) { try RadialPlacementPlan(graph, style: style) }
+        let clearance = LayoutStageScope.begin("Clearance", from: 0.2, to: 0.7)
         var chosen = backend, reason: LayoutFallbackReason?, gpu: Double?, device: String?
         if plan.pairCount == 0 { chosen = .cpu; reason = .noWork }
         else if backend == .automatic {
@@ -226,8 +231,11 @@ extension LayoutExecutor {
                 chosen = .cpu; reason = .metalUnavailable
             }
         }
-        if chosen == .cpu { clearances = try plan.rings.map { try $0.cpuClearance() } }
-        try plan.apply(clearances, to: graph, spacing: configuration.spacing)
+        if chosen == .cpu {
+            clearances = try plan.rings.enumerated().map { index, ring in clearance.tick(index, of: plan.rings.count); return try ring.cpuClearance() }
+        }
+        clearance.end()
+        try LayoutStageScope.run("Apply", from: 0.7) { try plan.apply(clearances, to: graph, spacing: configuration.spacing) }
         try Task.checkCancellation()
         let elapsed = start.duration(to: .now).seconds
         return RadialResult(bounds: graph.nodes.map(\.bounds), routeEdges: style == .tree || !plan.components.isEmpty,

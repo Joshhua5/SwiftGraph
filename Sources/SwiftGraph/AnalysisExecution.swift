@@ -107,8 +107,9 @@ struct AnalysisState: Sendable {
     func cpuPageRank(_ configuration: PageRankConfiguration) throws -> [Double] {
         guard count > 0 else { return [] }
         var ranks = Array(repeating: 1 / Double(count), count: count)
-        for _ in 0..<configuration.iterations {
+        for iteration in 0..<configuration.iterations {
             try Task.checkCancellation()
+            LayoutStageScope.tick(iteration, of: configuration.iterations)
             let dangling = (0..<count).filter { degree[$0] == 0 }.reduce(0.0) { $0 + ranks[$1] }
             ranks = (0..<count).map { i in
                 let links = incoming[Int(incomingOffsets[i])..<Int(incomingOffsets[i + 1])].reduce(0.0) { $0 + ranks[Int($1)] / Double(degree[Int($1)]) }
@@ -119,8 +120,9 @@ struct AnalysisState: Sendable {
     }
     func cpuClusters() throws -> [Int] {
         var labels = Array(0..<count), order = labels, random = SeededRandom()
-        for _ in 0..<20 {
+        for round in 0..<20 {
             try Task.checkCancellation()
+            LayoutStageScope.tick(round, of: 20)
             shuffle(&order, random: &random)
             var changed = false
             for i in order {
@@ -167,14 +169,16 @@ extension LayoutExecutor {
                 guard metalEnabled else { throw OrganicLayoutError.metalUnavailable }
                 if metal == nil { metal = try MetalForceSolver() }
                 if kind == .pageRank {
-                    let result = try await metal!.pageRankAsync(state, configuration: pageRank, batchSize: options.iterationsPerBatch)
+                    let solver = metal!, batchSize = options.iterationsPerBatch
+                    let result = try await LayoutStageScope.run("Rank", to: 0.8) { try await solver.pageRankAsync(state, configuration: pageRank, batchSize: batchSize) }
                     ranks = result.ranks; gpu = result.gpuSeconds
                     let sorted = result.ranks.sorted(), uncertainty = state.pageRankErrorBound(iterations: pageRank.iterations) * 2
                     if zip(sorted, sorted.dropFirst()).contains(where: { $1 - $0 <= uncertainty }) {
                         // Numerical overlap can change hub selection. Recompute exact Double ranks
                         // together to preserve order and total mass; GPU iterations supplied the
                         // conservative ambiguity decision, so this cost is disclosed in metrics.
-                        let refinement = Task.detached { try state.cpuPageRank(pageRank) }
+                        let progress = LayoutStageScope.capture()
+                        let refinement = Task.detached { try progress.bind { try LayoutStageScope.run("Refine ranks", from: 0.8) { try state.cpuPageRank(pageRank) } } }
                         ranks = try await withTaskCancellationHandler { try await refinement.value } onCancel: { refinement.cancel() }
                         refinedRankOrdering = true
                     }

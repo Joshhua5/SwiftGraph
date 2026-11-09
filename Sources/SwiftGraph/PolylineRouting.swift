@@ -30,18 +30,23 @@ public final class PolylineEdgeRouter: EdgeRouter {
             for b in bends { corners[b.corner, default: []].append(b) }
             used[i] = bends
         }
+        let routing = LayoutStageScope.begin("Route", to: 0.6)
         for (i, edge) in edges.enumerated() {
             if RoutingCompute.isCancelled { return }
+            routing.tick(i, of: edges.count)
             let found = route(i)
             if RoutingCompute.isCancelled { return }
             if let found { edge.path = found.path; register(i, found.bends) } else { unroutableEdges.append(edge); edge.path = [edge.source.center, edge.target.center] }
             if edge.path.count > 2 { detoured.append(i) }
             routed.add(edge.path, owner: i)
         }
+        routing.end()
         // One rip-up pass: a detour found early could not see the routes laid after it.
         if crossingPenalty > 0 {
-            for i in detoured {
+            let ripUp = LayoutStageScope.begin("Rip-up", from: 0.6, to: 0.85)
+            for (position, i) in detoured.enumerated() {
                 if RoutingCompute.isCancelled { return }
+                ripUp.tick(position, of: detoured.count)
                 let edge = edges[i], old = edge.path
                 routed.remove(owner: i)
                 let before = ObstaclePolyline.cost(old, bend: bendPenalty, crossing: crossingPenalty, routed: routed)
@@ -50,9 +55,11 @@ public final class PolylineEdgeRouter: EdgeRouter {
                 }
                 routed.add(edge.path, owner: i)
             }
+            ripUp.end()
         }
         if edgeSpacing > 0 {
-            let separator = EdgeSeparator(); separator.spacing = edgeSpacing; separator.separate(edges, scene)
+            let separator = EdgeSeparator(); separator.spacing = edgeSpacing
+            LayoutStageScope.run("Separate", from: 0.85) { separator.separate(edges, scene) }
             unseparatedEdges = separator.unseparatedEdges
         }
     }
@@ -256,18 +263,35 @@ enum ObstaclePolyline {
             }
         }
         func remove(owner: Int) {
-            for i in byOwner.removeValue(forKey: owner) ?? [] { alive[i] = false }
+            for i in byOwner.removeValue(forKey: owner) ?? [] {
+                alive[i] = false
+                // Dead entries would otherwise stay in every cell list they were added to.
+                let (a, b) = segments[i]
+                visit(a, b) { c in if let k = cells[c].lastIndex(of: i) { cells[c].remove(at: k) } }
+            }
         }
         func crossings(_ a: Point, _ b: Point) -> Int {
             func side(_ p: Point, _ q: Point, _ r: Point) -> Float { (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) }
             query += 1
+            // The detour search calls this for every relaxed visibility edge; local copies and raw buffers
+            // keep the inner loop free of per-element exclusivity checks and retains.
+            let query = query, cells = cells, alive = alive, segments = segments
             var count = 0
-            visit(a, b) { c in
-                for i in cells[c] where alive[i] && stamps[i] != query {
-                    stamps[i] = query
-                    let (c, d) = segments[i]
-                    let d1 = side(a, b, c), d2 = side(a, b, d), d3 = side(c, d, a), d4 = side(c, d, b)
-                    if d1 * d2 < -1e-5 && d3 * d4 < -1e-5 { count += 1 }
+            segments.withUnsafeBufferPointer { segments in
+                alive.withUnsafeBufferPointer { alive in
+                    stamps.withUnsafeMutableBufferPointer { stamps in
+                        visit(a, b) { c in
+                            cells[c].withUnsafeBufferPointer { list in
+                                for i in list where alive[i] && stamps[i] != query {
+                                    stamps[i] = query
+                                    let (c, d) = segments[i]
+                                    // The second pair of sides only matters once the first pair straddles.
+                                    guard side(a, b, c) * side(a, b, d) < -1e-5 else { continue }
+                                    if side(c, d, a) * side(c, d, b) < -1e-5 { count += 1 }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             return count
@@ -305,7 +329,7 @@ enum ObstaclePolyline {
         return rect.inflated(by: -min(min(rect.width, rect.height) / 4, max(1e-4, magnitude.ulp * 2)))
     }
     static func clear(_ path: [Point], _ obstacles: [Rect]) -> Bool {
-        if let compute = RoutingCompute.current, compute.stages.isEmpty || max(0, path.count - 1) * obstacles.count >= 512 {
+        if let compute = RoutingCompute.current {
             return path.count >= 2 && compute.hits(path, obstacles).isEmpty
         }
         return path.count >= 2 && !zip(path, path.dropFirst()).contains { a, b in
@@ -326,7 +350,7 @@ enum ObstaclePolyline {
     }
 
     /// Shortest path (A* over the visibility graph of padded corners) that keeps the padding clear of `obstacles`.
-    /// A straight line needs only half the padding. `bend` charges a half-turn and `extra` a segment; both default to nothing.
+    /// A straight line needs only half the padding. `bend` charges a half-turn and `extra` a segment (never negative); both default to nothing.
     static func search(_ start: Point, _ end: Point, _ obstacles: [Rect], padding: Float, bend: Float = 0,
                        extra: ((Point, Point) -> Float)? = nil) -> [Point]? {
         guard !obstacles.contains(where: { $0.contains(start) || $0.contains(end) }) else { return nil }
@@ -335,15 +359,24 @@ enum ObstaclePolyline {
         var points = [start, end], seen: Set<Point> = [start, end]
         let expanded = obstacles.map { probe($0, start, end, gap, straight: false) }
         let padded = obstacles.map { $0.inflated(by: clearance($0, start, end, gap)) }
+        let tree = QuadTree<Rect>(bounds: expanded.dropFirst().reduce(expanded[0]) { $0.union($1) }.inflated(by: 1))
+        for r in expanded { tree.insert(bounds: r, item: r) }
+        // The tree only finds rects with area; a degenerate one would be missed, so then scan them all.
+        let indexed = expanded.allSatisfy { $0.width > 0 && $0.height > 0 }
+        func covered(_ p: Point) -> Bool {
+            guard indexed else { return expanded.contains { $0.contains(p) } }
+            // Inflated so rects whose closed edge touches `p` still intersect the probe; `contains` decides.
+            let area = Rect(x: p.x, y: p.y, width: 0, height: 0).inflated(by: max(1e-3, max(abs(p.x), abs(p.y)) * 1e-5))
+            return tree.contains(intersecting: area) { r, _ in r.contains(p) }
+        }
+        points.reserveCapacity(2 + 4 * padded.count)
         for r in padded {
             if RoutingCompute.isCancelled { return nil }
             for point in [Point(x: r.left, y: r.top), Point(x: r.right, y: r.top),
                           Point(x: r.right, y: r.bottom), Point(x: r.left, y: r.bottom)] {
-                if !expanded.contains(where: { $0.contains(point) }), seen.insert(point).inserted { points.append(point) }
+                if !covered(point), seen.insert(point).inserted { points.append(point) }
             }
         }
-        let tree = QuadTree<Rect>(bounds: expanded.dropFirst().reduce(expanded[0]) { $0.union($1) }.inflated(by: 1))
-        for r in expanded { tree.insert(bounds: r, item: r) }
         func visible(_ a: Point, _ b: Point) -> Bool {
             let area = Rect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).inflated(by: 1e-5)
             return !tree.contains(intersecting: area) { r, _ in r.intersectsLine(a, b) }
@@ -364,7 +397,9 @@ enum ObstaclePolyline {
                 heap[0] = last; var c = 0
                 while true {
                     var m = c
-                    for child in [2 * c + 1, 2 * c + 2] where child < heap.count && before(heap[child], heap[m]) { m = child }
+                    let left = 2 * c + 1, right = left + 1
+                    if left < heap.count && before(heap[left], heap[m]) { m = left }
+                    if right < heap.count && before(heap[right], heap[m]) { m = right }
                     if m == c { break }
                     heap.swapAt(c, m); c = m
                 }
@@ -386,7 +421,8 @@ enum ObstaclePolyline {
                 if bend > 0, previous[current] >= 0 {
                     candidate += bend * turn(points[previous[current]], points[current], points[next]) / .pi
                 }
-                if let extra { candidate += extra(points[current], points[next]) }
+                // `extra` is never negative, so it cannot rescue a candidate that already loses.
+                if let extra, candidate < cost[next] { candidate += extra(points[current], points[next]) }
                 if candidate < cost[next] { cost[next] = candidate; previous[next] = current; push((candidate + heuristic[next], next)) }
             }
         }

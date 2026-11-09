@@ -259,11 +259,15 @@ extension GroupLayoutEngine {
         // may not obstruct any previously clear path, including paths it does not reroute.
         var clearEdges = graph.edges.filter { $0.path.count >= 2 && initialScene.clear($0.path, $0) }
         var anyChanged = false
+        // Two rounds over every child; a settled first round ends early and the caller's stage completes it.
+        let candidates = groups.reduce(0) { $0 + $1.children.count }
+        var visited = 0
         for _ in 0..<2 {
             var changed = false
             for group in groups.reversed() {
                 for node in group.children where group !== graph.root || node.isGroup {
                     try Task.checkCancellation()
+                    LayoutStageScope.tick(visited, of: 2 * candidates); visited += 1
                     let moved = [node] + (descendants[node] ?? []), members = Set(moved)
                     var ancestor: LayoutNode? = node, fixed = moved.contains { $0.metadata[GraphMetadataKeys.fixed] as? Bool == true }
                     while let current = ancestor {

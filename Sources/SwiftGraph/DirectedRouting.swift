@@ -578,8 +578,9 @@ final class DirectedRouter {
                 if let path = validated(start, guide, end, others: others) { edge.path = path; committed.insert(edge); record(edge) }
             }
         }
-        for edge in order {
+        for (position, edge) in order.enumerated() {
             try Task.checkCancellation()
+            if position & 31 == 0 { LayoutStageScope.tick(position, of: order.count) }
             if retained.contains(edge) || committed.contains(edge) { continue }
             let base = ports[edge]!
             let fraction = (Float(trackIndex[edge]!) + 1) / Float(edges.count + 1)

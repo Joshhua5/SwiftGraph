@@ -73,7 +73,8 @@ public extension LayoutBuilder {
     @discardableResult func applyWithSmoothCurves(curveFittingIterations: Int = 3) -> Self { routePolyline().clipEdgeEndpoints().distributePorts().routeCurveFitting { $0.iterations = curveFittingIterations }.routeSelfLoops().clipEdgeEndpoints() }
     @discardableResult func applyWithBspRouting() -> Self { routeBsp().routeSelfLoops().clipEdgeEndpoints().distributePorts() }
     @discardableResult func applyEnterpriseArchitecture(nodeSeparation: Float = 80, layerSeparation: Float = 120, componentSpacing: Float = 50) -> Self {
-        let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = nodeSeparation; core.layerSeparation = layerSeparation
+        // BSP reroutes every owned edge, so the core's own layered routes would be discarded unseen.
+        let core = HierarchicalLayoutAlgorithm(); core.nodeSeparation = nodeSeparation; core.layerSeparation = layerSeparation; core.routesEdges = false
         let components = ComponentLayout(core); components.componentSpacing = componentSpacing; components.preferredAspectRatio = 1.5
         return analyzePageRank().groupedPreset(components, routing: .bsp)
     }

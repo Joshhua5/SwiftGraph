@@ -10,6 +10,8 @@ private struct ProductionRow: Codable {
     var requestedBackend: String
     var trial: Int
     var cold: Bool
+    /// "noop" when an empty progress listener was attached.
+    var progress: String
     var actualBackends: [String] = []
     var fallbackReasons: [String] = []
     var cpuStages: [String] = []
@@ -112,6 +114,7 @@ func runProductionBenchmark(_ arguments: [String]) async throws {
     let trials = max(1, Int(option("--trials") ?? "3") ?? 3)
     let iterations = option("--iterations").flatMap(Int.init)
     let routing = option("--routing") ?? "polyline"
+    let progress = option("--progress") ?? "none"
     let basicOperations = BasicLayoutStyle.allCases.map(\.rawValue)
     let treeOperations = TreeLayoutStyle.allCases.map(\.rawValue)
     let routingOperations = RoutingKind.allCases.map { "route-" + $0.rawValue }
@@ -121,7 +124,7 @@ func runProductionBenchmark(_ arguments: [String]) async throws {
     guard !sizes.isEmpty, operations.allSatisfy({ supportedOperations.contains($0) }),
           fixtures.allSatisfy({ ["sparse", "dense", "components", "pinned", "subset", "groups", "isolated"].contains($0) }),
           backends.allSatisfy({ LayoutBackend(rawValue: $0) != nil }),
-          ["none", "polyline"].contains(routing), iterations.map({ $0 >= 0 }) ?? true else {
+          ["none", "polyline"].contains(routing), ["none", "noop"].contains(progress), iterations.map({ $0 >= 0 }) ?? true else {
         throw LayoutExecutionError.invalidInput("Invalid production benchmark arguments")
     }
     if arguments.contains("--require-metal") && !LayoutExecutor.isMetalAvailable { throw OrganicLayoutError.metalUnavailable }
@@ -136,66 +139,71 @@ func runProductionBenchmark(_ arguments: [String]) async throws {
                     for trial in 0..<trials {
                         let graph = productionGraph(size, kind: fixture)
                         var row = ProductionRow(operation: operation, fixture: fixture, nodes: graph.nodes.count, edges: graph.edges.count,
-                                                requestedBackend: requested, trial: trial, cold: trial == 0)
+                                                requestedBackend: requested, trial: trial, cold: trial == 0, progress: progress)
                         if backend == .metal && !LayoutExecutor.isMetalAvailable {
                             row.skipped = "Metal device unavailable"; rows.append(row); break
                         }
                         let before = await executor.statistics(), start = ContinuousClock.now
                         var metrics: [LayoutExecutionMetrics] = []
-                        switch operation {
-                        case "organic":
-                            var configuration = OrganicLayoutConfiguration()
-                            if let iterations { configuration.iterations = iterations }
-                            if fixture == "subset" { configuration.scope = .subset }
-                            let recorder = RecordingOrganic(OrganicLayoutOperation(backend: backend, executor: executor, configuration: configuration))
-                            if fixture == "groups" { try await RecursiveGroupLayoutOperation(recorder).applyLayoutAsync(graph) }
-                            else { try await recorder.applyLayoutAsync(graph) }
-                            metrics = recorder.metrics; row.solverIterations = recorder.iterations
-                        case "barycenter":
-                            var configuration = BarycenterLayoutConfiguration()
-                            if let iterations { configuration.iterations = iterations }
-                            let layout = BarycenterLayoutOperation(backend: backend, executor: executor, configuration: configuration)
-                            try await layout.applyLayoutAsync(graph)
-                            metrics = layout.lastMetrics.map { [$0] } ?? []; row.solverIterations = configuration.iterations
-                        case "radial", "radial-star", "radial-tree":
-                            let style: RadialLayoutStyle = operation == "radial-star" ? .star : operation == "radial-tree" ? .tree : .radial
-                            let layout = RadialLayoutOperation(style: style, backend: backend, executor: executor)
-                            try await layout.applyLayoutAsync(graph)
-                            metrics = layout.lastExecutionMetrics
-                        case "bundling":
-                            var configuration = EdgeBundlingConfiguration()
-                            if let iterations { configuration.iterations = iterations }
-                            let layout = EdgeBundlingOperation(backend: backend, executor: executor, configuration: configuration)
-                            try await layout.applyLayoutAsync(graph)
-                            metrics = layout.lastMetrics.map { [$0] } ?? []; row.solverIterations = configuration.iterations
-                        default:
-                            let layout: any LayoutExecutionReporting
-                            if let style = BasicLayoutStyle(rawValue: operation) {
-                                layout = BasicLayoutOperation(style: style, backend: backend, executor: executor)
-                            } else if let style = TreeLayoutStyle(rawValue: operation) {
-                                layout = TreeLayoutOperation(style: style, backend: backend, executor: executor)
-                            } else if operation.hasPrefix("route-"), let kind = RoutingKind(rawValue: String(operation.dropFirst(6))) {
-                                // Supply usable paths and labels for edge-finishing operations.
-                                for edge in graph.edges {
-                                    edge.path = [edge.source.center, (edge.source.center + edge.target.center) / 2 + Point(x: 20, y: 30), edge.target.center]
-                                    edge.labelBounds = Rect(x: edge.path[1].x, y: edge.path[1].y, width: 40, height: 15)
+                        // `--progress noop` attaches an empty listener, measuring reporting overhead against `none`.
+                        func runOperation() async throws {
+                            switch operation {
+                            case "organic":
+                                var configuration = OrganicLayoutConfiguration()
+                                if let iterations { configuration.iterations = iterations }
+                                if fixture == "subset" { configuration.scope = .subset }
+                                let recorder = RecordingOrganic(OrganicLayoutOperation(backend: backend, executor: executor, configuration: configuration))
+                                if fixture == "groups" { try await RecursiveGroupLayoutOperation(recorder).applyLayoutAsync(graph) }
+                                else { try await recorder.applyLayoutAsync(graph) }
+                                metrics = recorder.metrics; row.solverIterations = recorder.iterations
+                            case "barycenter":
+                                var configuration = BarycenterLayoutConfiguration()
+                                if let iterations { configuration.iterations = iterations }
+                                let layout = BarycenterLayoutOperation(backend: backend, executor: executor, configuration: configuration)
+                                try await layout.applyLayoutAsync(graph)
+                                metrics = layout.lastMetrics.map { [$0] } ?? []; row.solverIterations = configuration.iterations
+                            case "radial", "radial-star", "radial-tree":
+                                let style: RadialLayoutStyle = operation == "radial-star" ? .star : operation == "radial-tree" ? .tree : .radial
+                                let layout = RadialLayoutOperation(style: style, backend: backend, executor: executor)
+                                try await layout.applyLayoutAsync(graph)
+                                metrics = layout.lastExecutionMetrics
+                            case "bundling":
+                                var configuration = EdgeBundlingConfiguration()
+                                if let iterations { configuration.iterations = iterations }
+                                let layout = EdgeBundlingOperation(backend: backend, executor: executor, configuration: configuration)
+                                try await layout.applyLayoutAsync(graph)
+                                metrics = layout.lastMetrics.map { [$0] } ?? []; row.solverIterations = configuration.iterations
+                            default:
+                                let layout: any LayoutExecutionReporting
+                                if let style = BasicLayoutStyle(rawValue: operation) {
+                                    layout = BasicLayoutOperation(style: style, backend: backend, executor: executor)
+                                } else if let style = TreeLayoutStyle(rawValue: operation) {
+                                    layout = TreeLayoutOperation(style: style, backend: backend, executor: executor)
+                                } else if operation.hasPrefix("route-"), let kind = RoutingKind(rawValue: String(operation.dropFirst(6))) {
+                                    // Supply usable paths and labels for edge-finishing operations.
+                                    for edge in graph.edges {
+                                        edge.path = [edge.source.center, (edge.source.center + edge.target.center) / 2 + Point(x: 20, y: 30), edge.target.center]
+                                        edge.labelBounds = Rect(x: edge.path[1].x, y: edge.path[1].y, width: 40, height: 15)
+                                    }
+                                    layout = RoutingLayoutOperation(kind, backend: backend, executor: executor)
+                                } else {
+                                    switch operation {
+                                    case "hierarchical": layout = HierarchicalLayoutOperation(backend: backend, executor: executor)
+                                    case "seriesParallel": layout = SeriesParallelLayoutOperation(backend: backend, executor: executor)
+                                    case "directed": layout = DirectedLayoutAsyncOperation(backend: backend, executor: executor)
+                                    case "pageRank", "clusters":
+                                        var pageRank = PageRankConfiguration(); if let iterations { pageRank.iterations = iterations }
+                                        layout = AnalysisLayoutOperation(operation == "pageRank" ? .pageRank : .clusters,
+                                            backend: backend, executor: executor, pageRank: pageRank)
+                                    case "swimlane": layout = SwimlaneLayoutOperation(backend: backend, executor: executor)
+                                    default: layout = MultiPageLayoutOperation(backend: backend, executor: executor)
+                                    }
                                 }
-                                layout = RoutingLayoutOperation(kind, backend: backend, executor: executor)
-                            } else {
-                                switch operation {
-                                case "hierarchical": layout = HierarchicalLayoutOperation(backend: backend, executor: executor)
-                                case "seriesParallel": layout = SeriesParallelLayoutOperation(backend: backend, executor: executor)
-                                case "directed": layout = DirectedLayoutAsyncOperation(backend: backend, executor: executor)
-                                case "pageRank", "clusters":
-                                    var pageRank = PageRankConfiguration(); if let iterations { pageRank.iterations = iterations }
-                                    layout = AnalysisLayoutOperation(operation == "pageRank" ? .pageRank : .clusters,
-                                        backend: backend, executor: executor, pageRank: pageRank)
-                                case "swimlane": layout = SwimlaneLayoutOperation(backend: backend, executor: executor)
-                                default: layout = MultiPageLayoutOperation(backend: backend, executor: executor)
-                                }
+                                try await layout.applyLayoutAsync(graph); metrics = layout.lastExecutionMetrics
                             }
-                            try await layout.applyLayoutAsync(graph); metrics = layout.lastExecutionMetrics
                         }
+                        if progress == "noop" { try await withLayoutProgress({ _ in }) { try await runOperation() } }
+                        else { try await runOperation() }
                         row.operationMilliseconds = milliseconds(start.duration(to: .now))
                         let routingStart = ContinuousClock.now
                         // Bundling is already a routing operation; do not overwrite its result.

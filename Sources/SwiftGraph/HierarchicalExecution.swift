@@ -102,13 +102,16 @@ extension LayoutExecutor {
         }
         if chosen == .metal {
             do {
-                let plan = try HierarchyPlacementPlan(graph, configuration: configuration)
+                let plan = try LayoutStageScope.run("Plan", to: 0.1) { try HierarchyPlacementPlan(graph, configuration: configuration) }
                 try plan.validateMetal(tolerance: options.maximumCoordinateError)
                 guard metalEnabled else { throw OrganicLayoutError.metalUnavailable }
                 if metal == nil { metal = try MetalForceSolver() }
-                let result = try await metal!.hierarchyAsync(plan, directed: false, retainBest: false)
+                let solver = metal!
+                let result = try await LayoutStageScope.run("Ordering", from: 0.1, to: 0.6) {
+                    try await solver.hierarchyAsync(plan, directed: false, retainBest: false)
+                }
                 metalWork = true; gpu = result.gpuSeconds; device = metal!.deviceName
-                try plan.apply(result, to: graph)
+                try LayoutStageScope.run("Placement", from: 0.6) { try plan.apply(result, to: graph) }
             } catch LayoutExecutionError.precisionLimit where backend == .automatic {
                 chosen = .cpu; reason = .precisionLimit
             } catch OrganicLayoutError.metalUnavailable where backend == .automatic {
@@ -171,6 +174,7 @@ struct HierarchyPlacementPlan: Sendable {
         chains = Array(repeating: [], count: graph.edges.count); flows = Array(repeating: nil, count: graph.edges.count)
         for (index, edge) in graph.edges.enumerated() {
             try Task.checkCancellation()
+            if index & 255 == 0 { LayoutStageScope.tick(index, of: graph.edges.count) }
             guard let source = adjacency.index[edge.source], let target = adjacency.index[edge.target], source != target else { continue }
             let delta = ranks[target] - ranks[source], span = abs(delta)
             flows[index] = delta.signum()
@@ -234,7 +238,8 @@ struct HierarchyPlacementPlan: Sendable {
         }
         // Reconstruct from GPU decisions. The KKT checks reject Float decisions
         // that would violate isotonic projection, allowing automatic CPU fallback.
-        for pass in 0..<3 {
+        try LayoutStageScope.run("Coordinates", to: 0.6) { for pass in 0..<3 {
+            LayoutStageScope.tick(pass, of: 3)
             for rank in (pass % 2 == 0 ? Array(ordered.indices) : Array(ordered.indices.reversed())) {
                 try Task.checkCancellation()
                 let layer = ordered[rank]
@@ -276,13 +281,13 @@ struct HierarchyPlacementPlan: Sendable {
                     previous = mean
                 }
             }
-        }
+        } }
         let ys = offsets(heights, gap: layerSeparation)
         for i in 0..<originalCount { graph.nodes[i].center = Point(x: xs[i], y: ys[ranks[i]] + heights[ranks[i]] / 2) }
         guard routesEdges else { return }
         let routed: [[Point]?] = chains.indices.map { i in
             flows[i] == nil ? nil : chains[i].map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
         }
-        try routeLayeredEdges(graph, chains: routed, flows: flows)
+        try LayoutStageScope.run("Route edges", from: 0.6) { try routeLayeredEdges(graph, chains: routed, flows: flows) }
     }
 }

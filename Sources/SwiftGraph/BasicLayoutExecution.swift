@@ -100,8 +100,15 @@ public final class BasicLayoutOperation: LayoutExecutionReporting {
         try Task.checkCancellation(); try configuration.validate(style)
         let transaction = try LayoutTransaction(graph)
         let computeStart = ContinuousClock.now
-        let state = try basicPlacementState(transaction.working, style: style, configuration: configuration)
-        var result = try await executor.placement(state, backend: backend)
+        let state = try LayoutStageScope.run("Plan", to: 0.1) { try basicPlacementState(transaction.working, style: style, configuration: configuration) }
+        let style = self.style, executor = self.executor, backend = self.backend
+        var result = try await LayoutStageScope.run("Placement", from: 0.1, to: 0.8) {
+            let result = try await executor.placement(state, backend: backend)
+            if result.bounds == nil { try configuration.algorithm(style).applyLayout(transaction.working) }
+            return result
+        }
+        let routing = LayoutStageScope.begin("Route edges", from: 0.8)
+        defer { routing.end() }
         if let bounds = result.bounds {
             let previous = transaction.working.nodes.map(\.bounds)
             for (node, bound) in zip(transaction.working.nodes, bounds) { node.bounds = bound }
@@ -122,7 +129,6 @@ public final class BasicLayoutOperation: LayoutExecutionReporting {
             if style == .removeOverlaps { result.metrics.cpuStages.append("edge path translation") }
             else if style != .verticalStack { result.metrics.cpuStages.append("edge routing") }
         } else {
-            try configuration.algorithm(style).applyLayout(transaction.working)
             result.metrics.cpuStages = ["node placement"]
             if style != .verticalStack && style != .removeOverlaps { result.metrics.cpuStages.append("edge routing") }
         }

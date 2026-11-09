@@ -92,19 +92,21 @@ extension PresetRouting {
             builder.routePolyline(backend: backend, executor: executor)
             if case let .bundled(k) = self { builder.routeWithBundling(backend: backend, executor: executor) { $0.k = k } }
         case .layered, .curves:
-            builder.transform { ObstaclePolyline.repair($0, shortenDetours: true) }
+            builder.transform { g in LayoutStageScope.run("Pre-separation repair") { _ = ObstaclePolyline.repair(g, shortenDetours: true) } }
                 .separateEdges(backend: backend, executor: executor)
             if case let .curves(iterations) = self { builder.routeCurveFitting(backend: backend, executor: executor) { $0.iterations = iterations } }
         case .bsp: builder.routeBsp(backend: backend, executor: executor)
         case .channel: builder.routeChannel(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
         }
         builder.routeSelfLoops(backend: backend, executor: executor)
-            .transform { ObstaclePolyline.repair($0, spacing: 0, shortenDetours: true) }
+            .transform { g in LayoutStageScope.run("Post-routing repair") { _ = ObstaclePolyline.repair(g, spacing: 0, shortenDetours: true) } }
             .clipEdgeEndpoints(backend: backend, executor: executor)
             .distributePorts(backend: backend, executor: executor)
         try await builder.applyAsync()
-        let scene = ObstaclePolyline.Scene(graph.nodes)
-        let failed = graph.edges.filter { !scene.clear($0.path, $0) }
+        let failed = LayoutStageScope.run("Verify clearance") {
+            let scene = ObstaclePolyline.Scene(graph.nodes)
+            return graph.edges.filter { !scene.clear($0.path, $0) }
+        }
         return (failed, builder.lastExecutionMetrics)
     }
 }

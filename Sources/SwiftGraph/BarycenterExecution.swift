@@ -73,9 +73,12 @@ extension LayoutExecutor {
                 guard metalEnabled else { throw OrganicLayoutError.metalUnavailable }
                 if metal == nil { metal = try MetalForceSolver() }
                 let workBound = max(1, Int(min(64, 16_777_216 / Double(max(1, prepared.state.neighbors.count)))))
-                let result = try await metal!.solveAsync(prepared.state, iterations: configuration.iterations,
-                    temperature: 0, parameters: ForceParameters(repulsionSquared: 0, attraction: 0),
-                    batchSize: min(options.iterationsPerBatch, workBound), barycenter: true)
+                let solver = metal!, batchSize = min(options.iterationsPerBatch, workBound)
+                let result = try await LayoutStageScope.run("Solve", to: 0.85) {
+                    try await solver.solveAsync(prepared.state, iterations: configuration.iterations,
+                        temperature: 0, parameters: ForceParameters(repulsionSquared: 0, attraction: 0),
+                        batchSize: batchSize, barycenter: true)
+                }
                 guard result.positions.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
                     throw OrganicLayoutError.metalFailure("Non-finite barycenter output")
                 }
@@ -87,7 +90,9 @@ extension LayoutExecutor {
                     graph.nodes[i].center = Point(x: result.positions[i].x + prepared.origin.x,
                                                  y: result.positions[i].y + prepared.origin.y)
                 }
-                _ = try separateOverlaps(graph.nodes, spacing: configuration.minSpacing, movable: fixed.map { !$0 })
+                _ = try LayoutStageScope.run("Separate overlaps", from: 0.85) {
+                    try separateOverlaps(graph.nodes, spacing: configuration.minSpacing, movable: fixed.map { !$0 })
+                }
             } catch LayoutExecutionError.precisionLimit where backend == .automatic {
                 chosen = .cpu; reason = .precisionLimit
             } catch OrganicLayoutError.metalUnavailable where backend == .automatic {
