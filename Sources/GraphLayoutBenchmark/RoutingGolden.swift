@@ -8,12 +8,18 @@ import SwiftGraph
 ///         --routers polyline,bus,channel,bsp,parallel --dump golden.json
 private struct GoldenTopology: Decodable {
     struct Node: Decodable { var parent: Int? }
-    struct Edge: Decodable { var source: Int; var target: Int }
+
+    struct Edge: Decodable {
+        var source: Int
+        var target: Int
+    }
+
     var nodes: [Node]
     var edges: [Edge]
 
     func makeGraph(edgeLimit: Int) throws -> LayoutGraph {
-        let graph = LayoutGraph(), groups = Set(nodes.compactMap(\.parent))
+        let graph = LayoutGraph()
+        let groups = Set(nodes.compactMap(\.parent))
         for index in nodes.indices {
             let node = LayoutNode(id: "\(index)", width: 80, height: 32)
             node.isGroup = groups.contains(index)
@@ -24,7 +30,9 @@ private struct GoldenTopology: Decodable {
         for (index, node) in nodes.enumerated() {
             if let parent = node.parent { try graph.moveNode(graph.nodes[index], to: graph.nodes[parent]) }
         }
-        for edge in edges.prefix(edgeLimit) { graph.addEdge(LayoutEdge(source: graph.nodes[edge.source], target: graph.nodes[edge.target])) }
+        for edge in edges.prefix(edgeLimit) {
+            graph.addEdge(LayoutEdge(source: graph.nodes[edge.source], target: graph.nodes[edge.target]))
+        }
         return graph
     }
 }
@@ -32,6 +40,7 @@ private struct GoldenTopology: Decodable {
 private struct GoldenCase: Codable {
     var name: String
     var milliseconds: Double
+
     /// Node bounds then edge paths, as "x,y" with round-trip-exact Float descriptions.
     var nodes: [String]
     var paths: [[String]]
@@ -58,9 +67,11 @@ func runRoutingGolden(_ arguments: [String]) async throws {
     let topologyPath = option("--topology") ?? "docs/graph-topology.json"
     let limits = (option("--edge-limits") ?? "150,300").split(separator: ",").compactMap { Int($0) }
     let routers = (option("--routers") ?? "polyline,bus,channel,bsp,parallel").split(separator: ",").map(String.init)
-    let patterns = (option("--patterns") ?? "enterpriseArchitecture").split(separator: ",").compactMap { LayoutPatternType(rawValue: String($0)) }
+    let patterns = (option("--patterns") ?? "enterpriseArchitecture").split(separator: ",")
+        .compactMap { LayoutPatternType(rawValue: String($0)) }
     guard routers.allSatisfy({ router($0) != nil }) else { throw LayoutExecutionError.invalidInput("Unknown router") }
-    let topology = try JSONDecoder().decode(GoldenTopology.self, from: Data(contentsOf: URL(fileURLWithPath: topologyPath)))
+    let topology = try JSONDecoder()
+        .decode(GoldenTopology.self, from: Data(contentsOf: URL(fileURLWithPath: topologyPath)))
     var cases: [GoldenCase] = []
 
     func record(_ name: String, _ graph: LayoutGraph, _ work: () async throws -> Void) async throws {
@@ -70,12 +81,24 @@ func runRoutingGolden(_ arguments: [String]) async throws {
         let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
         FileHandle.standardError.write(Data("\(name): \(String(format: "%.1f", ms)) ms\n".utf8))
         for stage in stages where stage.totalSeconds * 1000 >= 1 {
-            let line = "    \(stage.path.joined(separator: " / ")): \(String(format: "%.1f", stage.totalSeconds * 1000)) ms x\(stage.callCount)\n"
+            let line =
+                "    \(stage.path.joined(separator: " / ")): \(String(format: "%.1f", stage.totalSeconds * 1000)) ms x\(stage.callCount)\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
-        cases.append(GoldenCase(name: name, milliseconds: ms,
-            nodes: graph.nodes.map { "\(describe(Point(x: $0.bounds.left, y: $0.bounds.top))) \(describe(Point(x: $0.bounds.right, y: $0.bounds.bottom)))" },
-            paths: graph.edges.map { $0.path.map(describe) + ["label \(describe(Point(x: $0.labelBounds.left, y: $0.labelBounds.top))) \(describe(Point(x: $0.labelBounds.right, y: $0.labelBounds.bottom)))"] }))
+        cases.append(
+            GoldenCase(
+                name: name,
+                milliseconds: ms,
+                nodes: graph.nodes.map {
+                    "\(describe(Point(x: $0.bounds.left, y: $0.bounds.top))) \(describe(Point(x: $0.bounds.right, y: $0.bounds.bottom)))"
+                },
+                paths: graph.edges.map {
+                    $0.path.map(describe) + [
+                        "label \(describe(Point(x: $0.labelBounds.left, y: $0.labelBounds.top))) \(describe(Point(x: $0.labelBounds.right, y: $0.labelBounds.bottom)))"
+                    ]
+                }
+            )
+        )
     }
 
     for limit in limits {
@@ -92,10 +115,12 @@ func runRoutingGolden(_ arguments: [String]) async throws {
         for name in routers {
             for (node, center) in zip(placed.nodes, centers) { node.center = center }
             for edge in placed.edges { edge.path = [] }
+            // Every name in `routers` was checked against `router(_:)` before any case ran.
             try await record("\(limit) router \(name)", placed) { router(name)!.routeEdges(placed) }
         }
     }
-    let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(cases)
     if let path = option("--dump") { try data.write(to: URL(fileURLWithPath: path)) }
 }

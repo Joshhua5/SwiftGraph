@@ -259,6 +259,32 @@ along route segments. Label optimization retains its best state and preserves
 measured sizes. Crowded drawings can still have unresolved collisions; the visual
 evaluator reports them explicitly.
 
+## Package layout
+
+Each file holds one primary type and is named after it; extensions that add a capability to a shared type are
+named `Type+Purpose.swift` and live with the feature they serve (for example
+`Layouts/Directed/LayoutBuilder+Directed.swift`).
+
+| Folder in `Sources/SwiftGraph` | Contents |
+|---|---|
+| `Model/` | `LayoutGraph`, `LayoutNode`, `LayoutEdge`, geometry values and the algorithm protocols |
+| `Pipeline/` | `LayoutBuilder`, presets and patterns, transactions and progress reporting |
+| `Execution/` | `LayoutExecutor`, backends, metrics and geometry snapshots |
+| `Layouts/<Family>/` | One folder per layout family (Basic, Tree, Radial, Hierarchical, Directed, Organic, Barycenter, Compound) with its algorithm, configuration, operation and builder extension |
+| `Routing/` | Edge routers, separation, port distribution and routing execution |
+| `Analysis/` | PageRank, clustering and the analysis-driven layouts |
+| `Labels/` | Label placement and collision repair |
+| `Spatial/` | Quad trees and BSP/channel grids |
+| `Metal/` | GPU solvers (`MetalForceSolver` and its extensions, `RoutingCompute`) |
+| `Shaders/` | Metal shader sources, bundled as a resource |
+
+`Tests/SwiftGraphTests` mirrors these folders, and `Tests/Support` holds the shared evaluation, rendering and
+catalogue code used by the tests and the command-line tools.
+
+Formatting follows the checked-in `.swift-format` (4 spaces, 120 columns). Run
+`xcrun swift-format format -i -r Sources Tests` before committing and `xcrun swift-format lint -r Sources Tests`
+to check.
+
 ## Tests
 
 Generate a visual gallery of layouts and routing, with PNG/SVG images, geometry

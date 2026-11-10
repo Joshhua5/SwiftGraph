@@ -48,7 +48,9 @@ public struct GalleryView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             .toolbar {
                 ToolbarItem(placement: .automatic) {
-                    Button { topologies = TopologyLibrary.scan() } label: {
+                    Button {
+                        topologies = TopologyLibrary.scan()
+                    } label: {
                         Label("Rescan Topologies", systemImage: "arrow.clockwise")
                     }
                     .help("Rescan the Topologies folder")
@@ -103,6 +105,7 @@ private struct ExampleInfoView: View {
     let title: String
     let category: String
     let info: ExampleInfo
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

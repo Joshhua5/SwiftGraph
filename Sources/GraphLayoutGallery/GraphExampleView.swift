@@ -9,6 +9,7 @@ struct GraphExampleView: View {
 
     private var externalBackend: Binding<LayoutBackend>?
     private var prerenderedResult: Result<GraphSnapshot, any Error>?
+
     @State private var ownedBackend: LayoutBackend = .cpu
     @State private var snapshot: GraphSnapshot?
     @State private var showLabels = true
@@ -70,8 +71,10 @@ struct GraphExampleView: View {
                 let leafCount = snapshot.nodes.filter { !$0.isGroup }.count
                 let groupCount = snapshot.nodes.count - leafCount
                 let nodeSummary = groupCount > 0 ? "\(leafCount) nodes · \(groupCount) groups" : "\(leafCount) nodes"
-                Text("\(nodeSummary) · \(snapshot.edges.count) edges · \(snapshot.duration.formatted(.units(allowed: [.milliseconds], width: .narrow)))")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(
+                    "\(nodeSummary) · \(snapshot.edges.count) edges · \(snapshot.duration.formatted(.units(allowed: [.milliseconds], width: .narrow)))"
+                )
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             Picker("Backend", selection: backendBinding) {
                 Text("CPU").tag(LayoutBackend.cpu)

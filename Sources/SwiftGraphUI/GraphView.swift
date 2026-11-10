@@ -32,7 +32,8 @@ public struct GraphView: View {
         externalViewport ?? $ownedViewport
     }
 
-    /// Creates a `GraphView` that builds and lays out a `LayoutGraph` asynchronously whenever `id` or `backend` changes.
+    /// Creates a `GraphView` that builds and lays out a `LayoutGraph` asynchronously whenever `id` or `backend`
+    /// changes.
     public init<ID: Hashable>(
         id: ID = 0,
         backend: LayoutBackend = .cpu,
@@ -108,7 +109,8 @@ public struct GraphView: View {
                 )
                 .padding(8)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                // Re-rendering for another backend or configuration keeps the previous drawing until the new one is ready.
+                // Re-rendering for another backend or configuration keeps the previous drawing until the new one is
+                // ready.
                 .overlay(alignment: .bottom) {
                     if isRendering {
                         progressIndicator

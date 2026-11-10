@@ -1,5 +1,6 @@
 import GraphLayoutGallery
 import SwiftUI
+
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -7,6 +8,7 @@ import AppKit
 @main
 struct GraphLayoutPreviewsApp: App {
     #if canImport(AppKit)
+
     init() {
         // A SwiftPM executable has no Info.plist, so promote it to a regular foreground app.
         NSApplication.shared.setActivationPolicy(.regular)

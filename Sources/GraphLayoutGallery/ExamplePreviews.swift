@@ -73,7 +73,8 @@ struct AllPresetsPreview: PreviewProvider {
     }
 }
 
-/// Renders one JSON file from `<repo>/Topologies` (or `<repo>/docs`). Edit the three constants to inspect another file or configuration.
+/// Renders one JSON file from `<repo>/Topologies` (or `<repo>/docs`). Edit the three constants to inspect another file
+/// or configuration.
 struct ProductionTopologyPreview: PreviewProvider {
     static let fileName = "graph-topology"
     static let layout = TopologyLayout.algorithm(.hierarchical)

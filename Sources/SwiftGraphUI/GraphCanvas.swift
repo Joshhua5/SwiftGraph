@@ -80,7 +80,12 @@ public struct GraphCanvas: View {
                 context.fill(shape, with: .color(tint.opacity(fillOpacity)))
 
                 let headerHeight = max(fontSize + 8, lane.headerHeight * scale)
-                let headerRect = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: min(headerHeight, frame.height))
+                let headerRect = CGRect(
+                    x: frame.minX,
+                    y: frame.minY,
+                    width: frame.width,
+                    height: min(headerHeight, frame.height)
+                )
                 context.drawLayer { headerLayer in
                     headerLayer.clip(to: shape)
                     headerLayer.fill(Path(headerRect), with: .color(tint.opacity(headerOpacity)))
@@ -141,7 +146,11 @@ public struct GraphCanvas: View {
                         minimumSize: style.minimumLegibleFontSize,
                         in: titleBox
                     ) {
-                        context.draw(title, at: CGPoint(x: frame.minX + titleInset, y: headerBand.midY), anchor: .leading)
+                        context.draw(
+                            title,
+                            at: CGPoint(x: frame.minX + titleInset, y: headerBand.midY),
+                            anchor: .leading
+                        )
                     }
                 } else if let title = fittedText(
                     context,
@@ -187,7 +196,8 @@ public struct GraphCanvas: View {
             for edge in snapshot.edges where edge.points.count >= 2 {
                 let override = edgeResolver?(edge) ?? edge.style
                 let points = edge.points.map(map)
-                let defaultColor: Color = edge.isSelfLoop
+                let defaultColor: Color =
+                    edge.isSelfLoop
                     ? style.selfLoopColor
                     : edgePalette[edge.id % edgePalette.count].opacity(0.88)
                 let color = override?.color ?? defaultColor
@@ -223,17 +233,24 @@ public struct GraphCanvas: View {
 
                 if showsPortDot, !edge.isBidirectional, let start = points.first {
                     let dotRadius = max(1.2, min(2.4, 1.8 * scale))
-                    let dotRect = CGRect(x: start.x - dotRadius, y: start.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
+                    let dotRect = CGRect(
+                        x: start.x - dotRadius,
+                        y: start.y - dotRadius,
+                        width: dotRadius * 2,
+                        height: dotRadius * 2
+                    )
                     context.fill(Path(ellipseIn: dotRect), with: .color(color))
                 }
 
                 if showsArrowhead {
                     if let end = points.last,
-                       let from = points.dropLast().last(where: { hypot(end.x - $0.x, end.y - $0.y) > 0.5 }) {
+                        let from = points.dropLast().last(where: { hypot(end.x - $0.x, end.y - $0.y) > 0.5 })
+                    {
                         drawArrowhead(in: &context, from: from, to: end, size: arrowSize, color: color)
                     }
                     if edge.isBidirectional, let start = points.first,
-                       let from = points.dropFirst().first(where: { hypot(start.x - $0.x, start.y - $0.y) > 0.5 }) {
+                        let from = points.dropFirst().first(where: { hypot(start.x - $0.x, start.y - $0.y) > 0.5 })
+                    {
                         drawArrowhead(in: &context, from: from, to: start, size: arrowSize, color: color)
                     }
                 }
@@ -283,7 +300,8 @@ public struct GraphCanvas: View {
                 context.fill(badge, with: .color(style.labelBackground))
                 context.stroke(badge, with: .color(style.labelStroke), lineWidth: max(0.6, 0.8 * scale))
                 context.draw(
-                    Text(label).font(.system(size: max(6, fontSize * 0.85), weight: .medium)).foregroundColor(style.labelTextColor),
+                    Text(label).font(.system(size: max(6, fontSize * 0.85), weight: .medium))
+                        .foregroundColor(style.labelTextColor),
                     at: CGPoint(x: frame.midX, y: frame.midY)
                 )
             }
@@ -321,7 +339,8 @@ public struct GraphCanvas: View {
         guard points.count >= 2 else { return points }
         var out = points
         if trimStart > 0 {
-            let p0 = out[0], p1 = out[1]
+            let p0 = out[0]
+            let p1 = out[1]
             let len = hypot(p1.x - p0.x, p1.y - p0.y)
             if len > trimStart * 1.5 {
                 out[0] = CGPoint(x: p0.x + (p1.x - p0.x) / len * trimStart, y: p0.y + (p1.y - p0.y) / len * trimStart)
@@ -329,10 +348,14 @@ public struct GraphCanvas: View {
         }
         if trimEnd > 0 {
             let n = out.count
-            let pLast = out[n - 1], pPrev = out[n - 2]
+            let pLast = out[n - 1]
+            let pPrev = out[n - 2]
             let len = hypot(pLast.x - pPrev.x, pLast.y - pPrev.y)
             if len > trimEnd * 1.5 {
-                out[n - 1] = CGPoint(x: pLast.x - (pLast.x - pPrev.x) / len * trimEnd, y: pLast.y - (pLast.y - pPrev.y) / len * trimEnd)
+                out[n - 1] = CGPoint(
+                    x: pLast.x - (pLast.x - pPrev.x) / len * trimEnd,
+                    y: pLast.y - (pLast.y - pPrev.y) / len * trimEnd
+                )
             }
         }
         return out
@@ -348,10 +371,13 @@ public struct GraphCanvas: View {
             return path
         }
         for i in 1..<(points.count - 1) {
-            let p0 = points[i - 1], p1 = points[i], p2 = points[i + 1]
+            let p0 = points[i - 1]
+            let p1 = points[i]
+            let p2 = points[i + 1]
             let v1 = CGPoint(x: p0.x - p1.x, y: p0.y - p1.y)
             let v2 = CGPoint(x: p2.x - p1.x, y: p2.y - p1.y)
-            let len1 = hypot(v1.x, v1.y), len2 = hypot(v2.x, v2.y)
+            let len1 = hypot(v1.x, v1.y)
+            let len2 = hypot(v2.x, v2.y)
             guard len1 > 1.5, len2 > 1.5 else {
                 path.addLine(to: p1)
                 continue
@@ -379,11 +405,19 @@ public struct GraphCanvas: View {
         return path
     }
 
-    private func drawArrowhead(in context: inout GraphicsContext, from start: CGPoint, to end: CGPoint, size: CGFloat, color: Color) {
-        let dx = end.x - start.x, dy = end.y - start.y
+    private func drawArrowhead(
+        in context: inout GraphicsContext,
+        from start: CGPoint,
+        to end: CGPoint,
+        size: CGFloat,
+        color: Color
+    ) {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
         let length = hypot(dx, dy)
         guard length > 0.001 else { return }
-        let ux = dx / length, uy = dy / length
+        let ux = dx / length
+        let uy = dy / length
         let wing = size * 0.46
         var head = Path()
         head.move(to: end)

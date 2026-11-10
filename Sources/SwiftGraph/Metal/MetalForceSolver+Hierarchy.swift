@@ -1,0 +1,354 @@
+import Foundation
+
+#if canImport(Metal)
+import Metal
+
+extension MetalForceSolver {
+    func directedGeometryAsync(
+        nodes: [LayoutNode],
+        edges: [LayoutEdge],
+        tolerance: Float,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> (score: DirectedGeometry.Score, gpuSeconds: Double) {
+        try Task.checkCancellation()
+        let compute = try pipeline(resource: "HierarchicalLayouts", function: "directedGeometry")
+        let rawPoints = edges.flatMap(\.path)
+        let rawBounds = nodes.flatMap {
+            [Point(x: $0.bounds.left, y: $0.bounds.top), Point(x: $0.bounds.right, y: $0.bounds.bottom)]
+        }
+        guard rawPoints.count + rawBounds.count < Int(UInt32.max) else {
+            throw LayoutExecutionError.invalidInput("Too many directed geometry coordinates")
+        }
+        let allCoordinates = rawPoints + rawBounds
+        guard allCoordinates.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
+            throw OrganicLayoutError.metalFailure("Non-finite directed geometry")
+        }
+        let xValues = Array(Set(allCoordinates.map(\.x))).sorted()
+        let yValues = Array(Set(allCoordinates.map(\.y))).sorted()
+        let xIDs = Dictionary(uniqueKeysWithValues: xValues.enumerated().map { ($0.element, UInt32($0.offset)) })
+        let yIDs = Dictionary(uniqueKeysWithValues: yValues.enumerated().map { ($0.element, UInt32($0.offset)) })
+        func coordinateID(_ point: Point) -> SIMD2<UInt32> { SIMD2(xIDs[required: point.x], yIDs[required: point.y]) }
+        let extent = (rawPoints + rawBounds).reduce(Float(0)) { max($0, abs($1.x), abs($1.y)) }
+        guard extent.isFinite, extent * 1e-13 <= min(tolerance, DirectedGeometry.epsilon / 100) else {
+            throw LayoutExecutionError.precisionLimit
+        }
+        func split(_ value: Point) -> SIMD4<Float> {
+            SIMD4(value.x, 0, value.y, 0)
+        }
+        var offsets: [UInt32] = [0]
+        var pointCount: UInt32 = 0
+        for edge in edges {
+            guard Int(pointCount) + edge.path.count < Int(UInt32.max) else {
+                throw LayoutExecutionError.invalidInput("Too many directed route points")
+            }
+            pointCount += UInt32(edge.path.count)
+            offsets.append(pointCount)
+        }
+        var leased: [any MTLBuffer] = []
+        defer { recycle(leased) }
+        func lease<T>(_ values: [T]) throws -> any MTLBuffer {
+            let value = try buffer(values)
+            leased.append(value)
+            return value
+        }
+        let points = try lease(rawPoints.map(split))
+        let pointIDs = try lease(rawPoints.map(coordinateID))
+        let boundIDs = try lease(rawBounds.map(coordinateID))
+        // Each job is one constant-work node or segment pair. Even one very long
+        // pair of routes is spread across bounded, cancellable GPU commands.
+        let batch = 16_384
+        let jobsBuffer = try lease(Array(repeating: SIMD4<UInt32>.zero, count: batch))
+        let resultBuffer = try lease(Array(repeating: SIMD4<UInt32>.zero, count: batch))
+        var score = DirectedGeometry.Score()
+        var seconds = 0.0
+        for edge in edges {
+            if edge.path.count < 2 { score.missing += 1 }
+            score.bends += max(0, edge.path.count - 2)
+            score.length += DirectedGeometry.segments(edge.path).reduce(0) { $0 + $1.length }
+        }
+        let rectangle = DirectedGeometry.bounds(nodes: nodes, edges: edges)
+        score.area = rectangle.width * rectangle.height
+        var jobs: [SIMD4<UInt32>] = []
+        var edgePairs: [SIMD2<UInt32>] = []
+        var hits: [SIMD2<UInt32>: Set<SIMD2<UInt32>>] = [:]
+        var sharing: Set<SIMD2<UInt32>> = []
+        func flush() async throws {
+            guard !jobs.isEmpty else { return }
+            try Task.checkCancellation()
+            jobs.withUnsafeBytes { bytes in
+                // `jobs` is non-empty (guarded above), so its contiguous storage has a base address.
+                jobsBuffer.contents().copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
+            }
+            guard let command = queue.makeCommandBuffer(), let encoder = command.makeComputeCommandEncoder() else {
+                throw OrganicLayoutError.metalFailure("Could not encode directed geometry scoring")
+            }
+            command.label = "Directed geometry segment-pair decisions"
+            encoder.setComputePipelineState(compute)
+            for (i, resource) in [points, jobsBuffer, resultBuffer, pointIDs, boundIDs].enumerated() {
+                encoder.setBuffer(resource, offset: 0, index: i)
+            }
+            var count = UInt32(jobs.count)
+            encoder.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 5)
+            let width = min(128, compute.maxTotalThreadsPerThreadgroup)
+            encoder.dispatchThreadgroups(
+                MTLSize(width: (jobs.count + width - 1) / width, height: 1, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
+            )
+            encoder.endEncoding()
+            seconds += try await submit(command)
+            let values = resultBuffer.contents().bindMemory(to: SIMD4<UInt32>.self, capacity: jobs.count)
+            for i in jobs.indices {
+                if jobs[i].z == 0 {
+                    score.overlaps += Int(values[i].x)
+                } else {
+                    let pair = edgePairs[i]
+                    if values[i].x & 1 != 0 { hits[pair, default: []].insert(SIMD2(values[i].y, values[i].z)) }
+                    if values[i].x & 2 != 0 { sharing.insert(pair) }
+                    // GPU jobs are read in submission order. Finalizing at the last
+                    // segment pair bounds CPU reduction state as well as GPU storage.
+                    if jobs[i].w != 0 {
+                        score.crossings += hits.removeValue(forKey: pair)?.count ?? 0
+                        if sharing.remove(pair) != nil { score.shared += 1 }
+                    }
+                }
+            }
+            jobs.removeAll(keepingCapacity: true)
+            edgePairs.removeAll(keepingCapacity: true)
+        }
+        for i in nodes.indices where i + 1 < nodes.count {
+            for j in (i + 1)..<nodes.count {
+                jobs.append(SIMD4(UInt32(i), UInt32(j), 0, 0))
+                edgePairs.append(.zero)
+                if jobs.count == batch { try await flush() }
+            }
+        }
+        let pruneEdgeBounds = edges.count > 2
+        let edgeBoxes: [(minX: Float, maxX: Float, minY: Float, maxY: Float)] =
+            pruneEdgeBounds
+            ? edges.map { edge in
+                guard let first = edge.path.first else { return (0, -1, 0, -1) }
+                var minX = first.x
+                var maxX = first.x
+                var minY = first.y
+                var maxY = first.y
+                for p in edge.path.dropFirst() {
+                    minX = min(minX, p.x)
+                    maxX = max(maxX, p.x)
+                    minY = min(minY, p.y)
+                    maxY = max(maxY, p.y)
+                }
+                return (
+                    minX - DirectedGeometry.epsilon, maxX + DirectedGeometry.epsilon, minY - DirectedGeometry.epsilon,
+                    maxY + DirectedGeometry.epsilon
+                )
+            } : []
+        for i in edges.indices where offsets[i + 1] > offsets[i] + 1 {
+            if i + 1 < edges.count {
+                for j in (i + 1)..<edges.count where offsets[j + 1] > offsets[j] + 1 {
+                    if pruneEdgeBounds {
+                        let bi = edgeBoxes[i]
+                        let bj = edgeBoxes[j]
+                        if bi.maxX < bj.minX || bj.maxX < bi.minX || bi.maxY < bj.minY || bj.maxY < bi.minY { continue }
+                    }
+                    let endA = Int(offsets[i + 1]) - 1
+                    let endB = Int(offsets[j + 1]) - 1
+                    for a in Int(offsets[i])..<endA {
+                        for b in Int(offsets[j])..<endB {
+                            let last = a + 1 == endA && b + 1 == endB
+                            jobs.append(SIMD4(UInt32(a), UInt32(b), 1, last ? 1 : 0))
+                            edgePairs.append(SIMD2(UInt32(i), UInt32(j)))
+                            if jobs.count == batch { try await flush() }
+                        }
+                    }
+                }
+            }
+        }
+        if jobs.isEmpty && submittedBatches == 0,
+            let i = edges.indices.first(where: { offsets[$0 + 1] > offsets[$0] + 1 }),
+            let j = edges.indices.dropFirst(i + 1).first(where: { offsets[$0 + 1] > offsets[$0] + 1 })
+        {
+            jobs.append(SIMD4(offsets[i], offsets[j], 1, 1))
+            edgePairs.append(SIMD2(UInt32(i), UInt32(j)))
+        }
+        try await flush()
+        try Task.checkCancellation()
+        return (score, seconds)
+    }
+
+    func hierarchyAsync(
+        _ plan: HierarchyPlacementPlan,
+        directed: Bool,
+        retainBest: Bool,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> HierarchyPlacementOutput {
+        try Task.checkCancellation()
+        let orderPipeline = try pipeline(resource: "HierarchicalLayouts", function: "hierarchyOrder")
+        let placementPipeline = try pipeline(resource: "HierarchicalLayouts", function: "hierarchyPlacement")
+        let n = plan.widths.count
+        func flatten(_ lists: [[Int]]) -> (offsets: [UInt32], values: [UInt32]) {
+            var offsets: [UInt32] = [0]
+            var values: [UInt32] = []
+            for list in lists {
+                values.append(contentsOf: list.map(UInt32.init))
+                offsets.append(UInt32(values.count))
+            }
+            return (offsets, values)
+        }
+        let ranks = flatten(plan.layers)
+        let ins = flatten(plan.incoming)
+        let outs = flatten(plan.outgoing)
+        var leased: [any MTLBuffer] = []
+        defer { recycle(leased) }
+        func lease<T>(_ values: [T]) throws -> any MTLBuffer {
+            let result = try buffer(values)
+            leased.append(result)
+            return result
+        }
+        let layers = try lease(ranks.values)
+        let rankOffsets = try lease(ranks.offsets)
+        let inOffsets = try lease(ins.offsets)
+        let incoming = try lease(ins.values)
+        let outOffsets = try lease(outs.offsets)
+        let outgoing = try lease(outs.values)
+        let temporarySize = max(n + 1, plan.incoming.map(\.count).max() ?? 0, plan.outgoing.map(\.count).max() ?? 0)
+        let orderScratch = try lease(Array(repeating: UInt32(0), count: 3 * n + temporarySize + 3))
+        let widths = try lease(
+            plan.widths.map { value -> SIMD2<Float> in
+                SIMD2(value, 0)
+            }
+        )
+        let coordinateScratch = try lease(Array(repeating: SIMD2<Float>.zero, count: 4 * n))
+        let blockScratch = try lease(Array(repeating: UInt32(0), count: 2 * n))
+        let ends = try lease(Array(repeating: UInt32(0), count: 3 * n))
+        let mergeCounts = try lease(Array(repeating: UInt32(0), count: 3 * n))
+        struct Parameters {
+            var count: UInt32
+            var originalCount: UInt32
+            var rankCount: UInt32
+            var directed: UInt32
+            var retainBest: UInt32
+            var separation: SIMD2<Float>
+            var action: UInt32 = 0
+            var iteration: UInt32 = 0
+            var rank: UInt32 = 0
+            var temporarySize: UInt32
+        }
+        var parameters = Parameters(
+            count: UInt32(n),
+            originalCount: UInt32(plan.originalCount),
+            rankCount: UInt32(plan.layers.count),
+            directed: directed ? 1 : 0,
+            retainBest: retainBest ? 1 : 0,
+            separation: SIMD2(plan.nodeSeparation, 0),
+            temporarySize: UInt32(temporarySize)
+        )
+        let orderResources = [layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, orderScratch]
+        let placementResources = [
+            layers, rankOffsets, inOffsets, incoming, outOffsets, outgoing, widths, coordinateScratch, blockScratch,
+            ends,
+        ]
+        var seconds = 0.0
+        // Upper bound on submitted batches: ordering sweeps, directed transpositions, then placement.
+        // Early exits leave the remainder to the caller's stage snapping to complete.
+        var batches = 0
+        let maximumBatches = (directed ? 12 + 4 : 4) + 1
+        func runSteps(_ steps: [(action: UInt32, iteration: Int, rank: Int)]) async throws {
+            guard !steps.isEmpty else { return }
+            try Task.checkCancellation()
+            guard let command = queue.makeCommandBuffer() else {
+                throw OrganicLayoutError.metalFailure("Could not encode hierarchy")
+            }
+            command.label = "Hierarchy batch (\(steps.count) steps)"
+            for step in steps {
+                parameters.action = step.action
+                parameters.iteration = UInt32(step.iteration)
+                parameters.rank = UInt32(step.rank)
+                let placement = step.action >= 5
+                let computePipeline = placement ? placementPipeline : orderPipeline
+                let resources = placement ? placementResources : orderResources
+                let parameterIndex = placement ? 10 : 7
+                guard let encoder = command.makeComputeCommandEncoder() else {
+                    throw OrganicLayoutError.metalFailure("Could not encode hierarchy")
+                }
+                encoder.setComputePipelineState(computePipeline)
+                for (i, resource) in resources.enumerated() { encoder.setBuffer(resource, offset: 0, index: i) }
+                if placement { encoder.setBuffer(mergeCounts, offset: 0, index: 11) }
+                encoder.setBytes(&parameters, length: MemoryLayout<Parameters>.stride, index: parameterIndex)
+                encoder.dispatchThreadgroups(
+                    MTLSize(width: 1, height: 1, depth: 1),
+                    threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
+                )
+                encoder.endEncoding()
+            }
+            seconds += try await submit(command)
+            batches += 1
+            LayoutStageScope.tick(batches, of: maximumBatches)
+        }
+        let changed = orderScratch.contents().bindMemory(to: UInt32.self, capacity: 3 * n + temporarySize + 3)
+            .advanced(by: 3 * n + temporarySize + 2)
+        for sweep in 0..<(directed ? 12 : 4) {
+            changed.pointee = 0
+            var steps: [(action: UInt32, iteration: Int, rank: Int)] = sweep == 0 ? [(0, 0, 0)] : []
+            for rank in (sweep % 2 == 0 ? Array(plan.layers.indices) : Array(plan.layers.indices.reversed())) {
+                steps.append((1, sweep, rank))
+            }
+            if directed { steps.append((2, 0, 0)) }
+            try await runSteps(steps)
+            if changed.pointee == 0 && sweep > 0 { break }
+        }
+        if directed {
+            let multiRanks = plan.layers.indices.filter { plan.layers[$0].count > 1 }
+            if multiRanks.isEmpty {
+                if retainBest { try await runSteps([(3, 0, 0)]) }
+            } else {
+                for pass in 0..<4 {
+                    changed.pointee = 0
+                    var steps: [(action: UInt32, iteration: Int, rank: Int)] =
+                        (pass == 0 && retainBest) ? [(3, 0, 0)] : []
+                    for rank in multiRanks { steps.append((4, pass, rank)) }
+                    try await runSteps(steps)
+                    if changed.pointee == 0 { break }
+                }
+            }
+        }
+        var placementSteps: [(action: UInt32, iteration: Int, rank: Int)] = [(5, 0, 0)]
+        for pass in 0..<3 {
+            for rank in (pass % 2 == 0 ? Array(plan.layers.indices) : Array(plan.layers.indices.reversed())) {
+                placementSteps.append((6, pass, rank))
+            }
+        }
+        try await runSteps(placementSteps)
+        func read(_ value: any MTLBuffer, count: Int) -> [UInt32] {
+            Array(
+                UnsafeBufferPointer(start: value.contents().bindMemory(to: UInt32.self, capacity: count), count: count)
+            )
+        }
+        return HierarchyPlacementOutput(
+            layers: read(layers, count: n),
+            blockEnds: read(ends, count: 3 * n),
+            mergeCounts: read(mergeCounts, count: 3 * n),
+            gpuSeconds: seconds
+        )
+    }
+}
+#else
+extension MetalForceSolver {
+    func directedGeometryAsync(
+        nodes: [LayoutNode],
+        edges: [LayoutEdge],
+        tolerance: Float,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> (score: DirectedGeometry.Score, gpuSeconds: Double) {
+        throw OrganicLayoutError.metalUnavailable
+    }
+
+    func hierarchyAsync(
+        _ plan: HierarchyPlacementPlan,
+        directed: Bool,
+        retainBest: Bool,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> HierarchyPlacementOutput {
+        throw OrganicLayoutError.metalUnavailable
+    }
+}
+#endif

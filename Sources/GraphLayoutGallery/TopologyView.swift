@@ -5,6 +5,7 @@ import SwiftUI
 struct TopologyView: View {
     let file: TopologyFile
     private var externalBackend: Binding<LayoutBackend>?
+
     @State private var ownedBackend: LayoutBackend = .cpu
     @State private var layout: TopologyLayout
     @State private var routing: TopologyRouting
@@ -32,10 +33,14 @@ struct TopologyView: View {
             HStack {
                 Picker("Layout", selection: $layout) {
                     Section("Presets") {
-                        ForEach(LayoutPatternType.allCases, id: \.self) { Text($0.rawValue).tag(TopologyLayout.preset($0)) }
+                        ForEach(LayoutPatternType.allCases, id: \.self) {
+                            Text($0.rawValue).tag(TopologyLayout.preset($0))
+                        }
                     }
                     Section("Algorithms (recursive groups)") {
-                        ForEach(TopologyLayout.Algorithm.allCases, id: \.self) { Text($0.rawValue).tag(TopologyLayout.algorithm($0)) }
+                        ForEach(TopologyLayout.Algorithm.allCases, id: \.self) {
+                            Text($0.rawValue).tag(TopologyLayout.algorithm($0))
+                        }
                     }
                 }
                 .frame(maxWidth: 320)
