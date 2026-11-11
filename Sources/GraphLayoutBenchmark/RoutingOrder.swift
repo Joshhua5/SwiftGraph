@@ -5,7 +5,7 @@ import SwiftGraph
 /// order and in several seeded shuffles, and the quality metrics and per-edge route stability are compared.
 ///
 ///     graph-layout-benchmark --routing-order --topology docs/graph-topology.json --edge-limits 150,300 \
-///         --routers polyline,channel --shuffles 8
+///         --routers polyline,channel --shuffles 8 [--channel-rounds 3] [--separate]
 ///
 /// Also routes eight seeded random scenes (15 nodes, about 25 edges) so small graphs are covered.
 func runRoutingOrder(_ arguments: [String]) async throws {
@@ -17,7 +17,10 @@ func runRoutingOrder(_ arguments: [String]) async throws {
     let limits = (option("--edge-limits") ?? "150,300").split(separator: ",").compactMap { Int($0) }
     let routers = (option("--routers") ?? "polyline,channel").split(separator: ",").map(String.init)
     let shuffles = Int(option("--shuffles") ?? "8") ?? 8
-    guard routers.allSatisfy({ makeOrderRouter($0) != nil }) else {
+    let rounds = option("--channel-rounds").flatMap { Int($0) }
+    // Measures what a preset draws: the channel router has no built-in separator, so presets add one.
+    let separates = arguments.contains("--separate")
+    guard routers.allSatisfy({ makeOrderRouter($0, rounds: nil) != nil }) else {
         throw LayoutExecutionError.invalidInput("Unknown router")
     }
     let topology = try JSONDecoder()
@@ -47,10 +50,11 @@ func runRoutingOrder(_ arguments: [String]) async throws {
                 }
                 graph.edges = order
                 for edge in order { edge.path = [] }
-                // Every name in `routers` was checked against `makeOrderRouter(_:)` above.
-                let router = makeOrderRouter(name)!
+                // Every name in `routers` was checked against `makeOrderRouter(_:rounds:)` above.
+                let router = makeOrderRouter(name, rounds: rounds)!
                 let start = ContinuousClock.now
                 router.routeEdges(graph)
+                if separates && name == "channel" { EdgeSeparator().finishRoutes(graph) }
                 let elapsed = milliseconds(start.duration(to: .now))
                 var sample = OrderSample(original, milliseconds: elapsed)
                 if k == 0 {
@@ -93,11 +97,17 @@ func runRoutingOrder(_ arguments: [String]) async throws {
     }
 }
 
-private func makeOrderRouter(_ name: String) -> (any EdgeRouter)? {
+/// `rounds` overrides the channel router's negotiation rounds.
+private func makeOrderRouter(_ name: String, rounds: Int?) -> (any EdgeRouter)? {
     switch name {
-    case "polyline": PolylineEdgeRouter()
-    case "channel": ChannelEdgeRouter()
-    default: nil
+    case "polyline":
+        return PolylineEdgeRouter()
+    case "channel":
+        let router = ChannelEdgeRouter()
+        if let rounds { router.negotiationRounds = rounds }
+        return router
+    default:
+        return nil
     }
 }
 
