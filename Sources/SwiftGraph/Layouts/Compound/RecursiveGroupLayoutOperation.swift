@@ -99,13 +99,11 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
                                 edge.path = [edge.source.center, edge.target.center]
                             }
                         } else if backend == .cpu {
-                            let router = PolylineEdgeRouter()
-                            router.routeEdges(routing)
-                            failures.formUnion(router.unroutableEdges)
+                            failures.formUnion(PolylineEdgeRouter().route(routing).unroutableEdges(in: routing))
                         } else {
                             let router = RoutingLayoutOperation(.polyline, backend: backend, executor: executor)
                             try await router.applyLayoutAsync(routing)
-                            failures.formUnion(router.unroutableEdgeIndices.map { routing.edges[$0] })
+                            failures.formUnion(router.report.unroutableEdges(in: routing))
                             records += router.lastExecutionMetrics
                         }
                     }

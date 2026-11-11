@@ -6,9 +6,15 @@ import Foundation
 public final class BusEdgeRouter: EdgeRouter {
     public var busSpacing: Float = 20
 
+    /// Fallbacks are legs detoured round a node in their lane; unroutable edges are legs whose detour still cuts one.
+    public private(set) var report = RoutingReport()
+
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        var failed: [LayoutEdge] = []
+        var fellBack: [LayoutEdge] = []
+        defer { report = RoutingReport(graph, unroutable: failed, fallbacks: fellBack) }
         var processed = Set<LayoutEdge>()
         var legs: [(edge: LayoutEdge, fromHub: Bool, path: [Point], obstacles: [Rect], blocked: Bool)] = []
         for (position, hub) in graph.nodes.enumerated() {
@@ -87,7 +93,11 @@ public final class BusEdgeRouter: EdgeRouter {
             detourBlocked($0.0, $0.1)
         }
         if RoutingCompute.isCancelled { return }
-        for (k, i) in blocked.enumerated() { legs[i].path = detours[k] }
+        for (k, i) in blocked.enumerated() {
+            legs[i].path = detours[k]
+            fellBack.append(legs[i].edge)
+            if cutsObstacle(detours[k], legs[i].obstacles) { failed.append(legs[i].edge) }
+        }
         for leg in legs { leg.edge.path = leg.fromHub ? leg.path : Array(leg.path.reversed()) }
         for e in graph.edges where e.source !== e.target && !processed.contains(e) && e.path.count <= 2 {
             e.path = [e.source.center, e.target.center]

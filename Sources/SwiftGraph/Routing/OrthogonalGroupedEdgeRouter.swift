@@ -17,8 +17,17 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
     public var obstacleMargin: Float = 10
     public var bendPenalty: Float = 100
 
+    /// Unroutable edges are those the channels and the flat retry could not route; they are drawn as a polyline, an
+    /// L/Z or a straight line. Fallbacks are those and the edges only the flat retry routed. Unseparated edges come
+    /// from the closing `EdgeSeparator` pass.
+    public private(set) var report = RoutingReport()
+
     /// Edges the channels and the flat retry could not route; they are drawn as a polyline, an L/Z or a straight line.
-    public private(set) var unroutableEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unroutable or report.unroutableEdges(in:)")
+    public var unroutableEdges: [LayoutEdge] { failed }
+
+    private var failed: [LayoutEdge] = []
+    private var fellBack: [LayoutEdge] = []
     private let calculator = ChannelGridCalculator()
     private let flatCalculator = ChannelGridCalculator()
     private var flatRoot: LayoutNode?
@@ -26,7 +35,11 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
-        unroutableEdges = []
+        failed = []
+        fellBack = []
+        report = RoutingReport()
+        var unseparated: [LayoutEdge] = []
+        defer { report = RoutingReport(graph, unroutable: failed, unseparated: unseparated, fallbacks: fellBack) }
         guard !graph.edges.isEmpty else { return }
         if !graph.root.children.isEmpty {
             graph.root.bounds = enclosingBounds(graph.root.children).inflated(by: obstacleMargin * 2)
@@ -51,7 +64,9 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
             let separator = EdgeSeparator()
             separator.spacing = bundleSpacing
             LayoutStageScope.run("Separate", from: 0.8) { separator.routeEdges(graph) }
-            restoreLanesTouchingNodes(graph, edges: edges, merged: merged)
+            let restored = restoreLanesTouchingNodes(graph, edges: edges, merged: merged)
+            // A lane put back on its merged route shares that stretch again.
+            unseparated = separator.unseparated + restored.sorted().map { edges[$0] }
         }
     }
 
@@ -76,10 +91,12 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
     }
 
     private func solve(_ edge: LayoutEdge, _ graph: LayoutGraph) -> [Point] {
-        unroutableEdges.removeAll { $0 === edge }
+        failed.removeAll { $0 === edge }
+        fellBack.removeAll { $0 === edge }
         // Nodes that substantially overlap leave no route between them; a closed loop would be worse than the fallback.
         if Self.overlapsSubstantially(edge.source.bounds, edge.target.bounds) {
-            unroutableEdges.append(edge)
+            failed.append(edge)
+            fellBack.append(edge)
             let path = RoutingFallback.route(edge, graph)
             let shared = Self.overlap(edge.source.bounds, edge.target.bounds)
             return path.count >= 2 && path.first != path.last
@@ -89,15 +106,18 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
         let window =
             graph.nodes.count > 120
             ? edge.source.bounds.union(edge.target.bounds).inflated(by: 200 + 2 * obstacleMargin) : nil
-        if let path = (window.flatMap { route(edge, graph, flat: false, window: $0) }) ?? route(
-            edge,
-            graph,
-            flat: false
-        ) ?? route(edge, graph, flat: true) {
+        if let path = (window.flatMap { route(edge, graph, flat: false, window: $0) })
+            ?? route(edge, graph, flat: false)
+        {
+            return path
+        }
+        if let path = route(edge, graph, flat: true) {
+            fellBack.append(edge)
             return path
         }
         if RoutingCompute.isCancelled { return edge.path }
-        unroutableEdges.append(edge)
+        failed.append(edge)
+        fellBack.append(edge)
         return RoutingFallback.route(edge, graph)
     }
 

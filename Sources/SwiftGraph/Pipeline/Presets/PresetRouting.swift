@@ -9,9 +9,7 @@ enum PresetRouting {
         var failed: [LayoutEdge] = []
         switch self {
         case .polyline, .bundled:
-            let router = PolylineEdgeRouter()
-            router.routeEdges(graph)
-            failed = router.unroutableEdges
+            failed = PolylineEdgeRouter().route(graph).unroutableEdges(in: graph)
             if case .bundled(let k) = self {
                 let bundler = EdgeBundlingRouter()
                 bundler.k = k
@@ -26,13 +24,9 @@ enum PresetRouting {
                 curves.routeEdges(graph)
             }
         case .bsp:
-            let router = BspEdgeRouter()
-            router.routeEdges(graph)
-            failed = router.unroutableEdges
+            failed = BspEdgeRouter().route(graph).unroutableEdges(in: graph)
         case .channel:
-            let router = ChannelEdgeRouter()
-            router.routeEdges(graph)
-            failed = router.unroutableEdges
+            failed = ChannelEdgeRouter().route(graph).unroutableEdges(in: graph)
             EdgeSeparator().routeEdges(graph)
         }
         // No later whole-graph router may invalidate the measured container envelope.

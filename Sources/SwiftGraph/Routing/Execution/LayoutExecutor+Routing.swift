@@ -53,59 +53,54 @@ func routingTransaction(
         compute?.dispatchesFirstCall = backend == .metal
         let (graph, relatedNodes) = snapshot.makeGraph()
         let initialSubmissions = compute?.solver.submittedBatches ?? 0
-        var unroutable: [LayoutEdge] = []
+        var report = RoutingReport()
         RoutingCompute.$current.withValue(compute) {
             switch configuration.kind {
             case .polyline:
                 let r = PolylineEdgeRouter()
                 r.padding = configuration.padding
                 r.edgeSpacing = configuration.edgeSpacing
-                r.routeEdges(graph)
-                unroutable = r.unroutableEdges
+                report = r.route(graph)
             case .channel:
                 let r = ChannelEdgeRouter()
                 r.gridSize = configuration.gridSize
                 r.bendPenalty = configuration.channelBendPenalty
                 r.congestionPenalty = configuration.congestionPenalty
-                r.routeEdges(graph)
-                unroutable = r.unroutableEdges
+                report = r.route(graph)
             case .bus:
                 let r = BusEdgeRouter()
                 r.busSpacing = configuration.busSpacing
-                r.routeEdges(graph)
-            case .octilinear: OctilinearEdgeRouter().routeEdges(graph)
+                report = r.route(graph)
+            case .octilinear: report = OctilinearEdgeRouter().route(graph)
             case .bsp:
                 let r = BspEdgeRouter()
                 r.margin = configuration.margin
                 r.bendPenalty = configuration.bendPenalty
                 r.edgeSpacing = configuration.edgeSpacing
-                r.routeEdges(graph)
-                unroutable = r.unroutableEdges
+                report = r.route(graph)
             case .orthogonalGrouped:
                 let r = OrthogonalGroupedEdgeRouter()
                 r.bundleSpacing = configuration.bundleSpacing
                 r.obstacleMargin = configuration.obstacleMargin
                 r.bendPenalty = configuration.bendPenalty
                 r.movesNodesToWidenCorridors = configuration.movesNodesToWidenCorridors
-                r.routeEdges(graph)
-                unroutable = r.unroutableEdges
+                report = r.route(graph)
             case .parallelEdges:
                 let r = ParallelEdgeRouter()
                 r.edgeSpacing = configuration.parallelEdgeSpacing
-                r.routeEdges(graph)
+                report = r.route(graph)
             case .edgeSeparation:
                 let r = EdgeSeparator()
                 r.spacing = configuration.edgeSpacing
-                r.routeEdges(graph)
+                report = r.route(graph)
             case .selfLoops:
                 let r = SelfLoopRouter()
                 r.loopSize = configuration.loopSize
-                r.routeEdges(graph)
-                unroutable = r.unroutableEdges
+                report = r.route(graph)
             case .curveFitting:
                 let r = CurveFittingEdgeRouter()
                 r.iterations = configuration.curveIterations
-                r.routeEdges(graph)
+                report = r.route(graph)
             case .endpointClipping: EdgeEndpointClipper.clipToNodeBounds(graph)
             case .labelPlacement: LabelPlacementAlgorithm().applyLabelPlacement(graph)
             case .labelLayout:
@@ -116,8 +111,7 @@ func routingTransaction(
                 let r = PolylineEdgeRouter()
                 r.padding = configuration.padding
                 r.edgeSpacing = configuration.edgeSpacing
-                r.routeEdges(graph)
-                unroutable = r.unroutableEdges
+                report = r.route(graph)
             }
         }
         try RoutingCompute.cancellation?.check()
@@ -141,7 +135,7 @@ func routingTransaction(
             rootBounds: graph.root.bounds,
             paths: graph.edges.map(\.path),
             labels: graph.edges.map(\.labelBounds),
-            unroutable: unroutable.compactMap { graph.edges.firstIndex(of: $0) },
+            report: report,
             metrics: LayoutExecutionMetrics(
                 requestedBackend: backend,
                 backend: submitted == 0 ? .cpu : actual,

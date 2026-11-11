@@ -5,9 +5,16 @@ import Foundation
 public final class ParallelEdgeRouter: EdgeRouter {
     public var edgeSpacing: Float = 20
 
+    /// Fallbacks are lanes that follow the way round; unroutable edges are lanes that cut a node with no clear way
+    /// round. A lone edge's route is not checked.
+    public private(set) var report = RoutingReport()
+
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        var failed: [LayoutEdge] = []
+        var fellBack: [LayoutEdge] = []
+        defer { report = RoutingReport(graph, unroutable: failed, fallbacks: fellBack) }
         var groups: [Set<LayoutNode>: [LayoutEdge]] = [:]
         for e in graph.edges where e.source !== e.target { groups[[e.source, e.target], default: []].append(e) }
         for (position, edges) in groups.values.enumerated() {
@@ -47,6 +54,9 @@ public final class ParallelEdgeRouter: EdgeRouter {
                             .first(where: { ObstaclePolyline.clear($0, obstacles) })
                     {
                         path = free
+                        fellBack.append(e)
+                    } else {
+                        failed.append(e)
                     }
                 }
                 e.path = forward ? path : path.reversed()

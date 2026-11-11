@@ -5,9 +5,11 @@ extension OrthogonalGroupedEdgeRouter {
     /// can land a route exactly on a node's outline. Such an edge goes back to its merged route, which the channels
     /// kept `obstacleMargin` clear; a lane-mate that would now cross it goes back too, so the bundle stays merged
     /// rather than tangled. Moving nodes aside (`movesNodesToWidenCorridors`) avoids most of these cases.
-    func restoreLanesTouchingNodes(_ graph: LayoutGraph, edges: [LayoutEdge], merged: [[Point]]) {
+    /// Returns the indices into `edges` of every lane put back on its merged route.
+    @discardableResult
+    func restoreLanesTouchingNodes(_ graph: LayoutGraph, edges: [LayoutEdge], merged: [[Point]]) -> Set<Int> {
         let leaves = graph.nodes.filter { !$0.isGroup }
-        guard !leaves.isEmpty else { return }
+        guard !leaves.isEmpty else { return [] }
         let tree = QuadTree<LayoutNode>(bounds: enclosingBounds(leaves).inflated(by: 100))
         for leaf in leaves { tree.insert(bounds: leaf.bounds, item: leaf) }
 
@@ -18,14 +20,17 @@ extension OrthogonalGroupedEdgeRouter {
             edge.path = merged[index]
             restored.append(index)
         }
+        var allRestored = Set(restored)
         while let index = restored.popLast() {
             for (other, edge) in edges.enumerated() where edge.path != merged[other] {
                 let before = Self.properCrossings(merged[other], merged[index])
                 guard Self.properCrossings(edge.path, merged[index]) > before else { continue }
                 edge.path = merged[other]
                 restored.append(other)
+                allRestored.insert(other)
             }
         }
+        return allRestored
     }
 
     /// Leaves other than the edge's own endpoints that the path meets, boundary contact included.

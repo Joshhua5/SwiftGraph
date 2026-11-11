@@ -17,7 +17,14 @@ public final class EdgeBundlingRouter: EdgeRouter {
     public var nodePadding: Float = 8
     public var edgeSpacing: Float = 8
     public var simplifyTolerance: Float = 2
-    public private(set) var unroutableEdges: [LayoutEdge] = []
+
+    /// Unroutable edges are those obstacle repair could not clear, before or after bundling.
+    public private(set) var report = RoutingReport()
+
+    @available(*, deprecated, message: "Use report.unroutable or report.unroutableEdges(in:)")
+    public var unroutableEdges: [LayoutEdge] { failed }
+
+    private var failed: [LayoutEdge] = []
 
     public init() {}
 
@@ -35,7 +42,8 @@ public final class EdgeBundlingRouter: EdgeRouter {
     }
 
     public func routeEdges(_ graph: LayoutGraph) {
-        unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0)
+        failed = ObstaclePolyline.repair(graph, spacing: 0)
+        defer { report = RoutingReport(graph, unroutable: failed) }
         let edges = graph.edges.filter { $0.source !== $0.target }
         let index = Dictionary(
             graph.nodes.enumerated().map { ($0.element, $0.offset) },
@@ -57,6 +65,6 @@ public final class EdgeBundlingRouter: EdgeRouter {
         )
         guard bundler.runCPU() else { return }
         for (edge, path) in zip(edges, bundler.paths()) { edge.path = path }
-        unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0, shortenDetours: true)
+        failed = ObstaclePolyline.repair(graph, spacing: 0, shortenDetours: true)
     }
 }

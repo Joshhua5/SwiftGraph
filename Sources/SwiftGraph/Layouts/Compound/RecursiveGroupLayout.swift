@@ -44,9 +44,7 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
                 if let presetRouting {
                     failures.formUnion(presetRouting(routing))
                 } else if routesEdges {
-                    let router = PolylineEdgeRouter()
-                    router.routeEdges(routing)
-                    failures.formUnion(router.unroutableEdges)
+                    failures.formUnion(PolylineEdgeRouter().route(routing).unroutableEdges(in: routing))
                 } else {
                     for edge in routing.edges where edge.path.count < 2 {
                         edge.path = [edge.source.center, edge.target.center]

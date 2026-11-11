@@ -17,16 +17,28 @@ public final class BspEdgeRouter: EdgeRouter {
     /// Lane spacing for edges sharing a channel; 0 leaves them merged.
     public var edgeSpacing: Float = 10
 
+    /// Unroutable edges have no route through the partition and no shorter clear channel route. Fallbacks are edges
+    /// routed without their port constraints, or with no partition route at all. Unseparated edges come from the
+    /// closing `EdgeSeparator` pass.
+    public private(set) var report = RoutingReport()
+
     /// Edges with no route through the partition: a polyline, L/Z or straight line was drawn instead.
-    public private(set) var unroutableEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unroutable or report.unroutableEdges(in:)")
+    public var unroutableEdges: [LayoutEdge] { failed }
+
+    private var failed: [LayoutEdge] = []
 
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        failed = []
+        report = RoutingReport()
+        var fellBack: [LayoutEdge] = []
+        var unseparated: [LayoutEdge] = []
+        defer { report = RoutingReport(graph, unroutable: failed, unseparated: unseparated, fallbacks: fellBack) }
         let calculator = BspGridCalculator()
         calculator.buildTree(graph)
         var segments = calculator.getAllGridSegments()
-        unroutableEdges = []
         // The first four segments are the frame: top, bottom, left, right.
         let frame =
             segments.count >= 4
@@ -58,10 +70,12 @@ public final class BspEdgeRouter: EdgeRouter {
                 path = base.flatMap {
                     orthogonalRoute(edge, $0, segments, obstacles, cuts, flow: flow, constrained: false)
                 }
+                if path != nil { fellBack.append(edge) }
             }
             if RoutingCompute.isCancelled { return }
             if path == nil {
-                unroutableEdges.append(edge)
+                failed.append(edge)
+                fellBack.append(edge)
                 path = RoutingFallback.route(edge, graph)
             }
             if let current = path,
@@ -78,14 +92,14 @@ public final class BspEdgeRouter: EdgeRouter {
                 let router = ChannelEdgeRouter()
                 router.gridSize = 10
                 router.congestionPenalty = 0
-                router.routeEdges(local)
-                if router.unroutableEdges.isEmpty, ObstaclePolyline.Scene(graph.nodes).clear(candidate.path, edge),
+                if router.route(local).unroutable.isEmpty,
+                    ObstaclePolyline.Scene(graph.nodes).clear(candidate.path, edge),
                     zip(candidate.path, candidate.path.dropFirst())
                         .allSatisfy({ abs($0.x - $1.x) < 1e-4 || abs($0.y - $1.y) < 1e-4 }),
                     ObstaclePolyline.length(candidate.path) < ObstaclePolyline.length(current) * 0.75
                 {
                     path = candidate.path
-                    unroutableEdges.removeAll { $0 === edge }
+                    failed.removeAll { $0 === edge }
                 }
             }
             // A nil route was replaced by `RoutingFallback.route`, which always returns a path.
@@ -96,6 +110,7 @@ public final class BspEdgeRouter: EdgeRouter {
             let separator = EdgeSeparator()
             separator.spacing = edgeSpacing
             separator.routeEdges(graph)
+            unseparated = separator.unseparated
         }
     }
 

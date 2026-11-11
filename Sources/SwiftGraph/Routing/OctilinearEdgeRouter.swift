@@ -4,9 +4,14 @@ import Foundation
 /// end,
 /// whichever avoids nodes, then siblings' shared stretches, then bends that sit on another route.
 public final class OctilinearEdgeRouter: EdgeRouter {
+    /// Unroutable edges cut a node under both shapes; they keep the better one.
+    public private(set) var report = RoutingReport()
+
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        var failed: [LayoutEdge] = []
+        defer { report = RoutingReport(graph, unroutable: failed) }
         let edges = graph.edges.filter { $0.source !== $0.target }
         let bends = RoutingCompute.current?.octilinear(edges.map { $0.source.center }, edges.map { $0.target.center })
         var routed: [(edge: LayoutEdge, path: [Point])] = []
@@ -22,6 +27,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
         for e in edges where bendOf(e) == nil {
             e.path = [e.source.center, e.target.center]
             routed.append((e, e.path))
+            if cutsObstacle(e.path, ObstaclePolyline.obstacles(e, graph)) { failed.append(e) }
         }
         for (i, e) in edges.enumerated() {
             if RoutingCompute.isCancelled { return }
@@ -53,6 +59,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
             let best = scores.indices.min { scores[$0].lexicographicallyPrecedes(scores[$1]) }!
             e.path = options[best]
             routed.append((e, e.path))
+            if scores[best][0] > 0 { failed.append(e) }
         }
     }
 }

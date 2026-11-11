@@ -15,17 +15,28 @@ public final class PolylineEdgeRouter: EdgeRouter {
     /// Cost of crossing a routed segment in a detour, in length units; 0 ignores crossings.
     public var crossingPenalty: Float = 40
 
+    /// Unroutable edges keep a straight centre-to-centre line (a fallback) so they stay visible; unseparated edges
+    /// still share a stretch with another after separation.
+    public private(set) var report = RoutingReport()
+
     /// Edges with no clear route; they keep a straight centre-to-centre line so they stay visible.
-    public private(set) var unroutableEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unroutable or report.unroutableEdges(in:)")
+    public var unroutableEdges: [LayoutEdge] { failed }
 
     /// Edges that still share a stretch with another after separation (no room for lanes, or lanes would cut a node).
-    public private(set) var unseparatedEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unseparated or report.unseparatedEdges(in:)")
+    public var unseparatedEdges: [LayoutEdge] { cramped }
+
+    private var failed: [LayoutEdge] = []
+    private var cramped: [LayoutEdge] = []
 
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
-        unroutableEdges = []
-        unseparatedEdges = []
+        failed = []
+        cramped = []
+        report = RoutingReport()
+        defer { report = RoutingReport(graph, unroutable: failed, unseparated: cramped, fallbacks: failed) }
         guard !graph.nodes.isEmpty else { return }
         let scene = ObstaclePolyline.Scene(graph.nodes)
         let routed = ObstaclePolyline.SegmentIndex(bounds: scene.bounds)
@@ -59,7 +70,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
                 edge.path = found.path
                 register(i, found.bends)
             } else {
-                unroutableEdges.append(edge)
+                failed.append(edge)
                 edge.path = [edge.source.center, edge.target.center]
             }
             if edge.path.count > 2 { detoured.append(i) }
@@ -91,7 +102,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
             let separator = EdgeSeparator()
             separator.spacing = edgeSpacing
             LayoutStageScope.run("Separate", from: 0.85) { separator.separate(edges, scene) }
-            unseparatedEdges = separator.unseparatedEdges
+            cramped = separator.unseparated
         }
     }
 }

@@ -72,6 +72,11 @@ func concurrentRoutingMap<Input, T>(_ items: [Input], _ body: (Input) -> T) -> [
     return output.map { $0! }
 }
 
+/// Whether `path` cuts any of `obstacles`. Reporting only, so it stays on the CPU and never adds compute dispatches.
+func cutsObstacle(_ path: [Point], _ obstacles: [Rect]) -> Bool {
+    zip(path, path.dropFirst()).contains { a, b in obstacles.contains { $0.intersectsLine(a, b) } }
+}
+
 /// Replaces every segment of `path` that crosses an obstacle by a visibility detour; segments with no detour are kept.
 func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Float = 8) -> [Point] {
     var result = path

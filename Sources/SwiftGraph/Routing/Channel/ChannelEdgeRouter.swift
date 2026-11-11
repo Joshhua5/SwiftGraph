@@ -9,8 +9,15 @@ public final class ChannelEdgeRouter: EdgeRouter {
     public var bendPenalty = 2
     public var congestionPenalty = 2
 
+    /// Unroutable edges are those the lattice search could not route; each falls back to a polyline, an L/Z or a
+    /// straight line, so it is listed under fallbacks too.
+    public private(set) var report = RoutingReport()
+
     /// Edges that the lattice search could not route; they fall back to a polyline, an L/Z or a straight line.
-    public private(set) var unroutableEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unroutable or report.unroutableEdges(in:)")
+    public var unroutableEdges: [LayoutEdge] { failed }
+
+    private var failed: [LayoutEdge] = []
 
     public init() {}
 
@@ -144,8 +151,10 @@ public final class ChannelEdgeRouter: EdgeRouter {
     }
 
     public func routeEdges(_ graph: LayoutGraph) {
-        unroutableEdges = []
+        failed = []
         attached = [:]
+        report = RoutingReport()
+        defer { report = RoutingReport(graph, unroutable: failed, fallbacks: failed) }
         guard !graph.nodes.isEmpty else { return }
         precondition(gridSize > 0, "gridSize must be positive")
         let leaves = QuadTree<LayoutNode>(bounds: enclosingBounds(graph.nodes).inflated(by: 100))
@@ -172,7 +181,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
             if RoutingCompute.isCancelled { return }
             if path == nil {
                 path = RoutingFallback.route(edge, graph)
-                unroutableEdges.append(edge)
+                failed.append(edge)
             }
             // A nil route was replaced by `RoutingFallback.route`, which always returns a path.
             edge.path = path!
