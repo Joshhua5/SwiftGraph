@@ -123,6 +123,8 @@ public struct DirectedLayoutOperation {
             )
             copy.sourcePort = edge.sourcePort
             copy.targetPort = edge.targetPort
+            copy.sourcePortCandidates = edge.sourcePortCandidates
+            copy.targetPortCandidates = edge.targetPortCandidates
             graph.addEdge(copy)
         }
         guard !nodes.isEmpty else { return nil }

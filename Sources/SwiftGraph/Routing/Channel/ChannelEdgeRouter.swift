@@ -27,6 +27,9 @@ public final class ChannelEdgeRouter: EdgeRouter {
     /// Routes already drawn at each node, so later port lines can avoid crossing them.
     private var attached: [ObjectIdentifier: [[Point]]] = [:]
 
+    /// The side and point `PortAssignment` chose for each edge end in this pass; the search prefers them.
+    private var assigned = AssignedPorts()
+
     private struct Cell: Hashable {
         var x: Int
         var y: Int
@@ -153,6 +156,11 @@ public final class ChannelEdgeRouter: EdgeRouter {
     public func routeEdges(_ graph: LayoutGraph) {
         failed = []
         attached = [:]
+        // Sides and aims come from the shared assignment, but ends sharing a side are not spread before the search:
+        // ports snap to lattice lines, and the nearest free lines plus the congestion cost already spread them.
+        // Spreading first measured neutral on this lattice (fewer bends on random graphs, more crossings on the
+        // corridors fixtures).
+        assigned = PortAssignment(edgeSpacing: 0).assign(graph, style: .orthogonal)
         graph.routeStyle = .orthogonal
         report = RoutingReport()
         defer { report = RoutingReport(graph, unroutable: failed, fallbacks: failed) }
@@ -275,8 +283,10 @@ public final class ChannelEdgeRouter: EdgeRouter {
         let walls = zip(lattice.groups, isWall).filter(\.1).map(\.0.rect)
         let wallBits = isWall.enumerated()
             .reduce(UInt64(0)) { $1.element && $1.offset < 64 ? $0 | 1 << UInt64($1.offset) : $0 }
-        let starts = ports(s, t, edge.sourcePort, edge.sourcePortCandidates, lattice, walls, scene)
-        let ends = ports(t, s, edge.targetPort, edge.targetPortCandidates, lattice, walls, scene)
+        let from = assigned.source(of: edge)
+        let to = assigned.target(of: edge)
+        let starts = ports(s, t, edge.sourcePort, edge.sourcePortCandidates, from, lattice, walls, scene)
+        let ends = ports(t, s, edge.targetPort, edge.targetPortCandidates, to, lattice, walls, scene)
         guard !starts.isEmpty, !ends.isEmpty else { return nil }
         guard let found = search(starts, ends, lattice, walls, wallBits, relaxed: relaxed) else { return nil }
         for (cell, axis) in found.cells where congestionPenalty > 0 {
@@ -297,38 +307,41 @@ public final class ChannelEdgeRouter: EdgeRouter {
     }
 
     /// Per side, the boundary point level with the other node on a cell-centre line (so the stub needs no jog), plus
-    /// neighbouring lines so edges sharing a side can spread out instead of stacking on one point.
+    /// neighbouring lines so edges sharing a side can spread out instead of stacking on one point. The assigned port's
+    /// side ranks first and its point is the one aimed at; the other sides stay as fallbacks.
     private func ports(
         _ node: LayoutNode,
         _ other: LayoutNode,
         _ active: PortConstraint,
         _ candidates: [PortConstraint],
+        _ port: EdgePort?,
         _ lattice: Lattice,
         _ walls: [GridRect],
         _ scene: Scene
     ) -> [Port] {
-        let sides = OrthogonalPorts.ranked(
+        var sides = OrthogonalPorts.ranked(
             node,
             other: other,
             active: active,
             candidates: candidates,
             vertical: scene.vertical
         )
+        if let port, let i = sides.firstIndex(of: port.side) { sides.insert(sides.remove(at: i), at: 0) }
         let r = node.bounds
         let g = Float(lattice.grid)
         let cover = lattice.cover(r)
         var result: [Port] = []
         for (rank, side) in sides.enumerated() {
             let vertical = OrthogonalPorts.isVertical(side)
-            let raw = OrthogonalPorts.point(node, side: side, toward: other.bounds)
-            let lo = vertical ? r.left : r.top
-            let hi = vertical ? r.right : r.bottom
-            let inset = min(10, (hi - lo) / 4)
+            let raw =
+                port.flatMap { $0.side == side ? $0.point : nil }
+                ?? OrthogonalPorts.point(node, side: side, toward: other.bounds)
+            let span = PortAssignment.span(of: r, side: side)
             let o = vertical ? lattice.origin.x : lattice.origin.y
             let value = vertical ? raw.x : raw.y
             let e = Lattice.tolerance / g
-            let kmin = Int(ceil((lo + inset - o) / g - 0.5 - e))
-            let kmax = Int(floor((hi - inset - o) / g - 0.5 + e))
+            let kmin = Int(ceil((span.low - o) / g - 0.5 - e))
+            let kmax = Int(floor((span.high - o) / g - 0.5 + e))
             // Ties between two lines resolve a pixel away from the boundary, so they cannot flip on rounding noise.
             let preferred = min(max(Int(floor((value - o) / g + 0.05)), kmin), kmax)
             // Every line is a candidate, nearest first: a blocked neighbourhood must not hide a free line further along

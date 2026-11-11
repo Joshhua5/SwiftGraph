@@ -82,6 +82,9 @@ enum ObstaclePolyline {
         /// The route of `edge` with the padding it was found at and the corners it bends at; nil when no clear route
         /// exists. Padding is halved, quartered and finally cut to about 1 when padded obstacles seal a corridor.
         /// `corners` holds the bends already at each padded corner, and `fan` is how far apart later ones are spread.
+        /// With `ports` the route starts and ends on those boundary points and keeps out of both end nodes: the search
+        /// runs between stubs a padding straight out from each port, and a stub is dropped wherever the route can
+        /// leave its port directly. Without `ports` it runs between the node centres.
         func route(
             _ edge: LayoutEdge,
             padding: Float,
@@ -90,11 +93,41 @@ enum ObstaclePolyline {
             routed: SegmentIndex? = nil,
             corners: [Point: [Bend]] = [:],
             fan: Float = 0,
+            ports: (source: EdgePort, target: EdgePort)? = nil,
             comparePadding: Bool = true
         ) -> (path: [Point], gap: Float, bends: [Bend])? {
-            let start = edge.source.center
-            let end = edge.target.center
             let gap: Float = padding.isFinite ? max(1e-5, padding) : 10
+            let start = ports?.source.stub(gap) ?? edge.source.center
+            let end = ports?.target.stub(gap) ?? edge.target.center
+            // From a boundary port the end nodes are walls too, and a stub that lands in another node has no route.
+            let ends =
+                ports == nil
+                ? [] : [edge.source.bounds, edge.target.bounds].map(ObstaclePolyline.interior)
+            if ports != nil,
+                near(ObstaclePolyline.bounds([start, end]).inflated(by: 1), edge)
+                    .contains(where: { rects[$0].contains(start) || rects[$0].contains(end) })
+            {
+                return nil
+            }
+            /// The searched route with its ports put back, each stub dropped where the leg from the port is clear.
+            func attached(_ path: [Point], gap level: Float) -> [Point] {
+                guard let ports else { return path }
+                func open(_ a: Point, _ b: Point, straight: Bool = false) -> Bool {
+                    !ends.contains { $0.intersectsLine(a, b) }
+                        && relevant(ObstaclePolyline.bounds([a, b]).inflated(by: level), edge, start, end)
+                            .allSatisfy {
+                                !ObstaclePolyline.probe(rects[$0], start, end, level, straight: straight)
+                                    .intersectsLine(a, b)
+                            }
+                }
+                let direct = [ports.source.point, ports.target.point]
+                // A straight search may become one straight line between the ports, which needs only half the padding.
+                if path.count == 2, open(direct[0], direct[1], straight: true) { return direct }
+                var full = [direct[0]] + path + [direct[1]]
+                if full.count >= 3, open(full[0], full[2]) { full.remove(at: 1) }
+                if full.count >= 3, open(full[full.count - 3], full[full.count - 1]) { full.remove(at: full.count - 2) }
+                return full
+            }
             var ladder = [gap]
             if comparePadding {
                 for g in [gap / 2, gap / 4, Float(1.0)] where g < ladder[ladder.count - 1] { ladder.append(g) }
@@ -107,17 +140,18 @@ enum ObstaclePolyline {
                 var included = initial
                 while true {
                     guard
-                        let path = ObstaclePolyline.search(
+                        let searched = ObstaclePolyline.search(
                             start,
                             end,
-                            included.sorted().map { rects[$0] },
+                            included.sorted().map { rects[$0] } + ends,
                             padding: level,
                             bend: bend,
                             extra: extra
                         )
                     else { break }
-                    let more = violators(path, included, edge, gap: level)
+                    let more = violators(searched, included, edge, gap: level)
                     if more.isEmpty {
+                        let path = attached(searched, gap: level)
                         let length = ObstaclePolyline.length(path)
                         let limit = 4 * max(1, (end - start).length)
                         if comparePadding && length > limit {
@@ -126,7 +160,13 @@ enum ObstaclePolyline {
                             // a narrower one. Compare without crossing costs as well.
                             for alternative in ladder
                             where alternative <= level && (alternative < level || crossing > 0) {
-                                if let short = route(edge, padding: alternative, bend: bend, comparePadding: false),
+                                if let short = route(
+                                    edge,
+                                    padding: alternative,
+                                    bend: bend,
+                                    ports: ports,
+                                    comparePadding: false
+                                ),
                                     clear(short.path, edge),
                                     ObstaclePolyline.length(short.path)
                                         < min(length * 0.75, best.map { ObstaclePolyline.length($0.path) } ?? .infinity)
@@ -148,7 +188,7 @@ enum ObstaclePolyline {
                 }
                 if RoutingCompute.isCancelled { return nil }
             }
-            if clear([start, end], edge) { return ([start, end], gap, []) }
+            if ports == nil, clear([start, end], edge) { return ([start, end], gap, []) }
             return nil
         }
 
@@ -528,9 +568,13 @@ enum ObstaclePolyline {
             let reached = costOf[state]
             if estimate > reached + heuristic[current] + 1e-4 || reached > best[current] + slack(current) { continue }
             // A cheaper arrival found since this one was queued may now make it redundant.
-            let isDominated = isBendAware && statesAt[current].contains { other in
-                other != state && costOf[other] + margin(current, heading[other], heading[state]) < reached - 1e-5
-            }
+            let isDominated =
+                isBendAware
+                && statesAt[current]
+                    .contains { other in
+                        other != state
+                            && costOf[other] + margin(current, heading[other], heading[state]) < reached - 1e-5
+                    }
             if isDominated { continue }
             if current == 1 {
                 var result: [Point] = []
@@ -557,9 +601,10 @@ enum ObstaclePolyline {
                 // `extra` is never negative, so it cannot rescue a candidate that already loses.
                 if let extra, !loses(candidate) { candidate += charge(extra, current, next) }
                 guard !loses(candidate) else { continue }
-                let existing = statesAt[next].first { other in
-                    !isBendAware || parentOf[other] >= 0 && vertexOf[parentOf[other]] == current
-                }
+                let existing = statesAt[next]
+                    .first { other in
+                        !isBendAware || parentOf[other] >= 0 && vertexOf[parentOf[other]] == current
+                    }
                 let target: Int
                 if let existing {
                     target = existing

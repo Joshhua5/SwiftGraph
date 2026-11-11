@@ -6,8 +6,10 @@ import Foundation
 /// straight leg); other routes just move the endpoint. An edge is left alone when the change would touch a node or
 /// cross a route it did not cross before, and a side too small for `edgeSpacing` between its ends is left as it is.
 public final class PortDistributor: EdgeRouter, RouteFinisher {
-    /// Distance kept from the corners of a side.
-    public var margin: Float = 6
+    /// Distance kept from the corners of a side: the port inset every router shares, so distribution never moves an
+    /// end nearer a corner than the router placed it. A side shorter than four margins keeps a quarter of its length
+    /// clear (`PortAssignment.span`).
+    public var margin: Float = PortAssignment.defaultInset
 
     /// How far from a side an endpoint may sit and still count as attached to it (channel ports sit 1 unit out).
     public var tolerance: Float = 1.5
@@ -71,7 +73,8 @@ public final class PortDistributor: EdgeRouter, RouteFinisher {
             let horizontal = k.side == .top || k.side == .bottom
             let low = horizontal ? r.left : r.top
             let high = horizontal ? r.right : r.bottom
-            guard high - low > 2 * margin else { continue }
+            let span = PortAssignment.span(of: r, side: k.side, inset: margin)
+            guard span.high > span.low else { continue }
             // Where the routes already lie decides the order, the next bend only breaking ties between coincident ends;
             // where
             // that order would leave more crossings than the bend order does, the bend order is used.
@@ -93,7 +96,7 @@ public final class PortDistributor: EdgeRouter, RouteFinisher {
                 }
                 .compactMap { o -> [Move]? in
                     let ends = orders[o]
-                    guard let slots = slots(ends.map(\.along), low: low, high: high) else { return nil }
+                    guard let slots = slots(ends.map(\.along), low: low, high: high, span: span) else { return nil }
                     let moves = ends.enumerated()
                         .compactMap { i, end -> Move? in
                             candidate(
@@ -201,10 +204,15 @@ public final class PortDistributor: EdgeRouter, RouteFinisher {
     /// Slot positions for a face's ends (in order), or nil to leave them. Ends at least a pitch apart stay where they
     /// are
     /// (corners aside); otherwise they are pushed apart as little as possible, evenly spaced when they coincide.
-    private func slots(_ along: [Float], low: Float, high: Float) -> [Float]? {
+    private func slots(
+        _ along: [Float],
+        low: Float,
+        high: Float,
+        span: (low: Float, high: Float)
+    ) -> [Float]? {
         let n = along.count
-        let lo = low + margin
-        let hi = high - margin
+        let lo = span.low
+        let hi = span.high
         let held = along.map { min(max($0, lo), hi) }
         guard n > 1 else { return held }
         let even = (high - low) / Float(n + 1)

@@ -184,7 +184,7 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
             let room = Self.room(u, n, centre, low, high, scene, reach: Float(count + 1) * spacing)
             let span = Float(count - 1) * spacing
             // A lane that leaves a node square to its face must stay on the face, clear of its corners.
-            let faces = group.compactMap { Self.faceSpan(segments[$0], paths, edges, n: n, spacing: spacing) }
+            let faces = group.compactMap { Self.faceSpan(segments[$0], paths, edges, n: n) }
             let faceLow = faces.map(\.low).max() ?? -.infinity
             let faceHigh = faces.map(\.high).min() ?? .infinity
             // The lanes' window is the corridor between the nearest nodes (less `reserve`) within the faces: centred on
@@ -223,8 +223,8 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
         let twinGroups = Dictionary(grouping: edges.indices) { Self.pair(edges[$0]) }
         func build(_ e: Int, _ chosen: Set<Int>) -> [Point] {
             var path = Self.shifted(paths[e], zip(shifts[e], shiftGroup[e]).map { chosen.contains($1) ? $0 : .zero })
-            Self.anchor(&path, paths[e], atStart: true, inside: edges[e].source.bounds, spacing: spacing)
-            Self.anchor(&path, paths[e], atStart: false, inside: edges[e].target.bounds, spacing: spacing)
+            Self.anchor(&path, paths[e], atStart: true, inside: edges[e].source.bounds)
+            Self.anchor(&path, paths[e], atStart: false, inside: edges[e].target.bounds)
             return path
         }
         func moving(_ e: Int) -> [Int] { Set(zip(shifts[e], shiftGroup[e]).filter { $0.0 != .zero }.map(\.1)).sorted() }
@@ -546,15 +546,14 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
         return result
     }
 
-    /// The stretch across a lane (along `n`) that keeps an end leg on the face it leaves: the face less an inset from
-    /// its
-    /// corners, widened to take in the leg's own position. Nil unless the segment is an axis-aligned first or last leg.
+    /// The stretch across a lane (along `n`) that keeps an end leg on the face it leaves: the face less the shared port
+    /// inset (`PortAssignment.span`), widened to take in the leg's own position. Nil unless the segment is an
+    /// axis-aligned first or last leg.
     private static func faceSpan(
         _ segment: Segment,
         _ paths: [[Point]],
         _ edges: [LayoutEdge],
-        n: Point,
-        spacing: Float
+        n: Point
     ) -> (low: Float, high: Float)? {
         guard abs(abs(n.x) - 1) < 1e-5 || abs(abs(n.y) - 1) < 1e-5 else { return nil }
         let path = paths[segment.edge]
@@ -577,7 +576,7 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
             let b = dot(n, Point(x: r.right, y: r.bottom))
             let low = min(a, b)
             let high = max(a, b)
-            let inset = min(spacing / 2, (high - low) / 4)
+            let inset = min(PortAssignment.defaultInset, (high - low) / 4)
             let here = dot(n, end)
             spans.append((min(low + inset, here), max(high - inset, here)))
         }
@@ -585,14 +584,13 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
         return spans.dropFirst().reduce(first) { (max($0.low, $1.low), min($0.high, $1.high)) }
     }
 
-    /// Keeps a shifted end on its node. An end that left its node square to a face is clamped to the face less an inset
-    /// from its corners, and the bend beside it moves with it, so the end leg stays square to the face.
+    /// Keeps a shifted end on its node. An end that left its node square to a face is clamped to the face less the
+    /// shared port inset, and the bend beside it moves with it, so the end leg stays square to the face.
     private static func anchor(
         _ path: inout [Point],
         _ original: [Point],
         atStart: Bool,
-        inside bounds: Rect,
-        spacing: Float
+        inside bounds: Rect
     ) {
         let i = atStart ? 0 : path.count - 1
         let j = atStart ? 1 : path.count - 2
@@ -604,7 +602,7 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
             if abs(o.y - b.y) <= tolerance, abs(o.x - b.x) > tolerance,
                 abs(o.x - bounds.left) <= tolerance || abs(o.x - bounds.right) <= tolerance
             {
-                let inset = min(spacing / 2, bounds.height / 4)
+                let inset = min(PortAssignment.defaultInset, bounds.height / 4)
                 let y = min(max(moved.y, min(bounds.top + inset, o.y)), max(bounds.bottom - inset, o.y))
                 if abs(y - moved.y) > tolerance, abs(path[j].y - moved.y) <= tolerance {
                     path[i].y = y
@@ -614,7 +612,7 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
             } else if abs(o.x - b.x) <= tolerance, abs(o.y - b.y) > tolerance,
                 abs(o.y - bounds.top) <= tolerance || abs(o.y - bounds.bottom) <= tolerance
             {
-                let inset = min(spacing / 2, bounds.width / 4)
+                let inset = min(PortAssignment.defaultInset, bounds.width / 4)
                 let x = min(max(moved.x, min(bounds.left + inset, o.x)), max(bounds.right - inset, o.x))
                 if abs(x - moved.x) > tolerance, abs(path[j].x - moved.x) <= tolerance {
                     path[i].x = x

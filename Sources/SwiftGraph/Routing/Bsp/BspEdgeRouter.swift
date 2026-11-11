@@ -205,7 +205,7 @@ public final class BspEdgeRouter: EdgeRouter {
         _ obstacles: [Rect]
     ) -> [(port: Point, hit: Point, side: PortConstraint)] {
         func positions(_ lo: Float, _ hi: Float, _ otherLo: Float, _ otherHi: Float) -> [Float] {
-            let inset = min(10, (hi - lo) / 4)
+            let inset = min(PortAssignment.defaultInset, (hi - lo) / 4)
             func clamp(_ v: Float) -> Float { min(max(v, lo + inset), hi - inset) }
             var values = [(lo + hi) / 2, clamp((otherLo + otherHi) / 2)]
             if max(lo, otherLo) < min(hi, otherHi) { values.append(clamp((max(lo, otherLo) + min(hi, otherHi)) / 2)) }

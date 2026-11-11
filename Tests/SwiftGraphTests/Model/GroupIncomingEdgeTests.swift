@@ -11,6 +11,15 @@ struct GroupIncomingEdgeTests {
         }
     }
 
+    /// Whether `point` lies on the outline of `node`, where polyline routes now start and end.
+    func onBoundary(_ point: Point?, _ node: LayoutNode) -> Bool {
+        guard let point else { return false }
+        let r = node.bounds
+        let onVertical = (abs(point.x - r.left) < 1e-3 || abs(point.x - r.right) < 1e-3) && r.contains(point)
+        let onHorizontal = (abs(point.y - r.top) < 1e-3 || abs(point.y - r.bottom) < 1e-3) && r.contains(point)
+        return onVertical || onHorizontal
+    }
+
     /// A source above an off-centre target in a wide frame. The optional neighbour
     /// prevents translating the frame, leaving room only for its target to align.
     func fixture(blockFrame: Bool = false, outgoing: Bool = false) throws -> LayoutGraph {
@@ -30,8 +39,10 @@ struct GroupIncomingEdgeTests {
             graph.addNode(neighbour)
         }
         if outgoing {
+            // Down and to the left of the target, so aligning the target with the source lengthens the outgoing
+            // route (between boundary ports) by more than it shortens the incoming one.
             let sink = LayoutNode(id: "sink", width: 60, height: 30)
-            sink.x = 20
+            sink.x = -40
             sink.y = 400
             graph.addNode(sink)
             graph.addEdge(LayoutEdge(source: target, target: sink))
@@ -113,7 +124,7 @@ struct GroupIncomingEdgeTests {
         #expect(length(graph.edges) < before)
         #expect(graph.edges.map(\.labelBounds) != labels)
         #expect(graph.edges.allSatisfy { $0.labelBounds.size == Size(width: 30, height: 12) })
-        #expect(graph.edges.allSatisfy { $0.path.first == $0.source.center && $0.path.last == $0.target.center })
+        #expect(graph.edges.allSatisfy { onBoundary($0.path.first, $0.source) && onBoundary($0.path.last, $0.target) })
     }
 
     @Test func movingFrameCannotObstructAnUnrelatedRoute() throws {

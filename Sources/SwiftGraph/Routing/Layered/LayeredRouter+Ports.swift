@@ -15,9 +15,21 @@ extension LayeredRouter {
         var side: PortConstraint
     }
 
-    /// The span of a left/right side where a port may sit: clear of the corners.
+    /// The span of a left/right side where a port may sit: clear of the corners by the shared port inset.
     static func sideRange(_ r: Rect) -> (lo: Float, hi: Float) {
-        r.height > 16 ? (r.top + 8, r.bottom - 8) : (r.center.y, r.center.y)
+        let span = PortAssignment.span(of: r, side: .left)
+        return (span.low, span.high)
+    }
+
+    /// The side an end must use: its constraint, else `side` when the candidates allow it, else the first candidate.
+    static func constrained(
+        _ active: PortConstraint,
+        _ candidates: [PortConstraint],
+        default side: PortConstraint
+    ) -> PortConstraint {
+        if active != .none { return active }
+        let allowed = candidates.filter { $0 != .none }
+        return allowed.isEmpty || allowed.contains(side) ? side : allowed[0]
     }
 
     static func onSide(_ point: Point, _ side: PortConstraint, of r: Rect, margin: Float) -> Bool {
@@ -64,12 +76,20 @@ extension LayeredRouter {
                 } else {
                     sides = (.top, .top)
                 }
-            } else if configuration.readsPortConstraints && edge.sourcePort != .none && edge.targetPort != .none {
-                sides = (edge.sourcePort, edge.targetPort)
-            } else if a.center.x < b.center.x {
-                sides = (.right, .left)
             } else {
-                sides = (.left, .right)
+                // Each end honours its own constraint, then its candidates; an end with neither takes the facing
+                // left or right side.
+                // Layouts that do not read port constraints (hierarchical) always take the facing sides.
+                let facing: (PortConstraint, PortConstraint) =
+                    a.center.x < b.center.x ? (.right, .left) : (.left, .right)
+                if configuration.readsPortConstraints {
+                    sides = (
+                        Self.constrained(edge.sourcePort, edge.sourcePortCandidates, default: facing.0),
+                        Self.constrained(edge.targetPort, edge.targetPortCandidates, default: facing.1)
+                    )
+                } else {
+                    sides = facing
+                }
             }
             var source = End(edge: edge, source: true, neighbor: edge.path.count > 2 ? edge.path[1] : b.center)
             var target = End(

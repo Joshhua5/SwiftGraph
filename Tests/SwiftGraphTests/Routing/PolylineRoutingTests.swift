@@ -125,7 +125,8 @@ import Testing
         let router = PolylineEdgeRouter()
         router.routeEdges(g)
         #expect(router.report.unroutable.isEmpty && e.path.count > 2)
-        #expect(e.path.last == g.nodes[2].center)
+        // The route ends on the target's facing side, at the port assigned before routing.
+        #expect(e.path.last == Point(x: 500, y: 100))
     }
 
     // MARK: E2 search

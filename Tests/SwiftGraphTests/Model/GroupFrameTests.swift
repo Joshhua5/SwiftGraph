@@ -94,7 +94,12 @@ struct GroupFrameTests {
         }
         #expect(!outer.bounds.intersects(peer.bounds))
         #expect(edge.path.count >= 2 && layout.unroutableEdges.isEmpty)
-        #expect(edge.path.first == edge.source.center && edge.path.last == edge.target.center)
+        // The cross-group route runs between boundary ports of its two leaves.
+        func onBoundary(_ p: Point?, _ r: Rect) -> Bool {
+            guard let p, r.contains(p) else { return false }
+            return min(abs(p.x - r.left), abs(p.x - r.right), abs(p.y - r.top), abs(p.y - r.bottom)) < 1e-3
+        }
+        #expect(onBoundary(edge.path.first, edge.source.bounds) && onBoundary(edge.path.last, edge.target.bounds))
     }
 
     final class RecordingLayout: LayoutAlgorithm {
