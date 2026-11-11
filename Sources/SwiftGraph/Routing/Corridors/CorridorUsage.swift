@@ -28,7 +28,7 @@ final class CorridorUsage {
 
     static let weight = Float(ProcessInfo.processInfo.environment["CW"] ?? "0.5") ?? 0.5
     static let probe = Int(ProcessInfo.processInfo.environment["CPROBE"] ?? "0") ?? 0
-    static let cap =Int(ProcessInfo.processInfo.environment["CCAP"] ?? "4") ?? 4
+    static let cap = Int(ProcessInfo.processInfo.environment["CCAP"] ?? "4") ?? 4
     let spacing: Float
     let clearance: Float
     private let walls: CorridorWalls

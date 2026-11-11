@@ -270,8 +270,10 @@ struct CorridorTracks {
             let reach = min(max(run.gap.high - run.gap.low, 0), 16 * spacing)
             neighbours.near(run, within: reach.isFinite ? reach : 16 * spacing) { q in
                 let other = runs[q]
+                // Only a run that overlaps this one along the line is alongside it; one meeting it end to end, such
+                // as a port stub leading into the corridor, leaves the corridor its width.
                 guard !inside.contains(q), abs(other.at - run.at) > Self.tolerance,
-                    min(run.high, other.high) - max(run.low, other.low) > -spacing
+                    min(run.high, other.high) - max(run.low, other.low) > Self.tolerance
                 else {
                     return
                 }
