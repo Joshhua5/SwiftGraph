@@ -124,6 +124,87 @@ import Testing
         #expect(g.routeStyle == .polyline)
     }
 
+    // MARK: - Recursive groups
+
+    /// Two frames with an edge inside each, and one edge between them, so there are three routing graphs.
+    private func groupedDrawing() throws -> LayoutGraph {
+        let g = LayoutGraph()
+        var members: [LayoutNode] = []
+        for index in 0..<2 {
+            let frame = try g.addGroup(id: "frame\(index)", frame: .init(minimumSize: Size(width: 200, height: 100)))
+            frame.x = Float(index) * 400
+            for name in ["a", "b"] {
+                let member = LayoutNode(id: "\(name)\(index)", width: 40, height: 40)
+                member.x = frame.x + (name == "a" ? 0 : 100)
+                try g.addNode(member, to: frame)
+                members.append(member)
+            }
+            g.addEdge(LayoutEdge(source: members[2 * index], target: members[2 * index + 1]))
+        }
+        g.addEdge(LayoutEdge(source: members[0], target: members[3]))
+        return g
+    }
+
+    @Test func recursiveGroupLayoutRecordsTheSharedStyleOfItsRoutingGraphs() throws {
+        for routing in [PresetRouting.channel, .polyline] {
+            let g = try groupedDrawing()
+            g.routeStyle = .curved  // stale
+            let layout = RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm())
+            layout.presetRouting = { routing.apply($0) }
+            try layout.applyLayout(g)
+            #expect(g.routeStyle == routing.style)
+        }
+        let g = try groupedDrawing()
+        try RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm()).applyLayout(g)
+        #expect(g.routeStyle == .polyline, "the default group router")
+    }
+
+    @Test func recursiveGroupLayoutOperationRecordsTheSharedStyleOfItsRoutingGraphs() async throws {
+        for routing in [PresetRouting.channel, .polyline] {
+            let g = try groupedDrawing()
+            g.routeStyle = .curved  // stale
+            let layout = RecursiveGroupLayoutOperation(GivenCoordinatesLayoutAlgorithm())
+            layout.presetRouting = { try await routing.apply($0, backend: .cpu, executor: .shared) }
+            try await layout.applyLayoutAsync(g)
+            #expect(g.routeStyle == routing.style)
+        }
+        let g = try groupedDrawing()
+        try await RecursiveGroupLayoutOperation(GivenCoordinatesLayoutAlgorithm()).applyLayoutAsync(g)
+        #expect(g.routeStyle == .polyline, "the default group router")
+    }
+
+    @Test func recursiveGroupLayoutForgetsTheStyleWhenGroupsDisagreeOrNothingWasRouted() async throws {
+        var calls = 0
+        let g = try groupedDrawing()
+        g.routeStyle = .orthogonal
+        let layout = RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm())
+        layout.presetRouting = {
+            calls += 1
+            return (calls == 1 ? PresetRouting.channel : .polyline).apply($0)
+        }
+        try layout.applyLayout(g)
+        #expect(g.routeStyle == nil)
+
+        var asyncCalls = 0
+        let h = try groupedDrawing()
+        h.routeStyle = .orthogonal
+        let operation = RecursiveGroupLayoutOperation(GivenCoordinatesLayoutAlgorithm())
+        operation.presetRouting = {
+            asyncCalls += 1
+            return try await (asyncCalls == 1 ? PresetRouting.channel : .polyline)
+                .apply($0, backend: .cpu, executor: .shared)
+        }
+        try await operation.applyLayoutAsync(h)
+        #expect(h.routeStyle == nil)
+
+        let unrouted = try groupedDrawing()
+        unrouted.routeStyle = .orthogonal
+        let plain = RecursiveGroupLayout(GivenCoordinatesLayoutAlgorithm())
+        plain.routesEdges = false
+        try plain.applyLayout(unrouted)
+        #expect(unrouted.routeStyle == nil, "straight stand-ins are not the old style")
+    }
+
     // MARK: - Rectilinear repair and fallback
 
     /// `a` and `b` side by side with a tall wall between them; every L, Z and U between their ports cuts the wall.

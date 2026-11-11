@@ -44,6 +44,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
         let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
         var records: [LayoutExecutionMetrics] = []
         var failures = Set<LayoutEdge>()
+        var routedGraphs: [LayoutGraph] = []
         // Groups share the stage by child count, leaving the tail for incoming-edge refinement.
         let groupShare = refineIncoming && shouldRouteEdges ? 0.9 : 1.0
         let slices = LayoutStageScope.slices(engine.groups.map { Double($0.children.count + 1) })
@@ -92,6 +93,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
                 }
                 let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
                 if !routing.edges.isEmpty {
+                    routedGraphs.append(routing)
                     try await LayoutStageScope.run("Route edges", from: 0.7, to: 0.95) {
                         if let presetRouting {
                             let result = try await presetRouting(routing)
@@ -141,6 +143,8 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
                 )
             }
         }
+        // Keep a style only if every group's routing recorded the same one; the copied style is otherwise stale.
+        transaction.working.routeStyle = sharedRouteStyle(routedGraphs)
         try transaction.commit(to: graph)
         lastExecutionMetrics = records
         unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }

@@ -27,6 +27,7 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
         let layouts = original.groups.map { groupLayoutSelector?($0) ?? coreLayout }
         let engine = try GroupLayoutEngine(transaction.working, padding: groupPadding)
         var failures = Set<LayoutEdge>()
+        var routedGraphs: [LayoutGraph] = []
         let groupShare = optimizeIncomingEdges && routesEdges ? 0.9 : 1.0
         let slices = LayoutStageScope.slices(engine.groups.map { Double($0.children.count + 1) })
         for (index, (group, layout)) in zip(engine.groups, layouts).enumerated() {
@@ -44,6 +45,7 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
             }
             let routing = engine.routingGraph(for: group, allOwnedEdges: presetRouting != nil)
             if !routing.edges.isEmpty {
+                routedGraphs.append(routing)
                 if let presetRouting {
                     failures.formUnion(presetRouting(routing))
                 } else if routesEdges {
@@ -61,6 +63,8 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
                 try engine.refineIncomingEdges(excluding: failures)
             }
         }
+        // Keep a style only if every group's routing recorded the same one; the copied style is otherwise stale.
+        transaction.working.routeStyle = sharedRouteStyle(routedGraphs)
         try transaction.commit(to: graph)
         unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
         report = RoutingReport(graph, unroutable: unroutableEdges)
