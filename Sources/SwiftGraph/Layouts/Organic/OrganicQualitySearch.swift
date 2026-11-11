@@ -56,6 +56,41 @@ struct OrganicQualitySearch {
             }
     }
 
+    /// One force solve: a start and a multiple of the nominal repulsion.
+    struct Candidate: Sendable {
+        var start: [Point]
+        var strength: Float
+    }
+
+    /// Repulsion multiples solved from each start.
+    static let strengths: [Float] = [0.5, 1.0, 2.0]
+    /// Graphs up to this many nodes solve every start at every strength: 12 candidates.
+    static let fullSearchNodeLimit = 300
+    /// Graphs up to this many nodes solve the input and the first seeded start at half and nominal strength: 4
+    /// candidates. Larger graphs solve only the input start at those strengths: 2 candidates.
+    static let reducedSearchNodeLimit = 1_000
+
+    /// The starts and strengths solved for a graph of `nodeCount` nodes. Every candidate is a full force solve followed
+    /// by quadratic cleanup, so the count falls as the graph grows. Starts are taken in order, so the input positions
+    /// are always solved. On dense and tree graphs of 512 to 2,048 nodes, double strength never scored best and the
+    /// input start won all but one comparison, so those are what large graphs keep.
+    static func plan(nodeCount: Int) -> (starts: Int, strengths: [Float]) {
+        if nodeCount <= fullSearchNodeLimit { return (4, strengths) }
+        let reduced = Array(strengths.prefix(2))
+        if nodeCount <= reducedSearchNodeLimit { return (2, reduced) }
+        return (1, reduced)
+    }
+
+    /// The candidates to solve, in the order that breaks score ties.
+    func candidates() -> [Candidate] {
+        let plan = Self.plan(nodeCount: snapshot.nodes.count)
+        return starts()
+            .prefix(plan.starts)
+            .flatMap { start in
+                plan.strengths.map { Candidate(start: start, strength: $0) }
+            }
+    }
+
     func candidate(_ positions: [Point], strength: Float) -> (GeometrySnapshot, OrganicLayoutConfiguration) {
         var input = snapshot
         for i in input.nodes.indices {
@@ -77,8 +112,15 @@ struct OrganicQualitySearch {
         return (input, c)
     }
 
-    mutating func consider(_ raw: [Point]) throws {
-        try Task.checkCancellation()
+    /// A cleaned-up candidate and its score.
+    struct Evaluation: Sendable {
+        var positions: [Point]
+        var score: OrganicQualityMeasurements
+    }
+
+    /// Cleans up and scores one solved candidate. It reads only `self`, so candidates can be evaluated concurrently.
+    func evaluate(_ raw: [Point]) throws -> Evaluation {
+        try OrganicCandidateRunner.checkCancellation()
         guard raw.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
             throw LayoutExecutionError.invalidInput("Non-finite organic candidate.")
         }
@@ -95,14 +137,24 @@ struct OrganicQualitySearch {
         let score = try LayoutStageScope.run("Measure", from: 0.8) {
             try Self.measure(positions, snapshot, separation: configuration.nodeSeparation)
         }
+        return Evaluation(positions: positions, score: score)
+    }
+
+    /// Records an evaluated candidate. Candidates must be adopted in candidate order: a later one replaces the best only
+    /// when it scores strictly better, so ties go to the earlier candidate however the candidates were scheduled.
+    mutating func adopt(_ evaluation: Evaluation) {
         let index = diagnostics.candidateCount
         diagnostics.candidateCount += 1
         diagnostics.solverIterations += configuration.iterations
-        if score.precedes(diagnostics.final) {
-            best = positions
-            diagnostics.final = score
+        if evaluation.score.precedes(diagnostics.final) {
+            best = evaluation.positions
+            diagnostics.final = evaluation.score
             diagnostics.selectedCandidate = index
         }
+    }
+
+    mutating func consider(_ raw: [Point]) throws {
+        adopt(try evaluate(raw))
     }
 
     func rectangles(_ positions: [Point]) -> [Rect] {
@@ -147,7 +199,7 @@ struct OrganicQualitySearch {
         // A finite placement fallback: fixed nodes first, then each movable node in stable order.
         var occupied = rectangles(positions).enumerated().filter { fixed[$0.offset] }.map(\.element)
         for i in positions.indices where !fixed[i] {
-            try Task.checkCancellation()
+            try OrganicCandidateRunner.checkCancellation()
             let r = rectangles([positions[i]], nodes: [snapshot.nodes[i]])[0]
             let offset = try Self.nearestPlacement(r, obstacles: occupied, gap: gap)
             positions[i] = positions[i] + offset
@@ -159,7 +211,7 @@ struct OrganicQualitySearch {
     /// sweep moves nothing, i.e. no pair conflicts.
     private func pushApart(_ positions: inout [Point], gap: Float, rounds: Int) throws -> Bool {
         for _ in 0..<rounds {
-            try Task.checkCancellation()
+            try OrganicCandidateRunner.checkCancellation()
             var moved = false
             var bounds = rectangles(positions)
             for i in positions.indices {
@@ -251,7 +303,7 @@ struct OrganicQualitySearch {
         var y: Float = 0.0
         var rowHeight: Float = 0.0
         for c in free {
-            try Task.checkCancellation()
+            try OrganicCandidateRunner.checkCancellation()
             let r = bounds[c]
             if x > 0 && x + r.width > rowWidth {
                 x = 0
@@ -308,9 +360,20 @@ struct OrganicQualitySearch {
         var hits = 0
         var crossings = 0
         var length: Float = 0.0
-        for i in rects.indices {
-            if i % 32 == 0 { try Task.checkCancellation() }
-            for j in rects.indices where j > i { if conflict(rects[i], rects[j], separation) { overlaps += 1 } }
+        // Pairs are found by sort-and-sweep along x, so only pairs whose x-extents (nearly) overlap are tested. Each
+        // tested pair runs the same predicate, in the same argument order, as an all-pairs scan, so the counts match
+        // it. Sweep bounds are widened by a rounding margin; the exact predicate decides every pair that is reached.
+        func margin(_ value: Float) -> Float { abs(value) * 1e-5 + 1e-3 }
+        let byLeft = rects.indices.sorted {
+            rects[$0].left == rects[$1].left ? $0 < $1 : rects[$0].left < rects[$1].left
+        }
+        for (rank, i) in byLeft.enumerated() {
+            if rank % 32 == 0 { try OrganicCandidateRunner.checkCancellation() }
+            let reach = rects[i].right + max(0, separation)
+            for j in byLeft[(rank + 1)...] {
+                guard rects[j].left <= reach + margin(reach) else { break }
+                if conflict(rects[min(i, j)], rects[max(i, j)], separation) { overlaps += 1 }
+            }
         }
         let edges = snapshot.edges.filter { $0.source != $0.target }
         let edgeBounds = edges.map { e -> (minX: Float, maxX: Float, minY: Float, maxY: Float) in
@@ -318,27 +381,55 @@ struct OrganicQualitySearch {
             let b = positions[e.target]
             return (min(a.x, b.x), max(a.x, b.x), min(a.y, b.y), max(a.y, b.y))
         }
+        // A rectangle can reach an edge's box only if its left side lies in [minX - widest, maxX].
+        let lefts = byLeft.map { rects[$0].left }
+        let widest = rects.map(\.width).max() ?? 0
+        func firstRank(withLeftAtLeast value: Float) -> Int {
+            var low = 0
+            var high = lefts.count
+            while low < high {
+                let middle = (low + high) / 2
+                if lefts[middle] < value { low = middle + 1 } else { high = middle }
+            }
+            return low
+        }
         for (index, e) in edges.enumerated() {
-            if index % 32 == 0 { try Task.checkCancellation() }
+            if index % 32 == 0 { try OrganicCandidateRunner.checkCancellation() }
             let a = positions[e.source]
             let b = positions[e.target]
             let eb = edgeBounds[index]
             length += (b - a).length
-            for i in rects.indices where i != e.source && i != e.target {
+            let lowest = eb.minX - widest
+            for i in byLeft[firstRank(withLeftAtLeast: lowest - margin(lowest))...] {
                 let r = rects[i]
+                guard r.left <= eb.maxX else { break }
+                guard i != e.source && i != e.target else { continue }
                 guard eb.maxX >= r.left && eb.minX <= r.right && eb.maxY >= r.top && eb.minY <= r.bottom else {
                     continue
                 }
                 if r.intersectsLine(a, b) { hits += 1 }
             }
-            for otherIndex in (index + 1)..<edges.count {
+        }
+        let byMinX = edges.indices.sorted {
+            edgeBounds[$0].minX == edgeBounds[$1].minX ? $0 < $1 : edgeBounds[$0].minX < edgeBounds[$1].minX
+        }
+        for (rank, first) in byMinX.enumerated() {
+            if rank % 32 == 0 { try OrganicCandidateRunner.checkCancellation() }
+            for second in byMinX[(rank + 1)...] {
+                guard edgeBounds[second].minX <= edgeBounds[first].maxX else { break }
+                let index = min(first, second)
+                let otherIndex = max(first, second)
+                let eb = edgeBounds[index]
                 let fb = edgeBounds[otherIndex]
                 guard eb.maxX >= fb.minX && eb.minX <= fb.maxX && eb.maxY >= fb.minY && eb.minY <= fb.maxY else {
                     continue
                 }
+                let e = edges[index]
                 let f = edges[otherIndex]
                 guard e.source != f.source && e.source != f.target && e.target != f.source && e.target != f.target
                 else { continue }
+                let a = positions[e.source]
+                let b = positions[e.target]
                 let c = positions[f.source]
                 let d = positions[f.target]
                 let u = b - a

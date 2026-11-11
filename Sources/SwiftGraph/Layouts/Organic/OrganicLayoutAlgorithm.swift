@@ -21,7 +21,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
 
     public func applyLayout(_ graph: LayoutGraph) throws {
         lastDiagnostics = nil
-        try Task.checkCancellation()
+        try OrganicCandidateRunner.checkCancellation()
         if quality == .quality {
             var configuration = OrganicLayoutConfiguration()
             guard iterations.isFinite, iterations >= 0, Double(iterations) < Double(Int.max / 16) else {
@@ -38,27 +38,21 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
             let checkpoint = try GraphCheckpoint(graph)
             var search = try OrganicQualitySearch(checkpoint.snapshot, configuration)
             if configuration.iterations > 0 && search.fixed.contains(false) {
-                let starts = search.starts()
-                let strengths: [Float] = [0.5, 1.0, 2.0]
-                let candidateCount = starts.count * strengths.count
-                for (startIndex, start) in starts.enumerated() {
-                    for (strengthIndex, strength) in strengths.enumerated() {
-                        let index = startIndex * strengths.count + strengthIndex
-                        try LayoutStageScope.run(
-                            "Candidate \(index + 1)/\(candidateCount)",
-                            part: index,
-                            of: candidateCount
-                        ) {
-                            let (input, candidate) = search.candidate(start, strength: strength)
-                            let positions = try LayoutStageScope.run("Force simulation", to: 0.85) {
-                                try input.cpuOrganic(candidate)
-                            }
-                            try LayoutStageScope.run("Evaluate", from: 0.85) { try search.consider(positions) }
-                        }
+                let candidates = search.candidates()
+                let plan = search
+                let evaluations = try OrganicCandidateRunner.map(
+                    candidates.count,
+                    stage: { "Candidate \($0 + 1)/\(candidates.count)" }
+                ) { index in
+                    let (input, candidate) = plan.candidate(candidates[index].start, strength: candidates[index].strength)
+                    let positions = try LayoutStageScope.run("Force simulation", to: 0.85) {
+                        try input.cpuOrganic(candidate)
                     }
+                    return try LayoutStageScope.run("Evaluate", from: 0.85) { try plan.evaluate(positions) }
                 }
+                for evaluation in evaluations { search.adopt(evaluation) }
             }
-            try Task.checkCancellation()
+            try OrganicCandidateRunner.checkCancellation()
             for i in graph.nodes.indices where !search.fixed[i] && configuration.iterations > 0 {
                 graph.nodes[i].center = search.best[i]
             }
@@ -94,7 +88,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
         let totalIterations = Int(ceil(iterations))
         let treeStride = (preparedPositions && totalIterations >= 60) ? 15 : 1
         for iteration in 0..<totalIterations {
-            try Task.checkCancellation()
+            try OrganicCandidateRunner.checkCancellation()
             LayoutStageScope.tick(iteration, of: totalIterations)
             var displacement = Array(repeating: Point.zero, count: nodes.count)
             if nodes.count >= 64 {
@@ -133,7 +127,7 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
                 if length > 0.1 { positions[i] = positions[i] + displacement[i] * (min(length, temperature) / length) }
             }
         }
-        try Task.checkCancellation()
+        try OrganicCandidateRunner.checkCancellation()
         if fixed.contains(true) {
             for i in nodes.indices where !fixed[i] { nodes[i].center = positions[i] + origin }
         } else {

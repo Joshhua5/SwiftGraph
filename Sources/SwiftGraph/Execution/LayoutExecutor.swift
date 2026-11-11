@@ -203,20 +203,19 @@ public actor LayoutExecutor {
     ) async throws -> OrganicResult {
         let preparationStart = ContinuousClock.now
         var search = try OrganicQualitySearch(snapshot, configuration)
-        let starts = search.starts()
+        let candidates = search.candidates()
+        let plan = search
         // Reject predictable precision failures before submitting any candidate. Automatic
         // fallback therefore does not discard successful GPU solves from timing/iteration totals.
         if actual == .metal {
-            for positions in starts {
-                for strength: Float in [0.5, 1.0, 2.0] {
-                    try Task.checkCancellation()
-                    let (input, candidate) = search.candidate(positions, strength: strength)
-                    _ = try input.prepareMetal(
-                        configuration: candidate,
-                        fixed: search.fixed,
-                        tolerance: options.maximumCoordinateError
-                    )
-                }
+            for entry in candidates {
+                try Task.checkCancellation()
+                let (input, candidate) = search.candidate(entry.start, strength: entry.strength)
+                _ = try input.prepareMetal(
+                    configuration: candidate,
+                    fixed: search.fixed,
+                    tolerance: options.maximumCoordinateError
+                )
             }
         }
         let preparationSeconds = preparationStart.duration(to: .now).seconds
@@ -225,32 +224,61 @@ public actor LayoutExecutor {
         var cpuPreparation = 0.0
         var gpu: Double?
         var device: String?
-        let strengths: [Float] = [0.5, 1.0, 2.0]
-        let candidateCount = starts.count * strengths.count
-        for (startIndex, positions) in starts.enumerated() {
-            for (strengthIndex, strength) in strengths.enumerated() {
-                try Task.checkCancellation()
-                let index = startIndex * strengths.count + strengthIndex
-                try await LayoutStageScope.run(
-                    "Candidate \(index + 1)/\(candidateCount)",
-                    part: index,
-                    of: candidateCount
-                ) {
-                    let (input, candidate) = search.candidate(positions, strength: strength)
-                    let solveStart = ContinuousClock.now
-                    let result = try await LayoutStageScope.run("Force simulation", to: 0.85) {
-                        try await organic(input, configuration: candidate, backend: actual)
+        let evaluations: [OrganicQualitySearch.Evaluation]
+        if actual == .metal {
+            // One Metal solver serves every candidate, so solves run in turn; only their CPU cleanup runs concurrently.
+            var solved: [[Point]] = []
+            try await LayoutStageScope.run("Force simulation", to: 0.85) {
+                for (index, entry) in candidates.enumerated() {
+                    try Task.checkCancellation()
+                    try await LayoutStageScope.run(
+                        "Candidate \(index + 1)/\(candidates.count)",
+                        part: index,
+                        of: candidates.count
+                    ) {
+                        let (input, candidate) = search.candidate(entry.start, strength: entry.strength)
+                        let solveStart = ContinuousClock.now
+                        let result = try await organic(input, configuration: candidate, backend: actual)
+                        solverSeconds += solveStart.duration(to: .now).seconds
+                        cpuPreparation += result.metrics.cpuPreparationSeconds
+                        if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
+                        device = result.metrics.deviceName
+                        solved.append(result.centers)
                     }
-                    solverSeconds += solveStart.duration(to: .now).seconds
-                    cpuPreparation += result.metrics.cpuPreparationSeconds
-                    if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
-                    device = result.metrics.deviceName
-                    let evaluationStart = ContinuousClock.now
-                    try LayoutStageScope.run("Evaluate", from: 0.85) { try search.consider(result.centers) }
-                    evaluationSeconds += evaluationStart.duration(to: .now).seconds
                 }
             }
+            let raw = solved
+            let evaluationStart = ContinuousClock.now
+            evaluations = try LayoutStageScope.run("Evaluate", from: 0.85) {
+                try OrganicCandidateRunner.map(raw.count, stage: { "Candidate \($0 + 1)/\(raw.count)" }) { index in
+                    try plan.evaluate(raw[index])
+                }
+            }
+            evaluationSeconds = evaluationStart.duration(to: .now).seconds
+        } else {
+            let phaseStart = ContinuousClock.now
+            let timed = try OrganicCandidateRunner.map(
+                candidates.count,
+                stage: { "Candidate \($0 + 1)/\(candidates.count)" }
+            ) { index in
+                let (input, candidate) = plan.candidate(candidates[index].start, strength: candidates[index].strength)
+                let solveStart = ContinuousClock.now
+                let centers = try LayoutStageScope.run("Force simulation", to: 0.85) { try input.cpuOrganic(candidate) }
+                let evaluationStart = ContinuousClock.now
+                let evaluation = try LayoutStageScope.run("Evaluate", from: 0.85) { try plan.evaluate(centers) }
+                let evaluationSeconds = evaluationStart.duration(to: .now).seconds
+                return (evaluation, solveStart.duration(to: evaluationStart).seconds, evaluationSeconds)
+            }
+            evaluations = timed.map(\.0)
+            // Candidates overlap, so the phases' wall-clock time is split in proportion to their summed busy time.
+            let wall = phaseStart.duration(to: .now).seconds
+            let solving = timed.reduce(0) { $0 + $1.1 }
+            let evaluating = timed.reduce(0) { $0 + $1.2 }
+            let busy = solving + evaluating
+            solverSeconds = busy > 0 ? wall * solving / busy : 0
+            evaluationSeconds = busy > 0 ? wall * evaluating / busy : 0
         }
+        for evaluation in evaluations { search.adopt(evaluation) }
         try Task.checkCancellation()
         var executionMetrics = metrics(
             requested,
