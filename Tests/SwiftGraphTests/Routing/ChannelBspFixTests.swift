@@ -127,6 +127,7 @@ struct RouteAudit {
             return Int(seed >> 33)
         }
         var crossings = 0
+        var bends = 0
         for round in 0..<8 {
             let g = LayoutGraph()
             var nodes: [LayoutNode] = []
@@ -158,8 +159,13 @@ struct RouteAudit {
                 "round \(round)"
             )
             crossings += audit.crossings
+            bends += audit.bends
         }
-        #expect(crossings <= 270, "\(crossings) crossings")  // 299 with five nearest lines and no crossing term, 259 now
+        // The 20 pt lattice drew 259 crossings and 326 bends here. The node-aligned grid draws 288 and 267: ports no
+        // longer need a jog to reach a lattice line, so routes run straighter and on these small scenes cross a little
+        // more often. On the 600-edge topology benchmark it has fewer of both.
+        #expect(crossings <= 300, "\(crossings) crossings")
+        #expect(bends <= 285, "\(bends) bends")
     }
 
     @Test func channelLongDetoursAreNotReportedAsUnroutable() {
@@ -212,11 +218,8 @@ struct RouteAudit {
         let router = ChannelEdgeRouter()
         router.congestionPenalty = congestion
         router.routeEdges(g)
-        if congestion == 0 {
-            #expect(router.report.unroutable.isEmpty)
-        } else {
-            #expect(router.report.unroutableEdges(in: g) == [edge])
-        }
+        // A span is one search step however long it is, so congestion no longer makes the edge unroutable.
+        #expect(router.report.unroutable.isEmpty)
         #expect(edge.path.count >= 2 && edge.path.count <= 8)
         #expect(edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite })
         #expect(g.nodes.map(\.bounds) == bounds)

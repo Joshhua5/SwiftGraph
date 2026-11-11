@@ -16,10 +16,11 @@ private func approximatelyEqual(_ a: Rect, _ b: [Float]) -> Bool {
 }
 
 /// Crossings and bends of the corridors fixtures as routed now; a regression raises them, an improvement may lower
-/// them.
+/// them. Channel moved from a 20 pt lattice to the node-aligned grid: 88 crossings and 149 bends in all, down from 93
+/// and 158, with single fixtures moving by one or two either way.
 private let corridorBudgets: [String: (crossings: Int, bends: Int)] = {
     let channel = [
-        (9, 11), (9, 12), (8, 15), (6, 12), (7, 16), (8, 14), (10, 12), (7, 14), (8, 12), (5, 15), (8, 12), (8, 13),
+        (10, 12), (6, 14), (5, 16), (5, 10), (9, 10), (5, 13), (9, 13), (7, 12), (10, 11), (6, 14), (7, 12), (9, 12),
     ]
     let bsp = [
         (5, 15), (6, 13), (3, 13), (3, 13), (4, 17), (4, 15), (4, 15), (6, 13), (5, 17), (4, 15), (5, 15), (4, 15),
@@ -76,10 +77,11 @@ private let corridorBudgets: [String: (crossings: Int, bends: Int)] = {
         guard fixture.router != "grouped" else { return }
         let audit = RouteAudit(graph, router)
         #expect(audit.leafHits.isEmpty, "\(fixture.name): routes through unrelated nodes \(audit.leafHits)")
-        // Channel lanes sit a lattice cell from nodes; BSP and the polyline separator keep at least half the 10-unit
-        // spacing.
+        // Channel keeps half its grid size clear of nodes (5.5 on the 11-unit fixture); BSP and the polyline separator
+        // keep at least half the 10-unit spacing.
+        let channelClearance = min(6, (fixture.config["gridSize"] ?? 20) / 2)
         #expect(
-            audit.minClearance >= (fixture.router == "channel" ? 6 : 4.5),
+            audit.minClearance >= (fixture.router == "channel" ? channelClearance : 4.5),
             "\(fixture.name): clearance \(audit.minClearance)"
         )
         // The polyline router still starts and ends at node centres, and draws diagonals.
