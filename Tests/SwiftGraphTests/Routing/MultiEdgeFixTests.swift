@@ -233,11 +233,12 @@ struct MultiEdgeFixTests {
     }
 
     @Test func distributionKeepsLanesThatAreAlreadySeparated() {
-        // Four lanes 8 apart on a 36 wide face: spreading them evenly would squeeze them to 7.2.
+        // Two lanes 18 apart on a 36 wide face (9 kept clear of each corner): spreading them evenly would pull them
+        // in to 12 apart.
         let g = LayoutGraph()
         let top = node(g, "t", 0, 0, 36, 30)
         let bottom = node(g, "b", 0, 200, 36, 30)
-        let xs: [Float] = [-12.0, -4, 4, 12]
+        let xs: [Float] = [-9.0, 9]
         let edges = xs.map { x -> LayoutEdge in
             let e = LayoutEdge(source: top, target: bottom)
             g.addEdge(e)

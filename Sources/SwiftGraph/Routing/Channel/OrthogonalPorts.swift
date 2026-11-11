@@ -55,18 +55,24 @@ enum OrthogonalPorts {
         return allowed.isEmpty ? sides : sides.filter(allowed.contains)
     }
 
-    /// The side's point on the node boundary, level with the other node where they overlap, kept off the corners.
-    static func point(_ node: LayoutNode, side: PortConstraint, toward other: Rect) -> Point {
+    /// The side's point on the node boundary, level with the other node where they overlap, kept off the corners by
+    /// the shared port inset (`PortAssignment.span`).
+    static func point(
+        _ node: LayoutNode,
+        side: PortConstraint,
+        toward other: Rect,
+        inset: Float = PortAssignment.defaultInset
+    ) -> Point {
         let r = node.bounds
         let vertical = isVertical(side)
         let lo = vertical ? r.left : r.top
         let hi = vertical ? r.right : r.bottom
-        let inset = min(10, (hi - lo) / 4)
+        let span = PortAssignment.span(of: r, side: side, inset: inset)
         let otherLo = vertical ? other.left : other.top
         let otherHi = vertical ? other.right : other.bottom
         let value =
             max(lo, otherLo) < min(hi, otherHi) ? (max(lo, otherLo) + min(hi, otherHi)) / 2 : (otherLo + otherHi) / 2
-        let along = min(max(value, lo + inset), hi - inset)
+        let along = min(max(value, span.low), span.high)
         switch side {
         case .top: return Point(x: along, y: r.top)
         case .bottom: return Point(x: along, y: r.bottom)

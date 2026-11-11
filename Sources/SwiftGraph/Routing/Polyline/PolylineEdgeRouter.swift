@@ -2,7 +2,8 @@ import Foundation
 
 /// Shortest polyline that keeps `padding` clear of every obstacle, finished with `EdgeSeparator`.
 /// Detours prefer few bends, avoid crossing routes already laid, and fan out where several share a corner.
-/// Ports are not interpreted.
+/// Each route runs between the boundary ports `PortAssignment` chose (honouring port constraints and candidates), and
+/// keeps out of its own end nodes; an edge with no clear route between its ports is tried centre to centre.
 public final class PolylineEdgeRouter: EdgeRouter {
     public var padding: Float = ObstaclePolyline.defaultPadding
 
@@ -42,19 +43,31 @@ public final class PolylineEdgeRouter: EdgeRouter {
         let scene = ObstaclePolyline.Scene(graph.nodes)
         let routed = ObstaclePolyline.SegmentIndex(bounds: scene.bounds)
         let edges = graph.edges.filter { $0.source !== $0.target }
+        let assigned = PortAssignment(edgeSpacing: edgeSpacing).assign(graph, style: .polyline)
         var corners: [Point: [ObstaclePolyline.Bend]] = [:]
         var used = Array(repeating: [ObstaclePolyline.Bend](), count: edges.count)
         var detoured: [Int] = []
         func route(_ i: Int) -> (path: [Point], gap: Float, bends: [ObstaclePolyline.Bend])? {
-            scene.route(
-                edges[i],
-                padding: padding,
-                bend: bendPenalty,
-                crossing: crossingPenalty,
-                routed: routed,
-                corners: corners,
-                fan: edgeSpacing
-            )
+            func search(
+                _ ports: (source: EdgePort, target: EdgePort)?
+            ) -> (
+                path: [Point], gap: Float, bends: [ObstaclePolyline.Bend]
+            )? {
+                scene.route(
+                    edges[i],
+                    padding: padding,
+                    bend: bendPenalty,
+                    crossing: crossingPenalty,
+                    routed: routed,
+                    corners: corners,
+                    fan: edgeSpacing,
+                    ports: ports
+                )
+            }
+            guard let source = assigned.source(of: edges[i]), let target = assigned.target(of: edges[i]) else {
+                return search(nil)
+            }
+            return search((source, target)) ?? search(nil)
         }
         func register(_ i: Int, _ bends: [ObstaclePolyline.Bend]) {
             for b in used[i] { corners[b.corner]?.removeAll { $0 == b } }

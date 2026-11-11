@@ -627,16 +627,18 @@ private func finite(_ g: LayoutGraph) -> Bool {
         #expect(f.path.first?.y == 40, "\(type(of: router)): \(f.path)")
         #expect(f.path.last?.x == 240, "\(type(of: router)): \(f.path)")
     }
-    // The polyline router does not interpret ports.
+    // The polyline router routes between assigned boundary ports: facing sides by default, the candidates' sides when
+    // given, leaving each port square to its side before heading across.
     let g = fixture()
     let e = g.edges[0]
     let router = PolylineEdgeRouter()
     router.routeEdges(g)
-    let unconstrained = e.path
+    #expect(e.path == [Point(x: 40, y: 20), Point(x: 200, y: 20)])
     e.sourcePortCandidates = [.top]
     e.targetPortCandidates = [.bottom]
     router.routeEdges(g)
-    #expect(e.path == unconstrained)
+    #expect(e.path.first?.y == 0 && e.path[1].x == e.path[0].x && e.path[1].y < 0, "\(e.path)")
+    #expect(e.path.last?.y == 40 && e.path[e.path.count - 2].x == e.path.last?.x, "\(e.path)")
 }
 
 @Test func barnesHutOpensCellsStraddlingRepulsionCutoff() {
