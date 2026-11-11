@@ -1,8 +1,13 @@
 import Foundation
 
+/// Routes a layered drawing: ports are assigned per node side before routing, tracks are allocated per rank
+/// corridor for all edges together, and every route is laid against a live index of the routes already laid.
+/// The directed, hierarchical, series-parallel and swimlane layouts share it. It plans left to right, where ranks
+/// are distinct node-centre x coordinates; `LayeredFlow` transposes other flows into that frame.
+///
 /// Port assignment and corridor candidates share obstacle geometry for the whole component.
 /// The exact-coordinate search is a repair path, not the common case for every edge.
-final class DirectedRouter {
+final class LayeredRouter {
     typealias Ports = (Point, Point, Point, Point)
 
     /// Positions in `nodes` of an edge's source and target, whose padded obstacles its own route may enter.
@@ -11,7 +16,7 @@ final class DirectedRouter {
     let edges: [LayoutEdge]
     let feedback: Set<LayoutEdge>
     let edgeIndices: [LayoutEdge: Int]
-    let configuration: DirectedLayoutConfiguration
+    let configuration: LayeredRoutingConfiguration
     let pitch: Float
     private(set) var bodies: [Rect] = []
     private(set) var obstacles: [Rect] = []
@@ -50,7 +55,7 @@ final class DirectedRouter {
         edges: [LayoutEdge],
         feedback: Set<LayoutEdge>,
         edgeIndices: [LayoutEdge: Int],
-        configuration: DirectedLayoutConfiguration,
+        configuration: LayeredRoutingConfiguration,
         pitch: Float
     ) {
         self.nodes = nodes
@@ -91,7 +96,7 @@ final class DirectedRouter {
     }
 
     func route(coordinated: Bool = true) throws {
-        self.coordinated = coordinated && configuration.mode == .fresh
+        self.coordinated = coordinated && !configuration.keepsPreviousRoutes
         assignPorts()
         var channels: [LayoutEdge: [Point]]
         if self.coordinated {
@@ -105,7 +110,7 @@ final class DirectedRouter {
                 clearance: clearance,
                 spacing: edgeSpacing
             )
-            channels = try plan.apply(minimumGap: configuration.layerSpacing)
+            channels = try plan.apply(minimumGap: configuration.minimumRankGap)
             for edge in edges {
                 var p = ports[required: edge]
                 p.0.x += edge.source.center.x - priorX[required: edge.source]
@@ -134,7 +139,7 @@ final class DirectedRouter {
         try separateProximateRuns()
         try polish()
         // Incremental drawings keep their retained routes; only the new ones are improved.
-        if configuration.mode != .fresh {
+        if configuration.keepsPreviousRoutes {
             try refine()
             try improveWorstRoutes()
             try polish()
@@ -181,7 +186,7 @@ final class DirectedRouter {
         beginOccupancyPass()
         occupied.removeAll()
         func record(_ edge: LayoutEdge) { occupied.insert(edge.path, owner: edgeIndices[required: edge]) }
-        if configuration.mode != .fresh {
+        if configuration.keepsPreviousRoutes {
             for edge in edges {
                 guard let old = configuration.previousPaths[edgeIndices[required: edge]], old.count >= 2 else {
                     continue

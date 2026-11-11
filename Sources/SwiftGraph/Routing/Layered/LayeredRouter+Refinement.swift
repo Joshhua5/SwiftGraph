@@ -1,6 +1,6 @@
 import Foundation
 
-extension DirectedRouter {
+extension LayeredRouter {
     /// Refine the selected drawing with every other route present. The initial pass
     /// sees only earlier edges, so a valid hierarchy guide can retain avoidable jogs.
     /// Each accepted shortcut is obstacle-safe and cannot add crossings or length.

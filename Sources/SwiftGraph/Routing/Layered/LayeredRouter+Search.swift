@@ -1,6 +1,6 @@
 import Foundation
 
-extension DirectedRouter {
+extension LayeredRouter {
     /// Rasterize exact-coordinate visibility links once per repair search. Obstacle and
     /// occupied-track costs are then O(1) per A* step, rather than scanning every edge.
     private func prepareGrid(

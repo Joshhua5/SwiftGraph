@@ -1,6 +1,6 @@
 import Foundation
 
-extension DirectedRouter {
+extension LayeredRouter {
     /// Only obstacles and occupied runs within this edge's horizontal span consume
     /// outer lanes. Unrelated edges elsewhere cannot push a feedback route outward.
     func exteriorLanes(from start: Point, to end: Point) -> [Float] {

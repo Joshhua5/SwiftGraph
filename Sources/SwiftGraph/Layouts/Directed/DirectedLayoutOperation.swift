@@ -178,7 +178,7 @@ public struct DirectedLayoutOperation {
                 successors[edge.target, default: []].append(edge.source)
             }
         }
-        // Reserve capacity on the sides each end will use (as `DirectedRouter` assigns them), before ranking.
+        // Reserve capacity on the sides each end will use (as `LayeredRouter` assigns them), before ranking.
         // Lane feedback and loops use top ports; explicit port constraints rule an ordinary or reversed edge.
         var sideCounts: [LayoutNode: [PortConstraint: Int]] = [:]
         for edge in allEdges {
@@ -332,7 +332,7 @@ public struct DirectedLayoutOperation {
             for node in nodes.sorted(by: { ($0.center.x, $0.center.y, $0.id) < ($1.center.x, $1.center.y, $1.id) }) {
                 guard let list = incident[node] else { continue }
                 func range(_ n: LayoutNode, _ shift: Float = 0) -> (lo: Float, hi: Float) {
-                    let r = DirectedRouter.sideRange(n.bounds)
+                    let r = LayeredRouter.sideRange(n.bounds)
                     return (r.lo + shift, r.hi + shift)
                 }
                 // (edges that miss, total miss distance): a slide must improve this pair, so passes terminate.
