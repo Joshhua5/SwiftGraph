@@ -197,6 +197,29 @@ import Testing
         #expect(routed(crossing: 40).contains { $0.y > 100 })
     }
 
+    @Test func bendCostsFollowTheArrivalNotTheFirstPathToReachACorner() {
+        let obstacles = [
+            Rect(x: 270, y: -30, width: 10, height: 80),
+            Rect(x: 200, y: -40, width: 50, height: 60),
+            Rect(x: 330, y: -60, width: 60, height: 40),
+        ]
+        let start = Point(x: 0, y: 0)
+        let end = Point(x: 400, y: -20)
+        let bend: Float = 100
+        let routed = ObstaclePolyline.SegmentIndex(bounds: Rect(x: -10, y: -100, width: 420, height: 200))
+        func cost(_ path: [Point]) -> Float { ObstaclePolyline.cost(path, bend: bend, crossing: 0, routed: routed) }
+        // A search keyed on the corner alone kept the cheapest arrival at (395, -15), running in level from the
+        // right of the box, and paid a 45° turn there; the arrival from above that turns only 12° was discarded.
+        // It returned this five-bend route.
+        let pointOnly = [
+            start, Point(x: 195, y: -45), Point(x: 255, y: -45), Point(x: 285, y: -35),
+            Point(x: 325, y: -15), Point(x: 395, y: -15), end,
+        ]
+        let found = ObstaclePolyline.search(start, end, obstacles, padding: 5, bend: bend)
+        #expect(found == [start, Point(x: 265, y: 55), Point(x: 285, y: 55), Point(x: 395, y: -15), end])
+        #expect(found.map { cost($0) < cost(pointOnly) - 10 } == true)
+    }
+
     @Test func edgesFromDifferentDirectionsDoNotBendAtTheSamePaddedCorner() {
         let g = nodes([
             ("a", Rect(x: -20, y: -20, width: 40, height: 40)), ("b", Rect(x: 380, y: -20, width: 40, height: 40)),

@@ -445,12 +445,51 @@ enum ObstaclePolyline {
             return !tree.contains(intersecting: area) { r, _ in r.intersectsLine(a, b) }
         }
         let heuristic = points.map { ($0 - end).length }
-        var cost = Array(repeating: Float.infinity, count: points.count)
-        var previous = Array(repeating: -1, count: points.count)
-        // Binary min-heap on (estimate, index): the lower index wins ties.
-        var heap: [(Float, Int)] = []
-        func before(_ a: (Float, Int), _ b: (Float, Int)) -> Bool { a.0 == b.0 ? a.1 < b.1 : a.0 < b.0 }
-        func push(_ item: (Float, Int)) {
+        // A bend is charged at its corner, so its cost depends on the arrival as well as the corner. With a bend
+        // penalty a state is (corner, the corner it was reached from); without one, the corner alone.
+        // An arrival is dropped when another at the same corner costs less by at least `bend` times the angle
+        // between their directions (over pi): every later turn differs by at most that angle, so continuing from
+        // the other is never worse. Only near-ties in clearly different directions survive, which keeps the state
+        // count close to the corner count rather than the visibility-edge count.
+        let isBendAware = bend > 0
+        let count = points.count
+        var vertexOf: [Int] = []
+        var parentOf: [Int] = []
+        var costOf: [Float] = []
+        var heading: [Point] = []
+        var statesAt = Array(repeating: [Int](), count: count)
+        var best = Array(repeating: Float.infinity, count: count)
+        // Several states at one corner may test the same segment; visibility and `extra` depend only on the
+        // segment, so with a bend penalty each is worked out once.
+        var sight: [Int: Bool] = [:]
+        var surcharge: [Int: Float] = [:]
+        func slack(_ vertex: Int) -> Float { isBendAware && vertex != 1 ? bend : 0 }
+        /// What arriving along `a` rather than `b` can save on any later turn at `vertex`.
+        func margin(_ vertex: Int, _ a: Point, _ b: Point) -> Float {
+            guard isBendAware, vertex != 1 else { return 0 }
+            return bend * atan2(abs(a.x * b.y - a.y * b.x), a.x * b.x + a.y * b.y) / .pi
+        }
+        func sees(_ a: Int, _ b: Int) -> Bool {
+            guard isBendAware else { return visible(points[a], points[b]) }
+            if let known = sight[a * count + b] { return known }
+            let result = visible(points[a], points[b])
+            sight[a * count + b] = result
+            return result
+        }
+        func charge(_ extra: (Point, Point) -> Float, _ a: Int, _ b: Int) -> Float {
+            guard isBendAware else { return extra(points[a], points[b]) }
+            if let known = surcharge[a * count + b] { return known }
+            let result = extra(points[a], points[b])
+            surcharge[a * count + b] = result
+            return result
+        }
+        // Binary min-heap on (estimate, corner, state): the lower corner, then the earlier state, wins ties.
+        var heap: [(Float, Int, Int)] = []
+        func before(_ a: (Float, Int, Int), _ b: (Float, Int, Int)) -> Bool {
+            if a.0 != b.0 { return a.0 < b.0 }
+            return a.1 != b.1 ? a.1 < b.1 : a.2 < b.2
+        }
+        func push(_ item: (Float, Int, Int)) {
             heap.append(item)
             var c = heap.count - 1
             while c > 0, before(heap[c], heap[(c - 1) / 2]) {
@@ -458,7 +497,7 @@ enum ObstaclePolyline {
                 c = (c - 1) / 2
             }
         }
-        func pop() -> (Float, Int)? {
+        func pop() -> (Float, Int, Int)? {
             guard let top = heap.first else { return nil }
             let last = heap.removeLast()
             if !heap.isEmpty {
@@ -477,33 +516,65 @@ enum ObstaclePolyline {
             }
             return top
         }
-        cost[0] = 0
-        push((heuristic[0], 0))
-        while let (estimate, current) = pop() {
+        vertexOf.append(0)
+        parentOf.append(-1)
+        costOf.append(0)
+        heading.append(Point(x: 0, y: 0))
+        statesAt[0] = [0]
+        best[0] = 0
+        push((heuristic[0], 0, 0))
+        while let (estimate, current, state) = pop() {
             if RoutingCompute.isCancelled { return nil }
-            if estimate > cost[current] + heuristic[current] + 1e-4 { continue }
+            let reached = costOf[state]
+            if estimate > reached + heuristic[current] + 1e-4 || reached > best[current] + slack(current) { continue }
+            // A cheaper arrival found since this one was queued may now make it redundant.
+            let isDominated = isBendAware && statesAt[current].contains { other in
+                other != state && costOf[other] + margin(current, heading[other], heading[state]) < reached - 1e-5
+            }
+            if isDominated { continue }
             if current == 1 {
-                var result = [end]
-                var index = 1
-                while previous[index] >= 0 {
-                    index = previous[index]
-                    result.append(points[index])
+                var result: [Point] = []
+                var at = state
+                while at >= 0 {
+                    result.append(points[vertexOf[at]])
+                    at = parentOf[at]
                 }
                 return result.reversed()
             }
-            for next in points.indices where next != current {
-                var candidate = cost[current] + (points[current] - points[next]).length
-                guard candidate < cost[next], visible(points[current], points[next]) else { continue }
-                if bend > 0, previous[current] >= 0 {
-                    candidate += bend * turn(points[previous[current]], points[current], points[next]) / .pi
+            let from = parentOf[state] >= 0 ? vertexOf[parentOf[state]] : -1
+            for next in points.indices where next != current && next != from {
+                var candidate = reached + (points[current] - points[next]).length
+                guard candidate < best[next] + slack(next) else { continue }
+                let direction = points[next] - points[current]
+                // Also covers the state this arrival would replace, whose direction is the same.
+                func loses(_ candidate: Float) -> Bool {
+                    statesAt[next].contains { candidate >= costOf[$0] + margin(next, heading[$0], direction) }
+                }
+                guard !loses(candidate), sees(current, next) else { continue }
+                if bend > 0, from >= 0 {
+                    candidate += bend * turn(points[from], points[current], points[next]) / .pi
                 }
                 // `extra` is never negative, so it cannot rescue a candidate that already loses.
-                if let extra, candidate < cost[next] { candidate += extra(points[current], points[next]) }
-                if candidate < cost[next] {
-                    cost[next] = candidate
-                    previous[next] = current
-                    push((candidate + heuristic[next], next))
+                if let extra, !loses(candidate) { candidate += charge(extra, current, next) }
+                guard !loses(candidate) else { continue }
+                let existing = statesAt[next].first { other in
+                    !isBendAware || parentOf[other] >= 0 && vertexOf[parentOf[other]] == current
                 }
+                let target: Int
+                if let existing {
+                    target = existing
+                    costOf[existing] = candidate
+                    parentOf[existing] = state
+                } else {
+                    target = vertexOf.count
+                    statesAt[next].append(target)
+                    vertexOf.append(next)
+                    parentOf.append(state)
+                    costOf.append(candidate)
+                    heading.append(direction)
+                }
+                best[next] = min(best[next], candidate)
+                push((candidate + heuristic[next], next, target))
             }
         }
         return nil
