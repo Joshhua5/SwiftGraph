@@ -2,12 +2,17 @@ import Foundation
 
 /// Hierarchical channel routing: lanes run between obstacles and `obstacleMargin` outside their outlines, edges may
 /// only cross the groups they start or end in, and the root frame is `obstacleMargin` clear of the outermost nodes.
-/// Source and target port constraints and candidates choose the side an edge leaves and enters. Edges sharing a
-/// corridor are separated into lanes with `EdgeSeparator`; a lane that cannot be shifted clear of every node stays
-/// merged. Node placement is left alone unless `movesNodesToWidenCorridors` is set. Edges the channels cannot route
-/// are retried over a flat grid, then drawn as an obstacle-aware polyline or an orthogonal L/Z, and reported.
+/// Source and target port constraints and candidates choose the side an edge leaves and enters. Node placement is
+/// left alone unless `movesNodesToWidenCorridors` is set. Edges the channels cannot route are retried over a flat
+/// grid, then drawn as an obstacle-aware polyline or an orthogonal L/Z, and reported.
+///
+/// Edges are routed shortest first, and every corridor counts the routes already along it, on any of its lanes: once
+/// it holds more than fit `bundleSpacing` apart, a further route pays its length again per route over, so it takes a
+/// neighbouring corridor when one is close. Routes sharing a corridor are then given tracks of their own across it
+/// (`CorridorTracks`); a corridor with no room for tracks stays merged.
 public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
-    /// Lane spacing for edges sharing a corridor; 0 leaves them merged and disables corridor widening.
+    /// Track spacing for edges sharing a corridor; 0 leaves them merged, gives corridors no capacity and disables
+    /// corridor widening.
     public var bundleSpacing: Float = 10
     /// Opt-in: before lanes are separated, crowded corridors are widened by sliding the leaf nodes beside them
     /// sideways (kept inside their group and clear of other nodes, groups and unrelated routes), and the affected
@@ -18,8 +23,9 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
     public var bendPenalty: Float = 100
 
     /// Unroutable edges are those the channels and the flat retry could not route; they are drawn as a polyline, an
-    /// L/Z or a straight line. Fallbacks are those and the edges only the flat retry routed. Unseparated edges come
-    /// from the closing `EdgeSeparator` pass.
+    /// L/Z or a straight line. Fallbacks are those and the edges only the flat retry routed. Unseparated edges still
+    /// share a stretch after track assignment: their corridor had no room, or a track would cut a node or add
+    /// crossings with edges outside the corridor.
     public private(set) var report = RoutingReport()
 
     /// Edges the channels and the flat retry could not route; they are drawn as a polyline, an L/Z or a straight line.
@@ -31,6 +37,7 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
     private let calculator = ChannelGridCalculator()
     private let flatCalculator = ChannelGridCalculator()
     private var flatRoot: LayoutNode?
+    private var usage: CorridorUsage?
 
     public init() {}
 
@@ -46,29 +53,52 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
             graph.root.bounds = enclosingBounds(graph.root.children).inflated(by: obstacleMargin * 2)
         }
         rebuild(graph)
+        let walls = CorridorWalls(graph.nodes + [graph.root], reach: 16 * max(bundleSpacing, 1))
+        // Lanes run `obstacleMargin` outside the nodes, so that is the clearance a corridor's tracks keep.
+        let clearance = max(obstacleMargin, bundleSpacing / 2)
+        usage = bundleSpacing > 0 ? CorridorUsage(walls: walls, spacing: bundleSpacing, clearance: clearance) : nil
+        defer { usage = nil }
         var paths: [LayoutEdge: [Point]] = [:]
-        let edges = graph.edges.filter { $0.source !== $0.target }
+        // Short edges first: they have the fewest alternatives, and long edges can afford to go round a full corridor.
+        let edges = graph.edges.enumerated().filter { $0.element.source !== $0.element.target }
+            .sorted { a, b in
+                let p = Self.reach(a.element)
+                let q = Self.reach(b.element)
+                return p == q ? a.offset < b.offset : p < q
+            }
+            .map(\.element)
         let routing = LayoutStageScope.begin("Route", to: 0.8)
         for (position, edge) in edges.enumerated() {
             if RoutingCompute.isCancelled { return }
             routing.tick(position, of: edges.count)
+            usage?.start(edge)
             let path = solve(edge, graph)
             edge.path = path
             paths[edge] = path
+            usage?.add(EdgeEndpointClipper.clipped(path, source: edge.source.bounds, target: edge.target.bounds))
         }
         routing.end()
+        // Nudging moves nodes, so the corridors measured above no longer hold: edges it reroutes go without capacity.
+        usage = nil
         if movesNodesToWidenCorridors, bundleSpacing > 0 { nudge(graph, edges: edges, paths: &paths) }
         if RoutingCompute.isCancelled { return }
         EdgeEndpointClipper.clipToNodeBounds(graph)
         if bundleSpacing > 0 {
-            let merged = edges.map(\.path)
-            let separator = EdgeSeparator()
-            separator.spacing = bundleSpacing
-            LayoutStageScope.run("Separate", from: 0.8) { separator.routeEdges(graph) }
-            let restored = restoreLanesTouchingNodes(graph, edges: edges, merged: merged)
-            // A lane put back on its merged route shares that stretch again.
-            unseparated = separator.unseparated + restored.sorted().map { edges[$0] }
+            // Nudging may have moved nodes, so the walls are measured again.
+            let tracks = CorridorTracks(
+                spacing: bundleSpacing,
+                clearance: clearance,
+                walls: movesNodesToWidenCorridors ? CorridorWalls(graph.nodes + [graph.root], reach: walls.reach) : walls
+            )
+            unseparated = LayoutStageScope.run("Tracks", from: 0.8) {
+                tracks.assign(graph.edges, scene: ObstaclePolyline.Scene(graph.nodes))
+            }
         }
+    }
+
+    /// Manhattan distance between the endpoints' centres.
+    private static func reach(_ edge: LayoutEdge) -> Float {
+        abs(edge.source.center.x - edge.target.center.x) + abs(edge.source.center.y - edge.target.center.y)
     }
 
     private func rebuild(_ graph: LayoutGraph) {
@@ -388,7 +418,11 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
                 let next = (ny * width + nx) * 5 + dir
                 let distance = abs(xGrid[nx] - xGrid[x]) + abs(yGrid[ny] - yGrid[y])
                 let bend = direction != 0 && (dir - 1) / 2 != (direction - 1) / 2
-                let cost = costs[required: current] + Float(distance) + (bend ? bendPenalty : 0)
+                // A full corridor charges for each step along it, except inside the edge's own ends.
+                let crowding =
+                    confined || usage == nil
+                    ? 0 : usage?.cost(Point(x: px(x), y: py(y)), Point(x: px(nx), y: py(ny))) ?? 0
+                let cost = costs[required: current] + Float(distance) + (bend ? bendPenalty : 0) + crowding
                 if !closedStates.contains(next) && cost < costs[next, default: .infinity] {
                     costs[next] = cost
                     previous[next] = current

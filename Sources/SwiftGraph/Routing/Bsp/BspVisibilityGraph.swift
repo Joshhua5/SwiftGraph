@@ -92,13 +92,15 @@ struct BspVisibilityGraph {
 
     /// A* over (vertex, axis) states from any start to any end, charging `bendPenalty` per change of axis and each
     /// port's own cost for starting or finishing there.
-    /// `blocked` replaces `obstacles` when the caller already indexes them: it reports whether a link is cut.
+    /// `blocked` replaces `obstacles` when the caller already indexes them: it reports whether a link is cut. `extra`
+    /// adds a cost per link, such as a full corridor's.
     func path(
         from starts: [(Point, Float)],
         to ends: [(Point, Float)],
         bendPenalty: Float,
         obstacles: [Rect] = [],
-        blocked: ((Point, Point) -> Bool)? = nil
+        blocked: ((Point, Point) -> Bool)? = nil,
+        extra: ((Point, Point) -> Float)? = nil
     ) -> [Point]? {
         let cuts: (Point, Point) -> Bool
         if let blocked {
@@ -153,7 +155,7 @@ struct BspVisibilityGraph {
                 let nextAxis = abs(d.x) >= abs(d.y) ? 1 : 2
                 let cost =
                     costs[required: state] + abs(d.x) + abs(d.y) + (axis != 0 && axis != nextAxis ? bendPenalty : 0)
-                    + (goals[next] ?? 0)
+                    + (goals[next] ?? 0) + (extra?(a, b) ?? 0)
                 let key = next * 3 + nextAxis
                 if cost < costs[key, default: .infinity] {
                     costs[key] = cost

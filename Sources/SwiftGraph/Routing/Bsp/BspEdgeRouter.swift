@@ -2,11 +2,15 @@ import Foundation
 
 /// Routes on the bounded segments of the hierarchical BSP visibility graph: every cut at every depth, plus lanes round
 /// nodes no straight cut separates. By default routes leave and enter through orthogonal side ports, keep `margin`
-/// clear of the outermost nodes, prefer fewer bends and finish with `EdgeSeparator`. Source and target port
-/// constraints and candidates choose the sides; without them, a graph whose edges mostly run one way prefers leaving
-/// on the downstream side and entering on the upstream one. Edges with no route through the partition are retried
-/// without port constraints, then drawn as an obstacle-aware polyline or an orthogonal L/Z, and reported.
-/// Unusually long partition routes are compared with a finer channel route before lane separation.
+/// clear of the outermost nodes and prefer fewer bends. Source and target port constraints and candidates choose the
+/// sides; without them, a graph whose edges mostly run one way prefers leaving on the downstream side and entering on
+/// the upstream one. Edges with no route through the partition are retried without port constraints, then drawn as an
+/// obstacle-aware polyline or an orthogonal L/Z, and reported. Unusually long partition routes are compared with a
+/// finer channel route.
+///
+/// Edges are routed shortest first, and each cut counts the routes already along it: once a gap holds more routes
+/// than fit `edgeSpacing` apart, a further route pays its length again per route over, so it takes a neighbouring
+/// gap when one is close. Routes sharing a gap are then given tracks of their own across it (`CorridorTracks`).
 public final class BspEdgeRouter: EdgeRouter {
     /// Clearance between the outermost nodes and the outer routing frame.
     public var margin: Float = 20
@@ -14,12 +18,13 @@ public final class BspEdgeRouter: EdgeRouter {
     /// Extra cost per bend, so straight and single-bend routes beat equal-length staircases.
     public var bendPenalty: Float = 40
 
-    /// Lane spacing for edges sharing a channel; 0 leaves them merged.
+    /// Track spacing for edges sharing a gap, and the clearance tracks keep from nodes; 0 leaves them merged and
+    /// gaps without a capacity.
     public var edgeSpacing: Float = 10
 
     /// Unroutable edges have no route through the partition and no shorter clear channel route. Fallbacks are edges
     /// routed without their port constraints, or with no partition route at all. Unseparated edges come from the
-    /// closing `EdgeSeparator` pass.
+    /// track assignment, where a gap had no room for tracks or a track would cut a node or add crossings.
     public private(set) var report = RoutingReport()
 
     /// Edges with no route through the partition: a polyline, L/Z or straight line was drawn instead.
@@ -55,21 +60,32 @@ public final class BspEdgeRouter: EdgeRouter {
         let base =
             segments.isEmpty ? nil : LayoutStageScope.run("Visibility graph", to: 0.2) { BspVisibilityGraph(segments) }
         let blockers = BspBlockers(graph)
-        let routing = LayoutStageScope.begin("Route", from: 0.2)
-        for (position, edge) in graph.edges.enumerated() where edge.source !== edge.target {
+        let walls = CorridorWalls(graph.nodes, reach: 16 * max(edgeSpacing, 1))
+        let usage = edgeSpacing > 0 ? CorridorUsage(walls: walls, spacing: edgeSpacing, clearance: edgeSpacing) : nil
+        // Short edges first: they have the fewest alternatives, and long edges can afford to go round a full gap.
+        let order = graph.edges.indices.filter { graph.edges[$0].source !== graph.edges[$0].target }
+            .sorted { i, j in
+                let a = Self.reach(graph.edges[i])
+                let b = Self.reach(graph.edges[j])
+                return a == b ? i < j : a < b
+            }
+        let routing = LayoutStageScope.begin("Route", from: 0.2, to: 0.8)
+        for (position, index) in order.enumerated() {
             if RoutingCompute.isCancelled { return }
-            routing.tick(position, of: graph.edges.count)
+            routing.tick(position, of: order.count)
+            let edge = graph.edges[index]
+            usage?.start(edge)
             let obstacles = ObstaclePolyline.obstacles(edge, graph).map(ObstaclePolyline.interior)
             let cuts = blockers.cuts(for: edge)
             var path = base.flatMap {
-                orthogonalRoute(edge, $0, segments, obstacles, cuts, flow: flow, constrained: true)
+                orthogonalRoute(edge, $0, segments, obstacles, cuts, usage, flow: flow, constrained: true)
             }
             if path == nil,
                 edge.sourcePort != .none || edge.targetPort != .none || !edge.sourcePortCandidates.isEmpty
                     || !edge.targetPortCandidates.isEmpty
             {
                 path = base.flatMap {
-                    orthogonalRoute(edge, $0, segments, obstacles, cuts, flow: flow, constrained: false)
+                    orthogonalRoute(edge, $0, segments, obstacles, cuts, usage, flow: flow, constrained: false)
                 }
                 if path != nil { fellBack.append(edge) }
             }
@@ -105,14 +121,20 @@ public final class BspEdgeRouter: EdgeRouter {
             }
             // A nil route was replaced by `RoutingFallback.route`, which always returns a path.
             edge.path = path!
+            usage?.add(edge.path)
         }
         routing.end()
         if edgeSpacing > 0 {
-            let separator = EdgeSeparator()
-            separator.spacing = edgeSpacing
-            separator.routeEdges(graph)
-            unseparated = separator.unseparated
+            let tracks = CorridorTracks(spacing: edgeSpacing, clearance: edgeSpacing, walls: walls)
+            unseparated = LayoutStageScope.run("Tracks", from: 0.8) {
+                tracks.assign(graph.edges, scene: ObstaclePolyline.Scene(graph.nodes))
+            }
         }
+    }
+
+    /// Manhattan distance between the endpoints' centres.
+    private static func reach(_ edge: LayoutEdge) -> Float {
+        abs(edge.source.center.x - edge.target.center.x) + abs(edge.source.center.y - edge.target.center.y)
     }
 
     /// Moves the frame out by `amount`, extending every segment that ended on it.
@@ -158,6 +180,7 @@ public final class BspEdgeRouter: EdgeRouter {
         _ segments: [(start: Point, end: Point)],
         _ obstacles: [Rect],
         _ cuts: @escaping (Point, Point) -> Bool,
+        _ usage: CorridorUsage?,
         flow: Point?,
         constrained: Bool
     ) -> [Point]? {
@@ -177,7 +200,8 @@ public final class BspEdgeRouter: EdgeRouter {
                 from: sources.map { ($0.port, sideCost($0.side, desired: leaving)) },
                 to: targets.map { ($0.port, sideCost($0.side, desired: entering)) },
                 bendPenalty: bendPenalty,
-                blocked: cuts
+                blocked: cuts,
+                extra: usage.map { usage in { usage.cost($0, $1) } }
             )
         else { return nil }
         // Drop straight-through points so aligned neighbours get a single segment.

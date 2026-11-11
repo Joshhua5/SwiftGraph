@@ -129,13 +129,13 @@ final class DirectedChannelPlan {
         struct Transition {
             var chain: Int
             var part: Int
-            var segment: DirectedChannelSegment
+            var segment: TrackSegment
         }
         var corridors = Array(repeating: [Transition](), count: ranks.count - 1)
         var identity = 0
         for i in chains.indices {
             for part in 0..<(chains[i].points.count - 1) {
-                let segment = DirectedChannelSegment(
+                let segment = TrackSegment(
                     id: identity,
                     source: chains[i].points[part].y,
                     target: chains[i].points[part + 1].y
@@ -146,9 +146,9 @@ final class DirectedChannelPlan {
         }
         let widths = ranks.indices.map { rank in nodes.filter { nodeRanks[$0] == rank }.map(\.width).max() ?? 0 }
         var coordinates = [ranks[0]]
-        var allocations: [DirectedChannelAllocation] = []
+        var allocations: [TrackAllocation] = []
         for rank in corridors.indices {
-            let allocation = try DirectedChannelAllocation.solve(corridors[rank].map(\.segment), clearance: spacing)
+            let allocation = try TrackAllocation.solve(corridors[rank].map(\.segment), clearance: spacing)
             allocations.append(allocation)
             let gap = max(minimumGap, Float(allocation.count + 1) * spacing + clearance * 2)
             coordinates.append(coordinates[rank] + widths[rank] / 2 + gap + widths[rank + 1] / 2)

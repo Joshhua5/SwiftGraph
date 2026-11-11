@@ -423,6 +423,24 @@ public final class EdgeSeparator: EdgeRouter, RouteFinisher {
         return (a < b) ? !forward : forward
     }
 
+    /// Whether edge `a`, sharing a line with edge `b` at their segments `ka` and `kb`, belongs on the `-n` side of it,
+    /// where `n` is `u` turned a quarter counter-clockwise. The order `separate` gives lanes, for other track
+    /// assigners to break ties with, so consecutive shared stretches nest the same way.
+    static func precedes(
+        _ a: Int,
+        _ pathA: [Point],
+        _ ka: Int,
+        _ b: Int,
+        _ pathB: [Point],
+        _ kb: Int,
+        along u: Point
+    ) -> Bool {
+        func trails(_ path: [Point], _ k: Int) -> Trails {
+            Trails(path: path, k: k, ahead: trail(path, k, u, true), behind: trail(path, k, u, false))
+        }
+        return precedes(a, b, trails(pathA, ka), trails(pathB, kb), u)
+    }
+
     /// Free width either side of a shared stretch: the nearer node on that side bounds it.
     /// Nodes further off than `reach` cannot narrow the spread, so only those are looked up.
     private static func room(

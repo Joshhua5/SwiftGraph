@@ -387,11 +387,10 @@ struct MetalRoutingTests {
         #expect(metal.report.unroutable == cpu.report.unroutable)
     }
 
-    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [RoutingKind.edgeSeparation, .bsp])
+    /// The segment matrix is the separator's: BSP gives its routes corridor tracks instead, so it no longer builds one.
+    @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [RoutingKind.edgeSeparation])
     func moreThan4096SegmentsFallBackToCPUMatrixAndRecordIt(_ kind: RoutingKind) async throws {
-        // BSP re-routes before separating, so its separator sees its own (shorter) routes: give it enough edges
-        // that those routes still exceed the 4,096-segment matrix limit.
-        let chain = kind == .bsp ? 2_400 : 1_100
+        let chain = 1_100
         let a = crowded(columns: 20, rows: 20, chain: chain)
         let b = crowded(columns: 20, rows: 20, chain: chain)
         #expect(a.edges.reduce(0) { $0 + max(0, $1.path.count - 1) } > 4_096)
