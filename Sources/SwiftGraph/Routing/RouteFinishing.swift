@@ -26,14 +26,14 @@ public enum RouteFinishing {
         curveIterations: Int = defaultCurveIterations,
         portDistributionLimit: Int? = nil
     ) -> [LayoutEdge] {
-        SelfLoopRouter().routeEdges(graph)
+        SelfLoopRouter().finishRoutes(graph)
         let failed = repair(graph, style: style)
         EdgeEndpointClipper.clipToNodeBounds(graph)
-        if distributesPorts(graph, limit: portDistributionLimit) { PortDistributor().routeEdges(graph) }
+        if distributesPorts(graph, limit: portDistributionLimit) { PortDistributor().finishRoutes(graph) }
         if style == .curved {
             let curves = CurveFittingEdgeRouter()
             curves.iterations = curveIterations
-            curves.routeEdges(graph)
+            curves.finishRoutes(graph)
         }
         return failed
     }

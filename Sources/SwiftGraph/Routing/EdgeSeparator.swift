@@ -9,7 +9,7 @@ import Foundation
 /// the edge's other shifts in place. A lane that leaves a node square to a face stays on that face, clear of its
 /// corners: the lanes slide along the line to fit it, and draw closer together if it is still too small, so
 /// orthogonal routes never end in a diagonal stub. Self-loops are untouched.
-public final class EdgeSeparator: EdgeRouter {
+public final class EdgeSeparator: EdgeRouter, RouteFinisher {
     public var spacing: Float = 10
 
     /// Unseparated edges still share a stretch after the last `routeEdges`: the corridor had no room for lanes, or the
@@ -49,7 +49,9 @@ public final class EdgeSeparator: EdgeRouter {
     /// Segments this close in direction count as running the same way.
     private static let angleLimit = Float(sin(2 * Double.pi / 180))
 
-    public func routeEdges(_ graph: LayoutGraph) {
+    public func routeEdges(_ graph: LayoutGraph) { finishRoutes(graph) }
+
+    public func finishRoutes(_ graph: LayoutGraph) {
         separate(graph.edges, ObstaclePolyline.Scene(graph.nodes))
         report = RoutingReport(graph, unseparated: unseparated)
     }

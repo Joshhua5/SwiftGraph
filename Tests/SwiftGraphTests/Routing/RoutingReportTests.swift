@@ -178,6 +178,42 @@ import Testing
         #expect(!report.unseparated.isEmpty && report.unroutable.isEmpty && report.fallbacks.isEmpty)
     }
 
+    // MARK: - Route finishers
+
+    @Test func finishersAdjustRoutesThroughOneProtocolAndStayEdgeRouters() {
+        let finishers: [any RouteFinisher] = [
+            EdgeSeparator(), PortDistributor(), CurveFittingEdgeRouter(), SelfLoopRouter(),
+        ]
+        for finisher in finishers {
+            #expect(finisher.finish(sealedWithFreeEdge()).isEmpty, "\(type(of: finisher))")
+            #expect(finisher is any EdgeRouter, "\(type(of: finisher))")
+        }
+    }
+
+    @Test func finishingReportsTheSameAsRouting() {
+        let graph = LayoutGraph()
+        let a = node(graph, "a", Rect(x: -20, y: -20, width: 40, height: 40))
+        let b = node(graph, "b", Rect(x: 380, y: -20, width: 40, height: 40))
+        node(graph, "above", Rect(x: 150, y: -60, width: 100, height: 58))
+        node(graph, "below", Rect(x: 150, y: 2, width: 100, height: 58))
+        for _ in 0..<2 {
+            edge(graph, a, b).path = [a.center, b.center]
+        }
+        let separator = EdgeSeparator()
+        let finished = separator.finish(graph)
+        #expect(!finished.unseparated.isEmpty)
+        #expect(separator.report == finished)
+    }
+
+    // MARK: - Layout reports
+
+    @Test func directedDiagnosticsExposeUnroutableEdgesAsAReport() {
+        var diagnostics = DirectedLayoutDiagnostics()
+        #expect(diagnostics.report.isEmpty)
+        diagnostics.unroutableEdges = [4, 2]
+        #expect(diagnostics.report == RoutingReport(unroutable: [2, 4]))
+    }
+
     // MARK: - Async operation
 
     @Test func routingOperationCarriesTheRouterReport() async throws {

@@ -4,7 +4,7 @@ import Foundation
 /// corner and back into the adjacent side. Each loop takes the corner that is clear of other nodes, crosses the
 /// fewest routes and is furthest from where incident edges attach; further loops on a node take other corners,
 /// then nest outward.
-public final class SelfLoopRouter: EdgeRouter {
+public final class SelfLoopRouter: EdgeRouter, RouteFinisher {
     /// How far a corner loop reaches beyond the node.
     public var loopSize: Float = 16
 
@@ -22,7 +22,9 @@ public final class SelfLoopRouter: EdgeRouter {
 
     public init() {}
 
-    public func routeEdges(_ graph: LayoutGraph) {
+    public func routeEdges(_ graph: LayoutGraph) { finishRoutes(graph) }
+
+    public func finishRoutes(_ graph: LayoutGraph) {
         failed = []
         defer { report = RoutingReport(graph, unroutable: failed) }
         let loops = graph.edges.filter { $0.source === $0.target }

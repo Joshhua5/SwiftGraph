@@ -2,6 +2,10 @@ import Foundation
 
 public struct DirectedLayoutDiagnostics: Sendable {
     public var unroutableEdges: [Int] = []
+
+    /// `unroutableEdges` in the shape every router reports.
+    public var report: RoutingReport { RoutingReport(unroutable: unroutableEdges) }
+
     public var overlappingNodeIDs: [[String]] = []
     public var fixedNodeConflicts: [[String]] = []
     public var crossings = 0

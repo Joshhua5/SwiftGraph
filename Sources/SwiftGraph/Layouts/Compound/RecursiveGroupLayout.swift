@@ -12,12 +12,15 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
     public var routesEdges: Bool = true
     public var groupLayoutSelector: ((LayoutNode) -> any LayoutAlgorithm)?
     public private(set) var unroutableEdges: [LayoutEdge] = []
+    /// `unroutableEdges` as indices into the laid-out graph's edges, in the shape every router reports.
+    public private(set) var report = RoutingReport()
     var presetRouting: ((LayoutGraph) -> [LayoutEdge])?
 
     public init(_ coreLayout: any LayoutAlgorithm) { self.coreLayout = coreLayout }
 
     public func applyLayout(_ graph: LayoutGraph) throws {
         unroutableEdges = []
+        report = RoutingReport()
         try Task.checkCancellation()
         let transaction = try LayoutTransaction(graph)
         let original = try GroupLayoutEngine(graph, padding: groupPadding)
@@ -60,5 +63,6 @@ public final class RecursiveGroupLayout: LayoutAlgorithm {
         }
         try transaction.commit(to: graph)
         unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
+        report = RoutingReport(graph, unroutable: unroutableEdges)
     }
 }

@@ -5,6 +5,8 @@ import Foundation
 public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
     public private(set) var lastExecutionMetrics: [LayoutExecutionMetrics] = []
     public private(set) var unroutableEdges: [LayoutEdge] = []
+    /// `unroutableEdges` as indices into the laid-out graph's edges, in the shape every router reports.
+    public private(set) var report = RoutingReport()
     public var coreLayout: any AsyncLayoutAlgorithm
     public var groupPadding: Float = 20
 
@@ -31,6 +33,7 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
     public func applyLayoutAsync(_ graph: LayoutGraph) async throws {
         lastExecutionMetrics = []
         unroutableEdges = []
+        report = RoutingReport()
         try Task.checkCancellation()
         let transaction = try LayoutTransaction(graph)
         let original = try GroupLayoutEngine(graph, padding: groupPadding)
@@ -141,5 +144,6 @@ public final class RecursiveGroupLayoutOperation: LayoutExecutionReporting {
         try transaction.commit(to: graph)
         lastExecutionMetrics = records
         unroutableEdges = zip(graph.edges, transaction.working.edges).compactMap { failures.contains($1) ? $0 : nil }
+        report = RoutingReport(graph, unroutable: unroutableEdges)
     }
 }

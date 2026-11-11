@@ -5,7 +5,7 @@ import Foundation
 /// boundary are moved. Orthogonal routes slide their first or last leg (adding a jog when the route is a single
 /// straight leg); other routes just move the endpoint. An edge is left alone when the change would touch a node or
 /// cross a route it did not cross before, and a side too small for `edgeSpacing` between its ends is left as it is.
-public final class PortDistributor: EdgeRouter {
+public final class PortDistributor: EdgeRouter, RouteFinisher {
     /// Distance kept from the corners of a side.
     public var margin: Float = 6
 
@@ -30,7 +30,9 @@ public final class PortDistributor: EdgeRouter {
         var order: Int
     }
 
-    public func routeEdges(_ graph: LayoutGraph) {
+    public func routeEdges(_ graph: LayoutGraph) { finishRoutes(graph) }
+
+    public func finishRoutes(_ graph: LayoutGraph) {
         var groups: [Key: [End]] = [:]
         var keys: [Key] = []
         // Legs are only slid or jogged in orthogonal drawings; axis-aligned edges of a polyline drawing just tilt. The
