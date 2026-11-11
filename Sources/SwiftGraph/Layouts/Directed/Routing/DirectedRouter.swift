@@ -24,6 +24,12 @@ final class DirectedRouter {
     var spacing: Float
     var coordinated = false
     var retained: Set<LayoutEdge> = []
+
+    /// False until a polishing pass first loads `occupied`; see `load(excluding:)`.
+    private var isOccupancyCurrent = false
+
+    /// The route a polishing pass has taken out of `occupied` while it works on it.
+    private var unindexedEdge: LayoutEdge?
     var costs: [Float] = []
     var previous: [Int] = []
     var closed: [Bool] = []
@@ -103,12 +109,27 @@ final class DirectedRouter {
         }
     }
 
+    /// Makes `occupied` hold every route but `skipped`'s. Within a pass only the route being worked
+    /// on changes, so after the pass's first full load this swaps one route in and one out.
     func load(excluding skipped: LayoutEdge?) {
-        occupied.removeAll()
-        for edge in edges where edge !== skipped {
-            let owner = edgeIndices[required: edge]
-            for segment in DirectedGeometry.segments(edge.path) { occupied.insert(segment, owner: owner) }
+        guard isOccupancyCurrent else {
+            occupied.removeAll()
+            for edge in edges where edge !== skipped { occupied.insert(edge.path, owner: edgeIndices[required: edge]) }
+            isOccupancyCurrent = true
+            unindexedEdge = skipped
+            return
         }
+        guard skipped !== unindexedEdge else { return }
+        if let unindexedEdge { occupied.insert(unindexedEdge.path, owner: edgeIndices[required: unindexedEdge]) }
+        if let skipped { occupied.remove(owner: edgeIndices[required: skipped]) }
+        unindexedEdge = skipped
+    }
+
+    /// Routes may change between passes (strategy restores, callers, compaction), so each pass
+    /// starts from a full load.
+    func beginOccupancyPass() {
+        isOccupancyCurrent = false
+        unindexedEdge = nil
     }
 
     func axis(_ direction: Point) -> Int { direction.x != 0 ? 1 : 2 }
@@ -128,11 +149,9 @@ final class DirectedRouter {
 
     private func routePass(reverse: Bool, channelPaths: [LayoutEdge: [Point]]) throws {
         retained = []
+        beginOccupancyPass()
         occupied.removeAll()
-        func record(_ edge: LayoutEdge) {
-            let owner = edgeIndices[required: edge]
-            for segment in DirectedGeometry.segments(edge.path) { occupied.insert(segment, owner: owner) }
-        }
+        func record(_ edge: LayoutEdge) { occupied.insert(edge.path, owner: edgeIndices[required: edge]) }
         if configuration.mode != .fresh {
             for edge in edges {
                 guard let old = configuration.previousPaths[edgeIndices[required: edge]], old.count >= 2 else {

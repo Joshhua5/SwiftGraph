@@ -5,6 +5,7 @@ extension DirectedRouter {
     /// sees only earlier edges, so a valid hierarchy guide can retain avoidable jogs.
     /// Each accepted shortcut is obstacle-safe and cannot add crossings or length.
     func refine() throws {
+        beginOccupancyPass()
         let ordered = edges.filter { !retained.contains($0) }
             .sorted {
                 let a = $0.path.count
@@ -76,6 +77,7 @@ extension DirectedRouter {
     /// pass, each trial sees every other route. Endpoint approaches stay fixed and
     /// acceptance is Pareto-monotone in crossings, bends and Manhattan length.
     func improveWorstRoutes() throws {
+        beginOccupancyPass()
         coordinated = true
         spacing = edgeSpacing
         for _ in 0..<2 {
@@ -201,6 +203,7 @@ extension DirectedRouter {
     /// other's coordinate (the end runs hold the ports, so they stay). The move must keep the route clear and add no
     /// crossing.
     func removeMicroJogs(microLength: Float = 4) throws {
+        beginOccupancyPass()
         for edge in edges.sorted(by: { edgeIndices[required: $0] < edgeIndices[required: $1] })
         where !retained.contains(edge) && edge.path.count >= 5 {
             try Task.checkCancellation()
@@ -301,6 +304,7 @@ extension DirectedRouter {
     /// a common coordinate (as close to where they are as the neighbouring ports allow, each end moving only
     /// as far as needed). The straight run must be clear and add no crossing, sharing or crowding.
     func straightenDoglegs() throws {
+        beginOccupancyPass()
         let order = edges.filter { !retained.contains($0) && $0.path.count == 4 && $0.source !== $0.target }
             .sorted { edgeIndices[required: $0] < edgeIndices[required: $1] }
         for edge in order {
@@ -336,6 +340,7 @@ extension DirectedRouter {
     /// route has its interior runs nudged to exactly the spacing from their neighbours; a nudge
     /// is kept only if it removes proximity without adding crossings or more than two bends.
     func separateProximateRuns() throws {
+        beginOccupancyPass()
         spacing = edgeSpacing
         for _ in 0..<3 {
             load(excluding: nil)
