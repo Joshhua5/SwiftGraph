@@ -17,10 +17,19 @@ enum TopologyRouting: String, CaseIterable, Hashable, Sendable, Identifiable {
 
     var id: String { rawValue }
 
-    private func separateEdgesIfSmall(_ builder: LayoutBuilder, backend: LayoutBackend) {
-        builder.transformAsync { graph in
-            guard graph.edges.count <= 150 else { return }
-            try await RoutingLayoutOperation(.edgeSeparation, backend: backend).applyLayoutAsync(graph)
+    /// Port distribution and the channel router's separation pass are skipped above this edge count; both are
+    /// too slow on large topologies.
+    private static let finishingEdgeLimit = 150
+
+    /// The geometry this choice produces. `.layoutDefault` keeps the layout's own routes, whose style the graph
+    /// does not record yet, so it is finished as polyline.
+    var style: RouteStyle {
+        switch self {
+        case .layoutDefault, .polyline, .bundled: .polyline
+        case .straight: .straight
+        case .channel, .orthogonalGrouped, .bsp: .orthogonal
+        case .octilinear: .octilinear
+        case .curves: .curved
         }
     }
 
@@ -28,36 +37,28 @@ enum TopologyRouting: String, CaseIterable, Hashable, Sendable, Identifiable {
         switch self {
         case .layoutDefault:
             if case .preset = layout { return }
-            builder.routeSelfLoops(backend: backend).clipEdgeEndpoints(backend: backend)
-                .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
-            return
         case .straight:
             builder.transform { graph in
                 for edge in graph.edges { edge.path = [edge.source.center, edge.target.center] }
             }
-        case .polyline:
+        case .polyline, .curves:
             builder.routePolyline(backend: backend)
         case .channel:
             builder.routeChannel(backend: backend)
-            separateEdgesIfSmall(builder, backend: backend)
+                .transformAsync { graph in
+                    guard graph.edges.count <= Self.finishingEdgeLimit else { return }
+                    try await RoutingLayoutOperation(.edgeSeparation, backend: backend).applyLayoutAsync(graph)
+                }
+        // BSP and grouped routing separate their own lanes.
         case .orthogonalGrouped:
             builder.routeOrthogonalGrouped(backend: backend)
-            separateEdgesIfSmall(builder, backend: backend)
         case .bsp:
             builder.routeBsp(backend: backend)
-            separateEdgesIfSmall(builder, backend: backend)
         case .octilinear:
             builder.routeOctilinear(backend: backend)
         case .bundled:
             builder.routePolyline(backend: backend).routeWithBundling(backend: backend)
-        case .curves:
-            builder.routePolyline(backend: backend).clipEdgeEndpoints(backend: backend)
-                .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
-                .routeCurveFitting(backend: backend)
-            builder.routeSelfLoops(backend: backend).clipEdgeEndpoints(backend: backend)
-            return
         }
-        builder.routeSelfLoops(backend: backend).clipEdgeEndpoints(backend: backend)
-            .transform { if $0.edges.count <= 150 { PortDistributor().routeEdges($0) } }
+        builder.finishRoutes(style: style, backend: backend, portDistributionLimit: Self.finishingEdgeLimit)
     }
 }
