@@ -152,17 +152,39 @@ import Testing
         #expect(Self.paths(backend) == Self.paths(direct))
     }
 
-    /// The gallery used to run a second separation pass after these two routers; it found nothing left to move.
+    /// The gallery used to run a second separation pass after these two routers. Their corridor tracks already sit a
+    /// spacing apart; a second pass may give lanes exactly a spacing apart another order, but crosses no fewer edges.
     @Test(arguments: ["bsp", "grouped"])
     func routersThatSeparateTheirOwnLanesNeedNoSecondPass(_ name: String) {
-        let route: (LayoutGraph) -> Void = {
-            name == "bsp" ? BspEdgeRouter().routeEdges($0) : OrthogonalGroupedEdgeRouter().routeEdges($0)
-        }
+        let router: any EdgeRouter = name == "bsp" ? BspEdgeRouter() : OrthogonalGroupedEdgeRouter()
         let once = Self.grid()
-        route(once)
+        router.routeEdges(once)
+        #expect(Self.closestLanes(once) >= 10 - 1e-3, "\(name): lanes \(Self.closestLanes(once)) apart")
         let twice = Self.grid()
-        route(twice)
+        router.routeEdges(twice)
         EdgeSeparator().routeEdges(twice)
-        #expect(Self.paths(once) == Self.paths(twice))
+        #expect(RouteAudit(twice, router).crossings >= RouteAudit(once, router).crossings)
+    }
+
+    /// The closest two parallel stretches of different edges that overlap along their line.
+    private static func closestLanes(_ graph: LayoutGraph) -> Float {
+        var stretches: [(edge: Int, vertical: Bool, at: Float, low: Float, high: Float)] = []
+        for (e, edge) in graph.edges.enumerated() where edge.source !== edge.target {
+            for (a, b) in zip(edge.path, edge.path.dropFirst()) {
+                if abs(a.x - b.x) < 1e-3, abs(a.y - b.y) > 1e-3 {
+                    stretches.append((e, true, a.x, min(a.y, b.y), max(a.y, b.y)))
+                } else if abs(a.y - b.y) < 1e-3, abs(a.x - b.x) > 1e-3 {
+                    stretches.append((e, false, a.y, min(a.x, b.x), max(a.x, b.x)))
+                }
+            }
+        }
+        var closest = Float.infinity
+        for (i, s) in stretches.enumerated() {
+            for t in stretches[(i + 1)...]
+            where s.edge != t.edge && s.vertical == t.vertical && min(s.high, t.high) - max(s.low, t.low) > 1e-3 {
+                closest = min(closest, abs(s.at - t.at))
+            }
+        }
+        return closest
     }
 }

@@ -58,6 +58,8 @@ final class CorridorUsage {
     private var buckets: [[Int: [Entry]]] = [[:], [:]]
     private var gaps: [StepKey: CorridorWalls.Gap] = [:]
     private var bundles: [Pair: Int] = [:]
+    /// Costs of the steps the current edge's search has asked for; they hold until it is recorded.
+    private var costs: [StepKey: Float] = [:]
     /// The bundle of the edge being routed, set by `start`.
     private var current = -1
 
@@ -76,6 +78,7 @@ final class CorridorUsage {
 
     /// Makes `edge` the one the following `cost` and `add` calls are for.
     func start(_ edge: LayoutEdge) {
+        costs.removeAll(keepingCapacity: true)
         let pair = Pair(edge)
         if let bundle = bundles[pair] {
             current = bundle
@@ -102,13 +105,18 @@ final class CorridorUsage {
             gaps[key] = gap
         }
         guard !gap.isOpen else { return 0 }
+        if let cached = costs[key] { return cached }
         let capacity = Self.capacity(width: gap.width, spacing: spacing, clearance: clearance / 2)
-        let over = nearby(vertical ? 1 : 0, low, high, within: (gap.low, gap.high)) + 1 - capacity
-        return over > 0 ? Self.weight * Float(min(over, Self.maximumOver)) * (high - low) : 0
+        let limit = capacity > Int.max - Self.maximumOver ? Int.max : capacity - 1 + Self.maximumOver
+        let over = nearby(vertical ? 1 : 0, low, high, within: (gap.low, gap.high), limit: limit) + 1 - capacity
+        let cost = over > 0 ? Self.weight * Float(min(over, Self.maximumOver)) * (high - low) : 0
+        costs[key] = cost
+        return cost
     }
 
     /// Records every axis-aligned stretch of the current edge's routed path.
     func add(_ path: [Point]) {
+        costs.removeAll(keepingCapacity: true)
         for (a, b) in zip(path, path.dropFirst()) {
             let vertical = abs(a.x - b.x) < 1e-4
             guard vertical || abs(a.y - b.y) < 1e-4 else { continue }
@@ -124,8 +132,8 @@ final class CorridorUsage {
     private func bucket(_ at: Float) -> Int { Int((at / spacing).rounded(.down)) }
 
     /// Recorded stretches of other bundles strictly inside `within` across the axis that overlap (`low`, `high`)
-    /// along it.
-    private func nearby(_ axis: Int, _ low: Float, _ high: Float, within: (Float, Float)) -> Int {
+    /// along it, counted up to `limit`.
+    private func nearby(_ axis: Int, _ low: Float, _ high: Float, within: (Float, Float), limit: Int) -> Int {
         var count = 0
         for b in bucket(within.0)...bucket(within.1) {
             guard let entries = buckets[axis][b] else { continue }
@@ -134,6 +142,7 @@ final class CorridorUsage {
                 && entry.high > low + 1e-4
             {
                 count += 1
+                if count >= limit { return count }
             }
         }
         return count

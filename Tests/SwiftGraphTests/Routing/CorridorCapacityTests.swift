@@ -100,6 +100,44 @@ import Testing
         #expect(allocation.slots[0] == 0 && allocation.slots[1] == 1)
     }
 
+    @Test func runsOverOneStretchFollowTheTieBreakAndOthersStayFree() throws {
+        // Three runs over the same stretch, arms at its ends: either order crosses nothing, so the tie-break decides.
+        let bundle = (0..<3).map { TrackSegment(id: $0, source: 0, target: 100) }
+        let reversed = try TrackAllocation.solve(bundle, clearance: 10, prefers: { $0 > $1 })
+        #expect(reversed.slots == [2: 0, 1: 1, 0: 2])
+        // Without one (the directed layout) the order is the allocator's own.
+        let plain = try TrackAllocation.solve(bundle, clearance: 10)
+        #expect(plain.slots == [0: 0, 1: 1, 2: 2])
+        // A run overlapping only part of another keeps the order that adds least depth, whatever the tie-break says.
+        let staggered = [(0, 0, 50), (1, 40, 100), (2, 90, 150)].map { (id: Int, source: Float, target: Float) in
+            TrackSegment(id: id, source: source, target: target, sourceSide: nil, targetSide: nil)
+        }
+        let free = try TrackAllocation.solve(staggered, clearance: 1, prefers: { $0 > $1 })
+        #expect(free.count == 2)
+    }
+
+    @Test func edgesJoiningTheSameNodesStayInOneBundle() {
+        // Three edges between the same two nodes through a long 20 pt gap, which holds two tracks: going round the
+        // thin blocks either side would cost less than the gap charges a third edge, but none is sent round.
+        let graph = LayoutGraph()
+        func node(_ id: String, _ x: Float, _ y: Float, _ width: Float, _ height: Float) -> LayoutNode {
+            let n = LayoutNode(id: id, width: width, height: height)
+            n.center = Point(x: x, y: y)
+            graph.addNode(n)
+            return n
+        }
+        let a = node("a", 0, 0, 40, 20)
+        let b = node("b", 600, 0, 40, 20)
+        _ = node("top", 300, -25, 400, 30)
+        _ = node("bottom", 300, 25, 400, 30)
+        for (s, t) in [(a, b), (a, b), (b, a)] { graph.addEdge(LayoutEdge(source: s, target: t)) }
+        let router = BspEdgeRouter()
+        router.routeEdges(graph)
+        for edge in graph.edges {
+            #expect(edge.path.allSatisfy { abs($0.y) < 10 }, "\(edge.path)")
+        }
+    }
+
     // MARK: - Dense corridors
 
     /// Before corridor capacity, the 100-edge grid left BSP lanes 2.5 pt apart (25 pairs under 3 pt) and grouped
