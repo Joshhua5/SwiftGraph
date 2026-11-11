@@ -157,6 +157,21 @@ struct OrganicQualitySearch {
         adopt(try evaluate(raw))
     }
 
+    /// Whether the search stops after the last of `scores`, the candidates solved so far in candidate order: the last
+    /// one has no clearance violations, and no more edge-node intersections and no more crossings than the best
+    /// earlier solved candidate. The two counts are the ones the score ranks first after clearance.
+    ///
+    /// The input positions are left out of the comparison and the first candidate never stops the search. Input
+    /// positions are often arbitrary, so the first solve nearly always beats them: comparing against them stopped
+    /// after the first candidate on 12 of 13 probe graphs and missed the full search's choice on 8.
+    static func stopsAfter(_ scores: [OrganicQualityMeasurements]) -> Bool {
+        guard let last = scores.last, last.clearanceViolations == 0, let first = scores.first, scores.count > 1 else {
+            return false
+        }
+        let best = scores.dropFirst().dropLast().reduce(first) { $1.precedes($0) ? $1 : $0 }
+        return last.edgeNodeIntersections <= best.edgeNodeIntersections && last.crossings <= best.crossings
+    }
+
     func rectangles(_ positions: [Point]) -> [Rect] {
         zip(positions, snapshot.nodes)
             .map { p, node in
@@ -209,14 +224,28 @@ struct OrganicQualitySearch {
 
     /// Up to `rounds` sweeps that push every conflicting pair apart along its shallower axis. Returns `true` once a
     /// sweep moves nothing, i.e. no pair conflicts.
-    private func pushApart(_ positions: inout [Point], gap: Float, rounds: Int) throws -> Bool {
+    ///
+    /// A sweep visits pairs `(i, j)`, `i < j`, in that order, testing each against the bounds as moved by the pushes
+    /// before it. Only pushed pairs move anything, so for each `i` the next pair pushed is the lowest `j` above the last
+    /// one that conflicts with `i` right now. The grid finds that `j` among `i`'s neighbours instead of testing every
+    /// `j`, and is updated after each push, so the pushes, their order and their arithmetic match an all-pairs sweep.
+    func pushApart(_ positions: inout [Point], gap: Float, rounds: Int) throws -> Bool {
+        let inflation = max(0, gap - 1e-4)
+        let cellSize = snapshot.nodes.reduce(Float(0)) { max($0, $1.bounds.width, $1.bounds.height) } + 2 * gap
         for _ in 0..<rounds {
             try OrganicCandidateRunner.checkCancellation()
             var moved = false
             var bounds = rectangles(positions)
+            var grid = RectangleGrid(bounds, cellSize: cellSize)
             for i in positions.indices {
-                for j in positions.indices where j > i && !(fixed[i] && fixed[j]) {
-                    guard Self.conflict(bounds[i], bounds[j], gap) else { continue }
+                var after = i
+                while true {
+                    var next: Int?
+                    grid.forEachCandidate(near: bounds[i].inflated(by: inflation)) { j in
+                        guard j > after, j < next ?? .max, !(fixed[i] && fixed[j]) else { return }
+                        if Self.conflict(bounds[i], bounds[j], gap) { next = j }
+                    }
+                    guard let j = next else { break }
                     let dx = (bounds[i].width + bounds[j].width) / 2 + gap - abs(positions[i].x - positions[j].x)
                     let dy = (bounds[i].height + bounds[j].height) / 2 + gap - abs(positions[i].y - positions[j].y)
                     let shift =
@@ -229,7 +258,10 @@ struct OrganicQualitySearch {
                     bounds[i] = bounds[i].translated(by: shift * left)
                     positions[j] = positions[j] - shift * right
                     bounds[j] = bounds[j].translated(by: shift * -right)
+                    grid.move(i, to: bounds[i])
+                    grid.move(j, to: bounds[j])
                     moved = true
+                    after = j
                 }
             }
             if !moved { return true }

@@ -209,7 +209,7 @@ struct LayoutBackendTests {
         try await explicit.applyLayoutAsync(b)
         #expect(automatic.lastMetrics?.backend == .metal)
         #expect(automatic.lastMetrics?.fallbackReason == nil)
-        #expect(automatic.lastDiagnostics?.candidateCount == 13)
+        #expect(automatic.lastDiagnostics?.candidateCount == explicit.lastDiagnostics?.candidateCount)
         #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds))
         #expect(automatic.lastDiagnostics?.final == explicit.lastDiagnostics?.final)
     }

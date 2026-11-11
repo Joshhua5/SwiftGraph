@@ -82,7 +82,12 @@ import Testing
         #expect(g.nodes.map(\.bounds.size) == original && g.nodes.map(\.parent) == parents)
         #expect(g.nodes.allSatisfy { $0.data as? String == $0.id })
         #expect(g.edges.map(\.path) == paths)
-        #expect(a.lastDiagnostics?.candidateCount == (count == 0 ? 1 : 13))
+        // The search may stop early, but both paths stop at the same candidate. The input counts as candidate 0.
+        #expect(a.lastDiagnostics?.candidateCount == op.lastDiagnostics?.candidateCount)
+        #expect(
+            count == 0
+                ? a.lastDiagnostics?.candidateCount == 1 : (3...13).contains(a.lastDiagnostics?.candidateCount ?? 0)
+        )
     }
 
     @Test func pinsSubsetAndImpossibleConflictsAreExplicit() throws {
@@ -198,7 +203,9 @@ import Testing
             ] * p["drawingHeight", default: 0] * 0.85
         )
         #expect(c["edgeNodeIntersections", default: .infinity] <= p["edgeNodeIntersections", default: 0])
-        #expect(c["reported.selectedCandidate", default: 0] > 0)
+        // The input can legitimately win (the 256-node grid input has the fewest edge-node hits), so check
+        // only that the search compared more than one candidate.
+        #expect(c["reported.candidates", default: 0] > 1)
     }
 
     @Test func selfLoopsAvoidNeighborsAndStayVisibleWhenBlocked() {
@@ -227,8 +234,10 @@ import Testing
             try VisualStorage.validate(a)
             #expect(a == b, "\(item.id): nondeterministic output")
             #expect(VisualGeometry.measure(a).failures.isEmpty, "\(item.id): \(VisualGeometry.measure(a).failures)")
-            #expect(first.reportedMetrics["candidates"] == 13)
-            #expect(first.reportedMetrics["solverIterations"] == 7_200)
+            // The search may stop early, after at least two solves; each solved candidate runs 600 iterations.
+            let candidates = first.reportedMetrics["candidates", default: 0]
+            #expect((3...13).contains(candidates), "\(item.id)")
+            #expect(first.reportedMetrics["solverIterations"] == (candidates - 1) * 600)
         }
     }
 

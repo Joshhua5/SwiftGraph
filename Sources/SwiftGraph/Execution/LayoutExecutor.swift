@@ -226,40 +226,39 @@ public actor LayoutExecutor {
         var device: String?
         let evaluations: [OrganicQualitySearch.Evaluation]
         if actual == .metal {
-            // One Metal solver serves every candidate, so solves run in turn; only their CPU cleanup runs concurrently.
-            var solved: [[Point]] = []
-            try await LayoutStageScope.run("Force simulation", to: 0.85) {
-                for (index, entry) in candidates.enumerated() {
-                    try Task.checkCancellation()
-                    try await LayoutStageScope.run(
-                        "Candidate \(index + 1)/\(candidates.count)",
-                        part: index,
-                        of: candidates.count
-                    ) {
-                        let (input, candidate) = search.candidate(entry.start, strength: entry.strength)
-                        let solveStart = ContinuousClock.now
-                        let result = try await organic(input, configuration: candidate, backend: actual)
-                        solverSeconds += solveStart.duration(to: .now).seconds
-                        cpuPreparation += result.metrics.cpuPreparationSeconds
-                        if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
-                        device = result.metrics.deviceName
-                        solved.append(result.centers)
+            // One Metal solver serves every candidate, so candidates run in turn, each solved and then evaluated, and
+            // the search stops by the same rule as on the CPU.
+            var solved: [OrganicQualitySearch.Evaluation] = []
+            for (index, entry) in candidates.enumerated() {
+                try Task.checkCancellation()
+                let evaluation = try await LayoutStageScope.run(
+                    "Candidate \(index + 1)/\(candidates.count)",
+                    part: index,
+                    of: candidates.count
+                ) {
+                    let (input, candidate) = search.candidate(entry.start, strength: entry.strength)
+                    let solveStart = ContinuousClock.now
+                    let result = try await LayoutStageScope.run("Force simulation", to: 0.85) {
+                        try await organic(input, configuration: candidate, backend: actual)
                     }
+                    solverSeconds += solveStart.duration(to: .now).seconds
+                    cpuPreparation += result.metrics.cpuPreparationSeconds
+                    if let seconds = result.metrics.gpuSeconds { gpu = (gpu ?? 0) + seconds }
+                    device = result.metrics.deviceName
+                    let evaluationStart = ContinuousClock.now
+                    defer { evaluationSeconds += evaluationStart.duration(to: .now).seconds }
+                    return try LayoutStageScope.run("Evaluate", from: 0.85) { try plan.evaluate(result.centers) }
                 }
+                solved.append(evaluation)
+                if OrganicQualitySearch.stopsAfter(solved.map(\.score)) { break }
             }
-            let raw = solved
-            let evaluationStart = ContinuousClock.now
-            evaluations = try LayoutStageScope.run("Evaluate", from: 0.85) {
-                try OrganicCandidateRunner.map(raw.count, stage: { "Candidate \($0 + 1)/\(raw.count)" }) { index in
-                    try plan.evaluate(raw[index])
-                }
-            }
-            evaluationSeconds = evaluationStart.duration(to: .now).seconds
+            evaluations = solved
         } else {
             let phaseStart = ContinuousClock.now
             let timed = try OrganicCandidateRunner.map(
                 candidates.count,
-                stage: { "Candidate \($0 + 1)/\(candidates.count)" }
+                stage: { "Candidate \($0 + 1)/\(candidates.count)" },
+                stopsAfter: { OrganicQualitySearch.stopsAfter($0.map(\.0.score)) }
             ) { index in
                 let (input, candidate) = plan.candidate(candidates[index].start, strength: candidates[index].strength)
                 let solveStart = ContinuousClock.now

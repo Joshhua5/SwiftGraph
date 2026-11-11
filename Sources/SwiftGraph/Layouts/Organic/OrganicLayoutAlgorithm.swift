@@ -42,9 +42,13 @@ public final class OrganicLayoutAlgorithm: LayoutAlgorithm {
                 let plan = search
                 let evaluations = try OrganicCandidateRunner.map(
                     candidates.count,
-                    stage: { "Candidate \($0 + 1)/\(candidates.count)" }
+                    stage: { "Candidate \($0 + 1)/\(candidates.count)" },
+                    stopsAfter: { OrganicQualitySearch.stopsAfter($0.map(\.score)) }
                 ) { index in
-                    let (input, candidate) = plan.candidate(candidates[index].start, strength: candidates[index].strength)
+                    let (input, candidate) = plan.candidate(
+                        candidates[index].start,
+                        strength: candidates[index].strength
+                    )
                     let positions = try LayoutStageScope.run("Force simulation", to: 0.85) {
                         try input.cpuOrganic(candidate)
                     }
