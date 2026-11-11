@@ -69,6 +69,10 @@ if args.contains("--routing-golden") {
     try await runRoutingGolden(args)
     exit(0)
 }
+if args.contains("--routing-order") {
+    try await runRoutingOrder(args)
+    exit(0)
+}
 if args.contains("--production") {
     try await runProductionBenchmark(args)
     exit(0)

@@ -4,7 +4,13 @@ import Foundation
 ///
 /// Usage is counted per span (routes running along it) and per vertex and axis (routes passing through it that way,
 /// which a perpendicular route would cross). Each route's share is kept by owner, so a route can be taken out again
-/// and laid elsewhere; a negotiation layer can sit on `add`, `remove` and the two cost reads.
+/// and laid elsewhere.
+///
+/// Negotiation, in the manner of PathFinder: a span holds one route, and each rip-up round (`escalate`) adds a
+/// lasting history cost to every span that more routes share. PathFinder also raises the present cost each round;
+/// that is left out, because corridors in dense drawings are genuinely over capacity and a rising present cost only
+/// trades shared spans for jogs. The history step is small for the same reason: it breaks ties between near-equal
+/// routes rather than forcing detours.
 struct ChannelCongestion {
     // MARK: - Nested types
 
@@ -19,13 +25,21 @@ struct ChannelCongestion {
 
     // MARK: - Properties
 
-    /// The cost of running one pitch alongside one other route; crossing one costs half that, but at least 1.
+    /// The cost of running one pitch alongside one other route, and of crossing one. Crossings used to cost half;
+    /// at the full penalty the topology benchmark draws 16–20% fewer crossings, with negotiation on or off, for about
+    /// 15% more bends.
     let penalty: Int
 
     private let pitch: Float
     private var spanUsage: ChannelCounts
     private var passUsage: ChannelCounts
     private var owned: [ObjectIdentifier: Footprint] = [:]
+
+    /// Routes over a span's capacity of one, summed over the negotiation rounds so far.
+    private var history: ChannelCounts
+
+    /// The cost of one unit of history per pitch: a tenth of the penalty.
+    private var historyStep: Float { Float(penalty) / 10 }
 
     var isEmpty: Bool { owned.isEmpty }
 
@@ -36,6 +50,7 @@ struct ChannelCongestion {
         pitch = grid.pitch
         spanUsage = ChannelCounts(capacity: grid.vertexCount * 2)
         passUsage = ChannelCounts(capacity: grid.vertexCount * 2)
+        history = ChannelCounts(capacity: grid.vertexCount * 2)
     }
 
     // MARK: - Reading
@@ -46,18 +61,35 @@ struct ChannelCongestion {
     /// Routes already passing through `vertex` along `axis`.
     func passes(through vertex: Int, along axis: ChannelGrid.Axis) -> Int { passUsage[vertex * 2 + axis.rawValue] }
 
-    /// The cost of running `length` points along `span` beside the routes already there.
+    /// The cost of running `length` points along `span` beside the routes already there, plus its history.
     func cost(along span: Int, length: Float) -> Float {
         guard penalty > 0 else { return 0 }
-        let usage = spanUsage[span]
-        return usage == 0 ? 0 : Float(usage * penalty) * length / pitch
+        return Self.weight(spanUsage[span], history[span], penalty, historyStep) * length / pitch
     }
 
     /// The cost of passing through `vertex` along `axis`, crossing routes that pass through it the other way.
     func crossingCost(at vertex: Int, along axis: ChannelGrid.Axis) -> Float {
         guard penalty > 0 else { return 0 }
         let crossing = passUsage[vertex * 2 + axis.other.rawValue]
-        return crossing == 0 ? 0 : Float(crossing * max(1, penalty / 2))
+        return crossing == 0 ? 0 : Float(crossing * penalty)
+    }
+
+    /// The route `owner` laid.
+    func footprint(of owner: ObjectIdentifier) -> Footprint? { owned[owner] }
+
+    /// What `owner`'s route pays to share its spans with the other routes now laid, history included; crossings are
+    /// left out.
+    func sharingCost(of owner: ObjectIdentifier, _ grid: ChannelGrid) -> Float {
+        guard penalty > 0, let footprint = owned[owner] else { return 0 }
+        return footprint.spans.reduce(0) { total, span in
+            total + Self.weight(spanUsage[span] - 1, history[span], penalty, historyStep) * grid.length(ofSpan: span)
+                / pitch
+        }
+    }
+
+    /// Length, in pitches, that routes beyond the first run along a shared span, summed over every span.
+    func overuse(_ grid: ChannelGrid) -> Float {
+        crowded.reduce(0) { $0 + Float(spanUsage[$1] - 1) * grid.length(ofSpan: $1) / pitch }
     }
 
     // MARK: - Updating
@@ -71,11 +103,33 @@ struct ChannelCongestion {
         owned[owner] = footprint
     }
 
+    /// Starts a negotiation round: every span more than one route shares gains one history unit per extra route.
+    mutating func escalate() {
+        for span in crowded { history[span] += spanUsage[span] - 1 }
+    }
+
     /// Takes `owner`'s route out of the counts.
     mutating func remove(owner: ObjectIdentifier) {
         guard let footprint = owned.removeValue(forKey: owner) else { return }
         for span in footprint.spans { spanUsage[span] -= 1 }
         for pass in footprint.passes { passUsage[pass] -= 1 }
+    }
+
+    // MARK: - Helpers
+
+    /// Spans more than one route runs along.
+    private var crowded: Set<Int> {
+        var spans = Set<Int>()
+        for footprint in owned.values {
+            for span in footprint.spans where spanUsage[span] > 1 { spans.insert(span) }
+        }
+        return spans
+    }
+
+    /// Cost per pitch of running beside `usage` routes on a span with `history` units.
+    private static func weight(_ usage: Int, _ history: Int, _ penalty: Int, _ step: Float) -> Float {
+        let present = Float(usage * penalty)
+        return history == 0 ? present : present + Float(history) * step
     }
 }
 

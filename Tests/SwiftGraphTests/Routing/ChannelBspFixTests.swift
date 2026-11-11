@@ -163,9 +163,75 @@ struct RouteAudit {
         }
         // The 20 pt lattice drew 259 crossings and 326 bends here. The node-aligned grid draws 288 and 267: ports no
         // longer need a jog to reach a lattice line, so routes run straighter and on these small scenes cross a little
-        // more often. On the 600-edge topology benchmark it has fewer of both.
-        #expect(crossings <= 300, "\(crossings) crossings")
-        #expect(bends <= 285, "\(bends) bends")
+        // more often. On the 600-edge topology benchmark it has fewer of both. Charging a crossing the full congestion
+        // penalty and negotiating two rip-up rounds brings it to 211 and 292.
+        #expect(crossings <= 225, "\(crossings) crossings")
+        #expect(bends <= 300, "\(bends) bends")
+    }
+
+    @Test func channelNegotiationSharesFewerLanesAndDependsLessOnEdgeOrder() {
+        // Seeded scenes routed in their own and in reversed edge order, once in a single pass and once negotiated:
+        // negotiation shares less lane length, and how much it shares depends less on the order.
+        func sharedLength(_ g: LayoutGraph) -> Float {
+            let segments = g.edges.enumerated()
+                .flatMap { k, e in zip(e.path, e.path.dropFirst()).map { (k, $0, $1) } }
+            var total: Float = 0
+            for (n, (k, a, b)) in segments.enumerated() {
+                for (l, c, d) in segments[(n + 1)...] where l != k {
+                    if abs(a.y - b.y) < 1e-3 && abs(c.y - d.y) < 1e-3 && abs(a.y - c.y) < 1e-3 {
+                        total += max(0, min(max(a.x, b.x), max(c.x, d.x)) - max(min(a.x, b.x), min(c.x, d.x)))
+                    } else if abs(a.x - b.x) < 1e-3 && abs(c.x - d.x) < 1e-3 && abs(a.x - c.x) < 1e-3 {
+                        total += max(0, min(max(a.y, b.y), max(c.y, d.y)) - max(min(a.y, b.y), min(c.y, d.y)))
+                    }
+                }
+            }
+            return total
+        }
+        var shared: [Int: Float] = [:]
+        var spread: [Int: Float] = [:]
+        var seed: UInt64 = 12345
+        func next() -> Int {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Int(seed >> 33)
+        }
+        for round in 0..<8 {
+            let g = LayoutGraph()
+            var nodes: [LayoutNode] = []
+            for i in 0..<15 {
+                let w = Float(60 + next() % 60)
+                let h = Float(30 + next() % 30)
+                nodes.append(
+                    node(
+                        g,
+                        "n\(i)",
+                        Float(i % 5) * 190 + Float(next() % 50),
+                        Float(i / 5) * 150 + Float(next() % 50),
+                        w,
+                        h
+                    )
+                )
+            }
+            for _ in 0..<(22 + round) {
+                let s = next() % nodes.count
+                let t = next() % nodes.count
+                if s != t { g.addEdge(LayoutEdge(source: nodes[s], target: nodes[t])) }
+            }
+            for rounds in [0, ChannelEdgeRouter().negotiationRounds] {
+                var lengths: [Float] = []
+                for _ in 0..<2 {
+                    let router = ChannelEdgeRouter()
+                    router.negotiationRounds = rounds
+                    router.routeEdges(g)
+                    lengths.append(sharedLength(g))
+                    g.edges.reverse()
+                }
+                shared[rounds, default: 0] += lengths[0] + lengths[1]
+                spread[rounds, default: 0] += abs(lengths[0] - lengths[1])
+            }
+        }
+        let negotiated = ChannelEdgeRouter().negotiationRounds
+        #expect(shared[negotiated]! < 0.7 * shared[0]!, "\(shared)")
+        #expect(spread[negotiated]! < spread[0]!, "\(spread)")
     }
 
     @Test func channelLongDetoursAreNotReportedAsUnroutable() {

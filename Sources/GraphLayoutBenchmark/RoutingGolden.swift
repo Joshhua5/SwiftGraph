@@ -6,7 +6,7 @@ import SwiftGraph
 ///
 ///     graph-layout-benchmark --routing-golden --topology docs/graph-topology.json --edge-limits 150,300 \
 ///         --routers polyline,bus,channel,bsp,parallel --dump golden.json
-private struct GoldenTopology: Decodable {
+struct GoldenTopology: Decodable {
     struct Node: Decodable { var parent: Int? }
 
     struct Edge: Decodable {

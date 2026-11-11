@@ -198,6 +198,37 @@ import Testing
         #expect(routed(crossing: 40).contains { $0.y > 100 })
     }
 
+    @Test func routesDoNotDependOnEdgeOrder() {
+        // Distinct edge lengths leave nothing for `graph.edges` order to decide.
+        var seed: UInt64 = 7
+        func next() -> Int {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Int(seed >> 33)
+        }
+        let g = LayoutGraph()
+        for i in 0..<15 {
+            let n = LayoutNode(id: "n\(i)", width: Float(40 + next() % 40), height: Float(20 + next() % 20))
+            n.x = Float(i % 5) * 160 + Float(next() % 50)
+            n.y = Float(i / 5) * 130 + Float(next() % 50)
+            g.addNode(n)
+        }
+        var pairs = Set<[Int]>()
+        while pairs.count < 24 {
+            let s = next() % 15
+            let t = next() % 15
+            if s != t && pairs.insert([min(s, t), max(s, t)]).inserted { edge(g, s, t) }
+        }
+        func route() -> [ObjectIdentifier: [Point]] {
+            let router = PolylineEdgeRouter()
+            router.edgeSpacing = 0
+            router.routeEdges(g)
+            return Dictionary(uniqueKeysWithValues: g.edges.map { (ObjectIdentifier($0), $0.path) })
+        }
+        let forward = route()
+        g.edges.reverse()
+        #expect(route() == forward)
+    }
+
     @Test func bendCostsFollowTheArrivalNotTheFirstPathToReachACorner() {
         let obstacles = [
             Rect(x: 270, y: -30, width: 10, height: 80),
