@@ -212,7 +212,7 @@ struct HierarchyPlacementPlan: Sendable {
             flows[i] == nil ? nil : chains[i].map { Point(x: xs[$0], y: ys[ranks[$0]] + heights[ranks[$0]] / 2) }
         }
         try LayoutStageScope.run("Route edges", from: 0.6) {
-            try routeLayeredEdges(graph, chains: routed, flows: flows)
+            try routeLayeredEdges(graph, chains: routed, flows: flows, layerSeparation: layerSeparation)
         }
     }
 }

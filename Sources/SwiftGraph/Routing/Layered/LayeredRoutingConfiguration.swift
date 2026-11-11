@@ -10,6 +10,11 @@ struct LayeredRoutingConfiguration {
     var previousPaths: [Int: [Point]] = [:]
     var edgeWidths: [Float] = []
 
+    /// Whether an edge constrained at both ends uses its `sourcePort` and `targetPort` sides. The hierarchical
+    /// layout leaves them unread, as its own router always did: its async path does not carry constraints, and
+    /// series-parallel lays out in a transposed frame where the caller's sides would be the wrong ones.
+    var readsPortConstraints = true
+
     /// Preferred separation between parallel runs; strokes never touch below the widest edge plus one.
     var edgeSpacing: Float = 10
     var clearance: Float = 10

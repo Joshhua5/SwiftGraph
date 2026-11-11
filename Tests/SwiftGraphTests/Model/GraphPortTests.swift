@@ -196,9 +196,10 @@ private func finite(_ g: LayoutGraph) -> Bool {
     try layout.applyLayout(g)
     #expect(layout.layerSeparation == 75)
     #expect(abs(g.nodes[1].y - g.nodes[0].bounds.bottom - 75) < 1e-9)
-    #expect(long.path.count == 3)
-    #expect(long.path[1].y == g.nodes[1].center.y)
-    #expect(!g.nodes[1].bounds.contains(long.path[1]))
+    // The long edge runs orthogonally from the source's bottom to the target's top, clear of the middle rank.
+    #expect(isRectilinear(long.path))
+    #expect(long.path.first?.y == g.nodes[0].bounds.bottom && long.path.last?.y == g.nodes[2].bounds.top)
+    #expect(!zip(long.path, long.path.dropFirst()).contains { g.nodes[1].bounds.intersectsLine($0, $1) })
     let centers = g.nodes.map(\.center)
     let paths = g.edges.map(\.path)
     try layout.applyLayout(g)

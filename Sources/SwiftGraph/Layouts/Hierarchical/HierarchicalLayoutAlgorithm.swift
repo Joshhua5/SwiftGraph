@@ -2,6 +2,8 @@ import Foundation
 
 /// Sugiyama layering with virtual nodes, deterministic median ordering and weighted PAV placement.
 public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
+    /// The gap between layers. With `routesEdges`, it is a minimum: a gap whose edges need more tracks than fit is
+    /// widened until they do.
     public var layerSeparation: Float = 50
     public var nodeSeparation: Float = 50
 
@@ -12,7 +14,9 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
 
     public var maxNodesPerRank: Int?
 
-    /// Disable provisional routing when another router runs after packing or group placement.
+    /// Routes edges orthogonally with the shared layered router, which may widen layer gaps to fit its tracks.
+    /// Disable it when another router runs after packing or group placement; layers are then exactly
+    /// `layerSeparation` apart.
     public var routesEdges = true
 
     public init() {}
@@ -145,113 +149,50 @@ public final class HierarchicalLayoutAlgorithm: LayoutAlgorithm {
             flows.append((ranks[t] - ranks[s]).signum())
         }
         try LayoutStageScope.run("Route edges", from: 0.7) {
-            try routeLayeredEdges(graph, chains: routed, flows: flows)
+            try routeLayeredEdges(graph, chains: routed, flows: flows, layerSeparation: layerSeparation)
         }
     }
 }
 
-/// Routes edges between ranks: paths leave and enter on node faces facing the layer direction, ends sharing a face are
-/// spread evenly in neighbour order (so reciprocal and duplicate edges never coincide), and a segment that would cross
-/// a node (including edges spanning more ranks than get virtual nodes) is detoured. `chains[i]` are the virtual-node
-/// points of `graph.edges[i]` and `flows[i]` the sign of its rank change; nil entries are drawn centre to centre.
-func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) throws {
-    struct End {
-        var edge: Int
-        var isSource: Bool
-        var key: Float
+/// Routes a top-to-bottom layered drawing with the shared `LayeredRouter`. Its tracks are planned per rank gap, and a
+/// gap whose tracks need more room than `layerSeparation` is widened by moving the ranks below it down; nothing moves
+/// across the flow. `chains[i]` are the virtual-node points of `graph.edges[i]` and `flows[i]` the sign of its rank
+/// change (0 for an edge within one rank); nil entries, self-loops and edges into or out of a group that contains
+/// other nodes of the drawing are drawn centre to centre, as before. An edge the router cannot route gets the
+/// orthogonal `RoutingFallback`.
+func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?], layerSeparation: Float) throws {
+    let nodes = LayeredRouter.obstacleNodes(of: graph)
+    let members = Set(nodes)
+    var routed: [LayoutEdge] = []
+    var feedback = Set<LayoutEdge>()
+    for (i, edge) in graph.edges.enumerated() {
+        guard let chain = chains[i], let flow = flows[i], edge.source !== edge.target,
+            members.contains(edge.source), members.contains(edge.target)
+        else { continue }
+        edge.path = [edge.source.center] + chain + [edge.target.center]
+        routed.append(edge)
+        if flow == 0 { feedback.insert(edge) }
     }
-    struct Face: Hashable {
-        var node: LayoutNode
-        var side: PortConstraint
-    }
-    var faces: [Face: [End]] = [:]
-    // Layered routes are drawn afresh, and in no single style.
-    graph.routeStyle = nil
-    for (i, e) in graph.edges.enumerated() {
-        guard let chain = chains[i], let flow = flows[i] else {
-            e.path = [e.source.center, e.target.center]
-            continue
+    var configuration = LayeredRoutingConfiguration()
+    configuration.minimumRankGap = layerSeparation
+    configuration.readsPortConstraints = false
+    try LayeredRouter.routeDrawing(
+        nodes: nodes,
+        edges: routed,
+        feedback: feedback,
+        flow: .topToBottom,
+        respacesRanks: true,
+        configuration: configuration
+    )
+    // Layered routes are orthogonal; the fallback keeps that shape.
+    graph.routeStyle = .orthogonal
+    let routedEdges = Set(routed)
+    for edge in graph.edges {
+        if !routedEdges.contains(edge) {
+            edge.path = [edge.source.center, edge.target.center]
+        } else if edge.path.count < 2 {
+            edge.path = RoutingFallback.route(edge, graph)
         }
-        let s = e.source
-        let t = e.target
-        let sides: (PortConstraint, PortConstraint) =
-            flow > 0
-            ? (.bottom, .top)
-            : flow < 0 ? (.top, .bottom) : (t.center.x >= s.center.x ? (.right, .left) : (.left, .right))
-        for (node, side, toward, isSource) in [
-            (s, sides.0, chain.first ?? t.center, true), (t, sides.1, chain.last ?? s.center, false),
-        ] {
-            faces[Face(node: node, side: side), default: []]
-                .append(End(edge: i, isSource: isSource, key: side == .top || side == .bottom ? toward.x : toward.y))
-        }
-    }
-    var ports = Array(repeating: [Point.zero, Point.zero], count: graph.edges.count)
-    for (face, ends) in faces {
-        let r = face.node.bounds
-        let sorted = ends.sorted { ($0.key, $0.edge, $0.isSource ? 0 : 1) < ($1.key, $1.edge, $1.isSource ? 0 : 1) }
-        for (k, end) in sorted.enumerated() {
-            let f = Float(k + 1) / Float(sorted.count + 1)
-            let p: Point
-            switch face.side {
-            case .top: p = Point(x: r.left + r.width * f, y: r.top)
-            case .bottom: p = Point(x: r.left + r.width * f, y: r.bottom)
-            case .left: p = Point(x: r.left, y: r.top + r.height * f)
-            default: p = Point(x: r.right, y: r.top + r.height * f)
-            }
-            ports[end.edge][end.isSource ? 0 : 1] = p
-        }
-    }
-    let solid = graph.nodes.filter { $0.width > 0 && $0.height > 0 }
-    let tree = QuadTree<LayoutNode>(bounds: enclosingBounds(solid).inflated(by: 1))
-    for node in solid { tree.insert(bounds: node.bounds, item: node) }
-    for (i, e) in graph.edges.enumerated() {
-        if i % 64 == 0 {
-            try Task.checkCancellation()
-            LayoutStageScope.tick(i, of: graph.edges.count)
-        }
-        guard let chain = chains[i] else { continue }
-        func near(_ area: Rect) -> [LayoutNode] {
-            tree.query(area)
-                .filter {
-                    $0 !== e.source && $0 !== e.target
-                        && !($0.isGroup && (isAncestor($0, of: e.source) || isAncestor($0, of: e.target)))
-                }
-        }
-        func route(_ points: [Point]) -> [Point] {
-            var path = points
-            var k = 0
-            while k + 1 < path.count {
-                let a = path[k]
-                let b = path[k + 1]
-                let box = RoutingCompute.bounds(a, b)
-                if near(box.inflated(by: 0.5)).contains(where: { $0.bounds.intersectsLine(a, b) }) {
-                    let window = max(40, max(box.width, box.height) / 2)
-                    if let detour = ObstaclePolyline.search(
-                        a,
-                        b,
-                        near(box.inflated(by: window)).map(\.bounds),
-                        padding: 8
-                    ), detour.count > 2 {
-                        path.replaceSubrange(k...(k + 1), with: detour)
-                        k += detour.count - 1
-                        continue
-                    }
-                }
-                k += 1
-            }
-            return compactPath(path)
-        }
-        var path = route([ports[i][0]] + chain + [ports[i][1]])
-        let length = ObstaclePolyline.length(path)
-        if !chain.isEmpty && length > 4 * max(1, (e.target.center - e.source.center).length) {
-            let direct = route([ports[i][0], ports[i][1]])
-            if ObstaclePolyline.length(direct) < length * 0.75,
-                ObstaclePolyline.clear(direct, near(ObstaclePolyline.bounds(direct).inflated(by: 1)).map(\.bounds))
-            {
-                path = direct
-            }
-        }
-        e.path = path
     }
 }
 

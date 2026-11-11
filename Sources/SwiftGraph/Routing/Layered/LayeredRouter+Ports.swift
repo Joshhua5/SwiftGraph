@@ -64,7 +64,7 @@ extension LayeredRouter {
                 } else {
                     sides = (.top, .top)
                 }
-            } else if edge.sourcePort != .none && edge.targetPort != .none {
+            } else if configuration.readsPortConstraints && edge.sourcePort != .none && edge.targetPort != .none {
                 sides = (edge.sourcePort, edge.targetPort)
             } else if a.center.x < b.center.x {
                 sides = (.right, .left)

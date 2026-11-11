@@ -100,7 +100,7 @@ import Testing
         graph.addNode(target)
         let edge = LayoutEdge(source: source, target: target)
         graph.addEdge(edge)
-        try routeLayeredEdges(graph, chains: [[Point(x: 3170, y: 906)]], flows: [1])
+        try routeLayeredEdges(graph, chains: [[Point(x: 3170, y: 906)]], flows: [1], layerSeparation: 50)
         #expect(edge.path.first?.y == source.bounds.bottom && edge.path.last?.y == target.bounds.top)
         #expect(ObstaclePolyline.length(edge.path) < 2 * (target.center - source.center).length)
     }
