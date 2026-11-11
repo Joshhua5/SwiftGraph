@@ -16,17 +16,12 @@ extension DirectedRouter {
         for edge in ordered where edge.path.count > 4 {
             try Task.checkCancellation()
             load(excluding: edge)
-            let others = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                .map { $0.bounds.inflated(by: clearance) }
+            let ends = endpoints(of: edge)
             func quality(_ path: [Point]) -> (crossings: Int, length: Float)? {
                 var crossings = 0
                 var length: Float = 0.0
                 for segment in DirectedGeometry.segments(path) {
-                    if !DirectedGeometry.clear(segment.a, segment.b, bodies: bodies)
-                        || !DirectedGeometry.clear(segment.a, segment.b, bodies: others)
-                    {
-                        return nil
-                    }
+                    if !isClear(segment.a, segment.b, besides: ends) { return nil }
                     length += segment.length
                     var rejected = false
                     occupied.forEach(near: segment, margin: edgeSpacing) { _, other in
@@ -92,16 +87,12 @@ extension DirectedRouter {
                 try Task.checkCancellation()
                 let original = edge.path
                 load(excluding: edge)
-                let nonEndpoints = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                    .map { $0.bounds.inflated(by: clearance) }
+                let ends = endpoints(of: edge)
                 func quality(_ path: [Point]) -> (crossings: Int, bends: Int, length: Float)? {
                     let segments = DirectedGeometry.segments(path)
-                    guard path.count >= 2,
-                        segments.allSatisfy({
-                            DirectedGeometry.clear($0.a, $0.b, bodies: bodies)
-                                && DirectedGeometry.clear($0.a, $0.b, bodies: nonEndpoints)
-                        })
-                    else { return nil }
+                    guard path.count >= 2, segments.allSatisfy({ isClear($0.a, $0.b, besides: ends) }) else {
+                        return nil
+                    }
                     var hits: [Int: Set<Point>] = [:]
                     var rejected = false
                     for a in segments {
@@ -130,10 +121,7 @@ extension DirectedRouter {
                 let entry = end + v / v.length * min(clearance, v.length)
                 var best = original
                 func consider(_ middle: [Point]) {
-                    guard
-                        zip(middle, middle.dropFirst())
-                            .allSatisfy({ DirectedGeometry.clear($0, $1, bodies: obstacles) })
-                    else { return }
+                    guard zip(middle, middle.dropFirst()).allSatisfy({ obstacleIndex.clear($0, $1) }) else { return }
                     let candidate = DirectedGeometry.compact([start] + middle + [end])
                     guard let next = quality(candidate), next.crossings <= score.crossings, next.bends <= score.bends,
                         next.length <= score.length + DirectedGeometry.epsilon,
@@ -178,13 +166,11 @@ extension DirectedRouter {
     }
 
     /// Crossings of `path` with the loaded routes, or nil when it hits a body, shares a run or crowds one.
-    private func crossingCount(_ path: [Point], others: [Rect], spacing: Float? = nil) -> Int? {
+    private func crossingCount(_ path: [Point], besides ends: Endpoints, spacing: Float? = nil) -> Int? {
         let gap = spacing ?? edgeSpacing
         var count = 0
         for segment in DirectedGeometry.segments(path) {
-            guard DirectedGeometry.clear(segment.a, segment.b, bodies: bodies),
-                DirectedGeometry.clear(segment.a, segment.b, bodies: others)
-            else { return nil }
+            guard isClear(segment.a, segment.b, besides: ends) else { return nil }
             var rejected = false
             occupied.forEach(near: segment, margin: gap) { _, other in
                 if DirectedGeometry.shared(segment, other) || DirectedGeometry.nearShared(segment, other, spacing: gap)
@@ -208,7 +194,7 @@ extension DirectedRouter {
         where !retained.contains(edge) && edge.path.count >= 5 {
             try Task.checkCancellation()
             var loaded = false
-            var others: [Rect] = []
+            let ends = endpoints(of: edge)
             var before = 0
             for _ in 0..<4 {
                 let path = edge.path
@@ -222,9 +208,7 @@ extension DirectedRouter {
                 if !loaded {
                     load(excluding: edge)
                     loaded = true
-                    others = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                        .map { $0.bounds.inflated(by: clearance) }
-                    guard let count = crossingCount(path, others: others) else { break }
+                    guard let count = crossingCount(path, besides: ends) else { break }
                     before = count
                 }
                 let vertical = abs(path[k].x - path[k + 1].x) < DirectedGeometry.epsilon
@@ -257,7 +241,7 @@ extension DirectedRouter {
                     var next = path
                     for i in [first, second] { if vertical { next[i].y = target.y } else { next[i].x = target.x } }
                     next = DirectedGeometry.compact(next)
-                    guard let count = crossingCount(next, others: others, spacing: gap), count <= before,
+                    guard let count = crossingCount(next, besides: ends, spacing: gap), count <= before,
                         next.count < path.count
                     else { continue }
                     edge.path = next
@@ -290,7 +274,7 @@ extension DirectedRouter {
         var (lo, hi) =
             node.bounds.height > 2 * margin
             ? (node.bounds.top + margin, node.bounds.bottom - margin) : (node.bounds.center.y, node.bounds.center.y)
-        for other in edges where other !== edge {
+        for other in incidentEdges[node] ?? [] where other !== edge {
             for (end, owner) in [(other.path.first, other.source), (other.path.last, other.target)] where owner === node
             {
                 guard let end, Self.onSide(end, side, of: node.bounds, margin: 0) else { continue }
@@ -320,13 +304,12 @@ extension DirectedRouter {
             let hi = min(s.hi, t.hi)
             guard lo <= hi + DirectedGeometry.epsilon else { continue }
             load(excluding: edge)
-            let others = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                .map { $0.bounds.inflated(by: clearance) }
-            guard let before = crossingCount(path, others: others) else { continue }
+            let ends = endpoints(of: edge)
+            guard let before = crossingCount(path, besides: ends) else { continue }
             // The coordinate nearest the source end (then the target end) that both sides allow.
             let y = min(max(path[0].y, lo), hi)
             let next = [Point(x: path[0].x, y: y), Point(x: path[3].x, y: y)]
-            guard let after = crossingCount(next, others: others), after <= before else { continue }
+            guard let after = crossingCount(next, besides: ends), after <= before else { continue }
             edge.path = next
             if var p = ports[edge] {
                 p.0 = next[0]
@@ -366,16 +349,13 @@ extension DirectedRouter {
             for edge in troubled {
                 try Task.checkCancellation()
                 load(excluding: edge)
-                let others = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                    .map { $0.bounds.inflated(by: clearance) }
+                let ends = endpoints(of: edge)
                 func quality(_ path: [Point]) -> (proximity: Int, crossings: Int, bends: Int)? {
                     var near: Set<Int> = []
                     var hits: [Int: Set<Point>] = [:]
                     var rejected = false
                     for segment in DirectedGeometry.segments(path) {
-                        guard DirectedGeometry.clear(segment.a, segment.b, bodies: bodies),
-                            DirectedGeometry.clear(segment.a, segment.b, bodies: others)
-                        else { return nil }
+                        guard isClear(segment.a, segment.b, besides: ends) else { return nil }
                         occupied.forEach(near: segment, margin: edgeSpacing) { owner, b in
                             if DirectedGeometry.shared(segment, b) {
                                 rejected = true

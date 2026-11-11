@@ -13,6 +13,9 @@ final class DirectedHierarchy: LayoutAlgorithm {
     var maxNodesPerRank: Int?
     var retainBestSweep = true
 
+    /// Crossings between adjacent ranks in the final ordering, known before any route exists.
+    private(set) var orderingCrossings = 0
+
     /// Spacing of the ports on one side of a node; targets then aim at the neighbour's port, not its centre.
     var portPitch: Float = 0
     static let maxVirtualNodes = 20_000
@@ -180,6 +183,7 @@ final class DirectedHierarchy: LayoutAlgorithm {
             }
             if !changed { break }
         }
+        orderingCrossings = crossingCount()
         let heights = layers.map { layer in layer.map { $0 < count ? a.nodes[$0].height : 0 }.max() ?? 0 }
         let ys = offsets(heights, gap: layerSeparation)
         var xs = Array(repeating: Float(0), count: widths.count)

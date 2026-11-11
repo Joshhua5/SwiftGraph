@@ -28,12 +28,27 @@ public struct DirectedLayoutOperation {
                 to: slices[index].to
             ) {
                 let run = DirectedComponentRun(self, plan, component)
-                for candidate in 0..<run.candidateCount {
+                let screening = run.screensCandidates ? 0.2 : 0
+                if run.screensCandidates {
+                    try LayoutStageScope.run("Screening", to: screening) {
+                        for candidate in 0..<run.candidateCount {
+                            try Task.checkCancellation()
+                            LayoutStageScope.tick(candidate, of: run.candidateCount)
+                            // Screening runs only for fresh placements, which `place(_:)` always returns.
+                            guard let placement = try run.place(candidate) else { continue }
+                            try placement.applyLayout(run.sub)
+                            run.screened(candidate, placement)
+                        }
+                    }
+                }
+                let routed = run.routedCandidates
+                for (position, candidate) in routed.enumerated() {
                     try Task.checkCancellation()
+                    let span = (0.8 - screening) / Double(routed.count)
                     let settled = try LayoutStageScope.run(
-                        "Candidate \(candidate + 1)/\(run.candidateCount)",
-                        from: 0.8 * Double(candidate) / Double(run.candidateCount),
-                        to: 0.8 * Double(candidate + 1) / Double(run.candidateCount)
+                        "Candidate \(position + 1)/\(routed.count)",
+                        from: screening + span * Double(position),
+                        to: screening + span * Double(position + 1)
                     ) {
                         if let placement = try run.place(candidate) {
                             try LayoutStageScope.run("Hierarchy", to: 0.4) { try placement.applyLayout(run.sub) }

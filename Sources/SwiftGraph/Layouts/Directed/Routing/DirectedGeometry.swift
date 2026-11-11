@@ -163,13 +163,16 @@ enum DirectedGeometry {
 
     static func clear(_ a: Point, _ b: Point, bodies: [Rect]) -> Bool {
         if abs(a.x - b.x) > epsilon && abs(a.y - b.y) > epsilon { return false }
-        return !bodies.contains { r in
-            if abs(a.x - b.x) < epsilon {
-                return a.x > r.left + epsilon && a.x < r.right - epsilon
-                    && max(a.y, b.y) > r.top + epsilon && min(a.y, b.y) < r.bottom - epsilon
-            }
-            return a.y > r.top + epsilon && a.y < r.bottom - epsilon
-                && max(a.x, b.x) > r.left + epsilon && min(a.x, b.x) < r.right - epsilon
+        return !bodies.contains { blocks(a, b, $0) }
+    }
+
+    /// Whether the axis-aligned stroke `a`–`b` passes through `r`'s interior; touching its edges is allowed.
+    static func blocks(_ a: Point, _ b: Point, _ r: Rect) -> Bool {
+        if abs(a.x - b.x) < epsilon {
+            return a.x > r.left + epsilon && a.x < r.right - epsilon
+                && max(a.y, b.y) > r.top + epsilon && min(a.y, b.y) < r.bottom - epsilon
         }
+        return a.y > r.top + epsilon && a.y < r.bottom - epsilon
+            && max(a.x, b.x) > r.left + epsilon && min(a.x, b.x) < r.right - epsilon
     }
 }

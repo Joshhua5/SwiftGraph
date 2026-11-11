@@ -56,6 +56,14 @@ final class DirectedChannelPlan {
             chains[$0].points.count == chains[$1].points.count
                 ? $0 < $1 : chains[$0].points.count > chains[$1].points.count
         }
+        // Each interior point is bounded only by its own rank's nodes and by the chains that pass
+        // through that rank. Ranks and chain spans stay fixed while points move, so both are bucketed once.
+        var rankObstacles = Array(repeating: [Rect](), count: ranks.count)
+        for node in nodes { rankObstacles[nodeRanks[required: node]].append(node.bounds.inflated(by: clearance)) }
+        var rankChains = Array(repeating: [Int](), count: ranks.count)
+        for (index, chain) in chains.enumerated() {
+            for part in chain.points.indices { rankChains[chain.firstRank + part].append(index) }
+        }
         for index in order {
             try Task.checkCancellation()
             let chain = chains[index]
@@ -66,8 +74,7 @@ final class DirectedChannelPlan {
                 let y = chain.points[part].y
                 var low = -Float.infinity
                 var high = Float.infinity
-                for node in nodes where nodeRanks[node] == rank {
-                    let r = node.bounds.inflated(by: clearance)
+                for r in rankObstacles[rank] {
                     if r.bottom <= y {
                         low = max(low, r.bottom)
                     } else if r.top >= y {
@@ -77,9 +84,8 @@ final class DirectedChannelPlan {
                         high = y
                     }
                 }
-                for other in chains.indices where other != index {
+                for other in rankChains[rank] where other != index {
                     let p = rank - chains[other].firstRank
-                    guard p >= 0 && p < chains[other].points.count else { continue }
                     let neighbor = chains[other].points[p].y
                     if neighbor < y || (neighbor == y && other < index) {
                         low = max(low, neighbor + spacing)

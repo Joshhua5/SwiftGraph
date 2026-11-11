@@ -60,7 +60,42 @@ final class DirectedComponentRun {
         if cached { plan.diagnostics.cachedComponents += 1 }
     }
 
+    /// Orderings routed in full when there are more candidates; the rest are ranked out by `screened(_:_:)`.
+    static let routedOrderings = 4
+
+    private var screenings: [(candidate: Int, crossings: Int, placement: [Point])] = []
+
     var candidateCount: Int { cached ? 0 : trials * variants }
+
+    /// Routing costs far more than placement, so with more candidates than `routedOrderings` each is placed and
+    /// ranked by its ordering crossings first, and only the best are routed.
+    var screensCandidates: Bool { candidateCount > Self.routedOrderings }
+
+    /// Records a screened placement's ordering crossings and undoes the transposition `place(_:)` applied.
+    func screened(_ candidate: Int, _ hierarchy: DirectedHierarchy) {
+        let placement = members.map(\.center) + sub.edges.flatMap(\.path)
+        screenings.append((candidate, hierarchy.orderingCrossings, placement))
+        for n in members {
+            let w = n.width
+            n.width = n.height
+            n.height = w
+        }
+        sub.edges = edges
+        plan.placementTime += operation.milliseconds(placementStart.duration(to: .now))
+    }
+
+    /// The candidates to route, in order: all of them unscreened, otherwise the `routedOrderings` with the fewest
+    /// ordering crossings (then the earliest), skipping a placement identical to one already chosen.
+    var routedCandidates: [Int] {
+        guard screensCandidates else { return Array(0..<candidateCount) }
+        var chosen: [(candidate: Int, crossings: Int, placement: [Point])] = []
+        for screening in screenings.sorted(by: { ($0.crossings, $0.candidate) < ($1.crossings, $1.candidate) })
+        where !chosen.contains(where: { $0.placement == screening.placement }) {
+            chosen.append(screening)
+            if chosen.count == Self.routedOrderings { break }
+        }
+        return chosen.map(\.candidate)
+    }
 
     func measure() throws -> DirectedGeometry.Score {
         try DirectedGeometry.measure(nodes: members, edges: edges, spacing: configuration.edgeSpacing)

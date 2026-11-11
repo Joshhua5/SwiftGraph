@@ -4,14 +4,25 @@ import Foundation
 /// The exact-coordinate search is a repair path, not the common case for every edge.
 final class DirectedRouter {
     typealias Ports = (Point, Point, Point, Point)
+
+    /// Positions in `nodes` of an edge's source and target, whose padded obstacles its own route may enter.
+    typealias Endpoints = (source: Int, target: Int)
     let nodes: [LayoutNode]
     let edges: [LayoutEdge]
     let feedback: Set<LayoutEdge>
     let edgeIndices: [LayoutEdge: Int]
     let configuration: DirectedLayoutConfiguration
     let pitch: Float
-    var bodies: [Rect]
-    var obstacles: [Rect]
+    private(set) var bodies: [Rect] = []
+    private(set) var obstacles: [Rect] = []
+
+    /// `bodies` and `obstacles`, indexed so a clearance test visits only nearby nodes.
+    private(set) var bodyIndex = DirectedObstacleIndex([])
+    private(set) var obstacleIndex = DirectedObstacleIndex([])
+    private let nodeIndices: [LayoutNode: Int]
+
+    /// Each node's edges in edge order, for scans that concern only that node's ports.
+    let incidentEdges: [LayoutNode: [LayoutEdge]]
     let occupied = DirectedSegmentGrid()
     var ports: [LayoutEdge: Ports] = [:]
     let clearance: Float
@@ -52,9 +63,31 @@ final class DirectedRouter {
         edgeSpacing = max(configuration.edgeSpacing, trackClearance)
         spacing = edgeSpacing
         clearance = max(configuration.clearance, ((configuration.edgeWidths.max() ?? 1) * 2.5 + 4) / 2 + 2)
+        nodeIndices = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element, $0.offset) })
+        var incident: [LayoutNode: [LayoutEdge]] = [:]
+        for edge in edges {
+            incident[edge.source, default: []].append(edge)
+            if edge.target !== edge.source { incident[edge.target, default: []].append(edge) }
+        }
+        incidentEdges = incident
+        indexNodes()
+    }
+
+    /// Reads the node geometry every clearance test is made against; called again whenever nodes move.
+    private func indexNodes() {
         bodies = nodes.map(\.bounds)
-        let padding = clearance
-        obstacles = nodes.map { $0.bounds.inflated(by: padding) }
+        obstacles = bodies.map { $0.inflated(by: clearance) }
+        bodyIndex = DirectedObstacleIndex(bodies)
+        obstacleIndex = DirectedObstacleIndex(obstacles)
+    }
+
+    func endpoints(of edge: LayoutEdge) -> Endpoints {
+        (nodeIndices[required: edge.source], nodeIndices[required: edge.target])
+    }
+
+    /// A stroke of `endpoints`' route must clear every node body and every other node's padded obstacle.
+    func isClear(_ a: Point, _ b: Point, besides endpoints: Endpoints) -> Bool {
+        bodyIndex.clear(a, b) && obstacleIndex.clear(a, b, skipping: endpoints.source, endpoints.target)
     }
 
     func route(coordinated: Bool = true) throws {
@@ -79,8 +112,7 @@ final class DirectedRouter {
                 p.1.x += edge.target.center.x - priorX[required: edge.target]
                 ports[edge] = p
             }
-            bodies = nodes.map(\.bounds)
-            obstacles = bodies.map { $0.inflated(by: clearance) }
+            indexNodes()
         } else {
             channels = hierarchyPaths()
         }
@@ -135,14 +167,11 @@ final class DirectedRouter {
     func axis(_ direction: Point) -> Int { direction.x != 0 ? 1 : 2 }
 
     /// A route is accepted only when every stroke clears node bodies and the other nodes' padded obstacles.
-    private func validated(_ start: Point, _ middle: [Point], _ end: Point, others: [Rect]) -> [Point]? {
+    private func validated(_ start: Point, _ middle: [Point], _ end: Point, besides endpoints: Endpoints) -> [Point]? {
         let path = DirectedGeometry.compact([start] + middle + [end])
         guard path.count >= 2,
-            zip(path, path.dropFirst())
-                .allSatisfy({
-                    DirectedGeometry.clear($0, $1, bodies: bodies) && DirectedGeometry.clear($0, $1, bodies: others)
-                }),
-            zip(middle, middle.dropFirst()).allSatisfy({ DirectedGeometry.clear($0, $1, bodies: obstacles) })
+            zip(path, path.dropFirst()).allSatisfy({ isClear($0, $1, besides: endpoints) }),
+            zip(middle, middle.dropFirst()).allSatisfy({ obstacleIndex.clear($0, $1) })
         else { return nil }
         return path
     }
@@ -165,12 +194,9 @@ final class DirectedRouter {
                 path[path.count - 1] = end
                 if sd.x != 0 { path[1].y = start.y } else { path[1].x = start.x }
                 if td.x != 0 { path[path.count - 2].y = end.y } else { path[path.count - 2].x = end.x }
-                let others = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                    .map { $0.bounds.inflated(by: clearance) }
-                if zip(path, path.dropFirst())
-                    .allSatisfy({
-                        DirectedGeometry.clear($0, $1, bodies: bodies) && DirectedGeometry.clear($0, $1, bodies: others)
-                    }) && pathCost(path).isFinite
+                let ends = endpoints(of: edge)
+                if zip(path, path.dropFirst()).allSatisfy({ isClear($0, $1, besides: ends) })
+                    && pathCost(path).isFinite
                 {
                     edge.path = path
                     retained.insert(edge)
@@ -204,9 +230,7 @@ final class DirectedRouter {
             where !retained.contains(edge) {
                 guard let guide = channelPaths[edge] else { continue }
                 let (start, end, _, _) = ports[required: edge]
-                let others = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-                    .map { $0.bounds.inflated(by: clearance) }
-                if let path = validated(start, guide, end, others: others) {
+                if let path = validated(start, guide, end, besides: endpoints(of: edge)) {
                     edge.path = path
                     committed.insert(edge)
                     record(edge)
@@ -252,13 +276,11 @@ final class DirectedRouter {
         let escape = start + sd * clearance
         let entry = end + td * clearance
         // Endpoints are never exempted from body validation (including self-loops).
-        guard DirectedGeometry.clear(start, escape, bodies: bodies), DirectedGeometry.clear(entry, end, bodies: bodies)
-        else { return nil }
-        let otherObstacles = nodes.filter { $0 !== edge.source && $0 !== edge.target }
-            .map { $0.bounds.inflated(by: clearance) }
+        guard bodyIndex.clear(start, escape), bodyIndex.clear(entry, end) else { return nil }
+        let ends = endpoints(of: edge)
         var candidates: [[Point]] = []
         func add(_ middle: [Point]) {
-            if let path = validated(start, middle, end, others: otherObstacles) { candidates.append(path) }
+            if let path = validated(start, middle, end, besides: ends) { candidates.append(path) }
         }
         if let guide { add(guide) }
         let guided = candidates.first.flatMap { pathCost($0).isFinite ? $0 : nil }

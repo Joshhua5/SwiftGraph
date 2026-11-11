@@ -371,4 +371,39 @@ struct DirectedOperationTests {
             )
         }
     }
+
+    @Test func screeningRoutesOnlyTheOrderingsWithFewestCrossings() throws {
+        let g = layers([6, 8, 8, 6, 4], seed: 3)
+        let operation = DirectedLayoutOperation()
+        let plan = try #require(try operation.prepare(g))
+        let run = DirectedComponentRun(operation, plan, try #require(plan.components.first))
+        #expect(run.candidateCount == 10 && run.screensCandidates)
+        let sizes = run.members.map { Size(width: $0.width, height: $0.height) }
+        var crossings: [Int] = []
+        for candidate in 0..<run.candidateCount {
+            let hierarchy = try #require(try run.place(candidate))
+            try hierarchy.applyLayout(run.sub)
+            crossings.append(hierarchy.orderingCrossings)
+            run.screened(candidate, hierarchy)
+        }
+        // Screening leaves the members as `place(_:)` found them.
+        #expect(run.members.map { Size(width: $0.width, height: $0.height) } == sizes)
+        let routed = run.routedCandidates
+        #expect(!routed.isEmpty && routed.count <= DirectedComponentRun.routedOrderings)
+        #expect(Set(routed).count == routed.count)
+        #expect(routed.map { crossings[$0] } == routed.map { crossings[$0] }.sorted())
+        #expect(crossings[routed[0]] == crossings.min())
+    }
+
+    @Test func screenedLayoutsStayRoutableAndDeterministic() throws {
+        func drawing() throws -> (DirectedLayoutDiagnostics, [Rect], [[Point]]) {
+            let g = layers([6, 8, 8, 6, 4], seed: 3)
+            let report = try DirectedLayoutOperation().apply(g)
+            return (report, g.nodes.map(\.bounds), g.edges.map(\.path))
+        }
+        let (report, bounds, paths) = try drawing()
+        #expect(report.unroutableEdges.isEmpty && report.sharedRuns == 0 && report.overlappingNodeIDs.isEmpty)
+        let (_, againBounds, againPaths) = try drawing()
+        #expect(againBounds == bounds && againPaths == paths)
+    }
 }

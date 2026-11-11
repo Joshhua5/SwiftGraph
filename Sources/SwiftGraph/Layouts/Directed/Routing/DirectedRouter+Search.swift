@@ -40,7 +40,15 @@ extension DirectedRouter {
         }
         let window = Rect(x: xs[0], y: ys[0], width: xs[xs.count - 1] - xs[0], height: ys[ys.count - 1] - ys[0])
             .inflated(by: spacing)
-        for (i, segment) in occupied.segments.enumerated() {
+        // Only the window's buckets are visited. Costs are set to infinity or raised by whole numbers,
+        // so the grid does not depend on the order segments arrive in.
+        var nearby: [DirectedGeometry.Segment] = []
+        let diagonal = DirectedGeometry.Segment(
+            a: Point(x: window.left, y: window.top),
+            b: Point(x: window.right, y: window.bottom)
+        )
+        occupied.forEach(near: diagonal, margin: 0) { _, segment in nearby.append(segment) }
+        for (i, segment) in nearby.enumerated() {
             if i % 128 == 0 { try Task.checkCancellation() }
             if max(segment.a.x, segment.b.x) < window.left || min(segment.a.x, segment.b.x) > window.right
                 || max(segment.a.y, segment.b.y) < window.top || min(segment.a.y, segment.b.y) > window.bottom
