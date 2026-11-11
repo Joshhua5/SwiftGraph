@@ -157,9 +157,7 @@ extension LayoutBuilder {
     ) -> Self {
         let operation = ImportanceLayoutOperation(core, backend: backend, executor: executor)
         return useAsyncAlgorithm(operation).routePolyline(backend: backend, executor: executor)
-            .routeSelfLoops(backend: backend, executor: executor)
-            .clipEdgeEndpoints(backend: backend, executor: executor)
-            .distributePorts(backend: backend, executor: executor)
+            .finishRoutes(style: .polyline, backend: backend, executor: executor)
     }
 
     @discardableResult public func applyClusterBased(
@@ -169,9 +167,7 @@ extension LayoutBuilder {
     ) -> Self {
         let operation = ClusterLayoutOperation(core, backend: backend, executor: executor)
         return useAsyncAlgorithm(operation).routePolyline(backend: backend, executor: executor)
-            .routeSelfLoops(backend: backend, executor: executor)
-            .clipEdgeEndpoints(backend: backend, executor: executor)
-            .distributePorts(backend: backend, executor: executor)
+            .finishRoutes(style: .polyline, backend: backend, executor: executor)
     }
 }
 

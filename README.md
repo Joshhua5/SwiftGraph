@@ -27,8 +27,7 @@ try await LayoutBuilder.create(graph)
         $0.nodeSeparation = 80
         $0.layerSeparation = 120
     }
-    .routeSelfLoops()
-    .clipEdgeEndpoints()
+    .finishRoutes(style: .polyline)
     .applyAsync()
 
 // Read source.bounds, target.bounds and graph.edges[0].path for rendering.
@@ -68,8 +67,7 @@ try await LayoutBuilder.create(graph)
         $0.iterations = 30
         $0.segments = 10
     }
-    .routeSelfLoops()
-    .clipEdgeEndpoints()
+    .finishRoutes(style: .polyline, backend: .metal, executor: executor)
     .applyAsync()
 ```
 
@@ -247,7 +245,7 @@ it to any pipeline. Presets use it before curve fitting and self-loops; bundling
 presets intentionally keep merged tracks. The mode retains the polyline router's endpoint/group exclusions and does not
 interpret ports. Clipping remains explicit.
 
-General routers preserve self-loops; route them last with `SelfLoopRouter`, which draws compact orthogonal corner loops (`loopSize`, default 16) on the corner that is clear of other nodes, crosses the fewest routes and is furthest from attached edges; extra loops on a node take other corners, then nest outward. `EdgeEndpointClipper.clipToNodeBounds` trims endpoints along the actual boundary-crossing segments, making it safe to run repeatedly. Most positioning algorithms emit center-to-center paths; clipping is an explicit rendering preparation step.
+After any router, call `finishRoutes(style:)` rather than chaining the finishing stages by hand. It runs them in one fixed order (self-loops, repair of routes that cross nodes, endpoint clipping, port distribution, then curve fitting for `.curved`) and is what every preset uses. General routers preserve self-loops; finishing routes them with `SelfLoopRouter`, which draws compact orthogonal corner loops (`loopSize`, default 16) on the corner that is clear of other nodes, crosses the fewest routes and is furthest from attached edges; extra loops on a node take other corners, then nest outward. `EdgeEndpointClipper.clipToNodeBounds` trims endpoints along the actual boundary-crossing segments, making it safe to run repeatedly. Most positioning algorithms emit center-to-center paths; clipping is an explicit rendering preparation step.
 
 Bus, octilinear, parallel, bundling and smoothing routers provide visual styles, not obstacle-clearance guarantees. Smoothing and bundling can change a previously obstacle-free route. The hierarchical algorithm already emits bend points for long edges; avoid replacing those paths unless another routing style is intended.
 

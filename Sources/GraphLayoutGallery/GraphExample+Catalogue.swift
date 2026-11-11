@@ -24,9 +24,7 @@ extension GraphExample {
                 $0.layerSeparation = 80
             }
             .separateEdges(backend: backend)
-            .routeSelfLoops(backend: backend)
-            .clipEdgeEndpoints(backend: backend)
-            .distributePorts(backend: backend)
+            .finishRoutes(style: .polyline, backend: backend)
             .placeLabels(backend: backend)
         }
     )
@@ -53,9 +51,7 @@ extension GraphExample {
             }
             .removeOverlaps(backend: backend) { $0.minSpacing = 18 }
             .routePolyline(backend: backend)
-            .routeSelfLoops(backend: backend)
-            .clipEdgeEndpoints(backend: backend)
-            .distributePorts(backend: backend)
+            .finishRoutes(style: .polyline, backend: backend)
         }
     )
 
@@ -78,8 +74,7 @@ extension GraphExample {
                 $0.nodeSeparation = 36
                 $0.levelSeparation = 72
             }
-            .clipEdgeEndpoints(backend: backend)
-            .distributePorts(backend: backend)
+            .finishRoutes(style: .polyline, backend: backend)
         }
     )
 
@@ -100,8 +95,7 @@ extension GraphExample {
         configure: { builder, backend in
             builder.useRadialTree(backend: backend) { $0.spacing = 110 }
                 .routePolyline(backend: backend)
-                .clipEdgeEndpoints(backend: backend)
-                .distributePorts(backend: backend)
+                .finishRoutes(style: .polyline, backend: backend)
         }
     )
 
@@ -122,9 +116,7 @@ extension GraphExample {
         configure: { builder, backend in
             builder.useCircular(backend: backend) { $0.radius = 220 }
                 .routePolyline(backend: backend)
-                .routeSelfLoops(backend: backend)
-                .clipEdgeEndpoints(backend: backend)
-                .distributePorts(backend: backend)
+                .finishRoutes(style: .polyline, backend: backend)
         }
     )
 
@@ -146,8 +138,7 @@ extension GraphExample {
             builder.useOrthogonal(backend: backend) { $0.gridSize = 110 }
                 .routeChannel(backend: backend)
                 .separateEdges(backend: backend)
-                .clipEdgeEndpoints(backend: backend)
-                .distributePorts(backend: backend)
+                .finishRoutes(style: .orthogonal, backend: backend)
         }
     )
 
@@ -172,9 +163,7 @@ extension GraphExample {
                 $0.routesEdges = false
             }
             .routeBsp(backend: backend)
-            .separateEdges(backend: backend)
-            .clipEdgeEndpoints(backend: backend)
-            .distributePorts(backend: backend)
+            .finishRoutes(style: .orthogonal, backend: backend)
         }
     )
 
@@ -194,8 +183,7 @@ extension GraphExample {
         makeGraph: SampleGraphs.bipartite,
         configure: { builder, backend in
             builder.routeWithBundling(backend: backend) { $0.k = 0.1 }
-                .clipEdgeEndpoints(backend: backend)
-                .distributePorts(backend: backend)
+                .finishRoutes(style: .polyline, backend: backend)
         }
     )
 
@@ -228,9 +216,7 @@ extension GraphExample {
                 }
             }
             .separateEdges(backend: backend)
-            .routeSelfLoops(backend: backend)
-            .clipEdgeEndpoints(backend: backend)
-            .distributePorts(backend: backend)
+            .finishRoutes(style: .polyline, backend: backend)
         }
     )
 
@@ -267,8 +253,7 @@ extension GraphExample {
             builder.useAsyncAlgorithm(swimlane)
                 .routeChannel(backend: backend)
                 .separateEdges(backend: backend)
-                .clipEdgeEndpoints(backend: backend)
-                .distributePorts(backend: backend)
+                .finishRoutes(style: .orthogonal, backend: backend)
                 .placeLabels(backend: backend)
                 .transform { graph in
                     let minY = CGFloat(graph.nodes.map(\.y).min() ?? 0)

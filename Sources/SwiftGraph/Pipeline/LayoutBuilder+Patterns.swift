@@ -101,16 +101,15 @@ extension LayoutBuilder {
     }
 
     @discardableResult public func applyWithEdgeBundling(k: Float = 0.1) -> Self {
-        routePolyline().routeWithBundling { $0.k = k }.routeSelfLoops().clipEdgeEndpoints().distributePorts()
+        routePolyline().routeWithBundling { $0.k = k }.finishRoutes(style: .polyline)
     }
 
     @discardableResult public func applyWithSmoothCurves(curveFittingIterations: Int = 3) -> Self {
-        routePolyline().clipEdgeEndpoints().distributePorts()
-            .routeCurveFitting { $0.iterations = curveFittingIterations }.routeSelfLoops().clipEdgeEndpoints()
+        routePolyline().finishRoutes(style: .curved, curveIterations: curveFittingIterations)
     }
 
     @discardableResult public func applyWithBspRouting() -> Self {
-        routeBsp().routeSelfLoops().clipEdgeEndpoints().distributePorts()
+        routeBsp().finishRoutes(style: .orthogonal)
     }
 
     @discardableResult public func applyEnterpriseArchitecture(
@@ -157,8 +156,7 @@ extension LayoutBuilder {
             $0.laneInternalPadding = laneInternalPadding
             $0.nodeVerticalSpacing = nodeVerticalSpacing
         }
-        .routeChannel().separateEdges().clipEdgeEndpoints().distributePorts().routeCurveFitting().routeSelfLoops()
-        .clipEdgeEndpoints()
+        .routeChannel().separateEdges().finishRoutes(style: .curved)
     }
 
     @discardableResult public func applySocialNetwork(organicIterations: Int = 600, repulsionForce: Float = 100) -> Self
@@ -241,7 +239,7 @@ extension LayoutBuilder {
                     node.height *= scale
                 }
             }
-            .useAlgorithm(layout).routePolyline().routeSelfLoops().clipEdgeEndpoints().distributePorts()
+            .useAlgorithm(layout).routePolyline().finishRoutes(style: .polyline)
     }
 
     @discardableResult public func applyClusterBased(_ layout: any LayoutAlgorithm) -> Self {
@@ -279,7 +277,7 @@ extension LayoutBuilder {
                     rowHeight = max(rowHeight, b.height)
                 }
             }
-            .routePolyline().routeSelfLoops().clipEdgeEndpoints().distributePorts()
+            .routePolyline().finishRoutes(style: .polyline)
     }
 
     @discardableResult public func applySmallGraphPreset() -> Self {

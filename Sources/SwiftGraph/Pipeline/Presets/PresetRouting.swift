@@ -5,6 +5,19 @@ enum PresetRouting {
     case bundled(Float)
     case curves(Int)
 
+    var style: RouteStyle {
+        switch self {
+        case .polyline, .layered, .bundled: .polyline
+        case .bsp, .channel: .orthogonal
+        case .curves: .curved
+        }
+    }
+
+    var curveIterations: Int {
+        guard case .curves(let iterations) = self else { return RouteFinishing.defaultCurveIterations }
+        return iterations
+    }
+
     func apply(_ graph: LayoutGraph) -> [LayoutEdge] {
         var failed: [LayoutEdge] = []
         switch self {
@@ -20,11 +33,6 @@ enum PresetRouting {
         case .layered, .curves:
             failed = ObstaclePolyline.repair(graph, shortenDetours: true)
             EdgeSeparator().routeEdges(graph)
-            if case .curves(let iterations) = self {
-                let curves = CurveFittingEdgeRouter()
-                curves.iterations = iterations
-                curves.routeEdges(graph)
-            }
         case .bsp:
             let router = BspEdgeRouter()
             router.routeEdges(graph)
@@ -36,10 +44,7 @@ enum PresetRouting {
             EdgeSeparator().routeEdges(graph)
         }
         // No later whole-graph router may invalidate the measured container envelope.
-        SelfLoopRouter().routeEdges(graph)
-        failed += ObstaclePolyline.repair(graph, spacing: 0, shortenDetours: true)
-        EdgeEndpointClipper.clipToNodeBounds(graph)
-        PortDistributor().routeEdges(graph)
+        failed += RouteFinishing.finish(graph, style: style, curveIterations: curveIterations)
         let scene = ObstaclePolyline.Scene(graph.nodes)
         return Array(Set(failed.filter { !scene.clear($0.path, $0) }))
     }
@@ -63,22 +68,13 @@ extension PresetRouting {
                 LayoutStageScope.run("Pre-separation repair") { _ = ObstaclePolyline.repair(g, shortenDetours: true) }
             }
             .separateEdges(backend: backend, executor: executor)
-            if case .curves(let iterations) = self {
-                builder.routeCurveFitting(backend: backend, executor: executor) { $0.iterations = iterations }
-            }
         case .bsp: builder.routeBsp(backend: backend, executor: executor)
         case .channel:
             builder.routeChannel(backend: backend, executor: executor)
                 .separateEdges(backend: backend, executor: executor)
         }
-        builder.routeSelfLoops(backend: backend, executor: executor)
-            .transform { g in
-                LayoutStageScope.run("Post-routing repair") {
-                    _ = ObstaclePolyline.repair(g, spacing: 0, shortenDetours: true)
-                }
-            }
-            .clipEdgeEndpoints(backend: backend, executor: executor)
-            .distributePorts(backend: backend, executor: executor)
+        // No later whole-graph router may invalidate the measured container envelope.
+        builder.finishRoutes(style: style, backend: backend, executor: executor, curveIterations: curveIterations)
         try await builder.applyAsync()
         let failed = LayoutStageScope.run("Verify clearance") {
             let scene = ObstaclePolyline.Scene(graph.nodes)

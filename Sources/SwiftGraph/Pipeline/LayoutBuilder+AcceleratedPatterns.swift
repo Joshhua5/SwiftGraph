@@ -94,9 +94,7 @@ extension LayoutBuilder {
     ) -> Self {
         routePolyline(backend: backend, executor: executor)
             .routeWithBundling(backend: backend, executor: executor) { $0.k = k }
-            .routeSelfLoops(backend: backend, executor: executor)
-            .clipEdgeEndpoints(backend: backend, executor: executor)
-            .distributePorts(backend: backend, executor: executor)
+            .finishRoutes(style: .polyline, backend: backend, executor: executor)
     }
 
     @discardableResult public func applyNetworkTopology(
@@ -308,20 +306,20 @@ extension LayoutBuilder {
         curveFittingIterations: Int = 3
     ) -> Self {
         routePolyline(backend: backend, executor: executor)
-            .clipEdgeEndpoints(backend: backend, executor: executor)
-            .distributePorts(backend: backend, executor: executor)
-            .routeCurveFitting(backend: backend, executor: executor) { $0.iterations = curveFittingIterations }
-            .routeSelfLoops(backend: backend, executor: executor)
-            .clipEdgeEndpoints(backend: backend, executor: executor)
+            .finishRoutes(
+                style: .curved,
+                backend: backend,
+                executor: executor,
+                curveIterations: curveFittingIterations
+            )
     }
 
     @discardableResult public func applyWithBspRouting(
         backend: LayoutBackend,
         executor: LayoutExecutor = .shared
     ) -> Self {
-        routeBsp(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
-            .clipEdgeEndpoints(backend: backend, executor: executor)
-            .distributePorts(backend: backend, executor: executor)
+        routeBsp(backend: backend, executor: executor)
+            .finishRoutes(style: .orthogonal, backend: backend, executor: executor)
     }
 
     @discardableResult public func applyGrainSwimlane(
@@ -340,9 +338,8 @@ extension LayoutBuilder {
             $0.laneInternalPadding = laneInternalPadding
             $0.nodeVerticalSpacing = nodeVerticalSpacing
         }
-        .routeChannel(backend: backend, executor: executor).separateEdges(backend: backend, executor: executor)
-        .clipEdgeEndpoints(backend: backend, executor: executor).distributePorts(backend: backend, executor: executor)
-        .routeCurveFitting(backend: backend, executor: executor).routeSelfLoops(backend: backend, executor: executor)
-        .clipEdgeEndpoints(backend: backend, executor: executor)
+        .routeChannel(backend: backend, executor: executor)
+        .separateEdges(backend: backend, executor: executor)
+        .finishRoutes(style: .curved, backend: backend, executor: executor)
     }
 }
