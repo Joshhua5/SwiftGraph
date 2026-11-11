@@ -1,6 +1,6 @@
 import Foundation
 
-extension DirectedRouter {
+extension LayeredRouter {
     private struct End {
         var edge: LayoutEdge
         var source: Bool
@@ -64,7 +64,7 @@ extension DirectedRouter {
                 } else {
                     sides = (.top, .top)
                 }
-            } else if edge.sourcePort != .none && edge.targetPort != .none {
+            } else if configuration.readsPortConstraints && edge.sourcePort != .none && edge.targetPort != .none {
                 sides = (edge.sourcePort, edge.targetPort)
             } else if a.center.x < b.center.x {
                 sides = (.right, .left)
@@ -166,7 +166,7 @@ extension DirectedRouter {
             }
             // Prior ports stay where they are; a new end takes the nearest free gap, in order
             // between its neighbours. Only when no gap keeps the spacing is the side re-spread.
-            if configuration.mode != .fresh {
+            if configuration.keepsPreviousRoutes {
                 var kept = [Float?](repeating: nil, count: count)
                 for (i, end) in sorted.enumerated() {
                     guard let path = configuration.previousPaths[edgeIndices[required: end.edge]], path.count >= 2

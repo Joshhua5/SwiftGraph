@@ -101,13 +101,13 @@ final class DirectedComponentRun {
         try DirectedGeometry.measure(nodes: members, edges: edges, spacing: configuration.edgeSpacing)
     }
 
-    private func router() -> DirectedRouter {
-        DirectedRouter(
+    private func router() -> LayeredRouter {
+        LayeredRouter(
             nodes: members,
             edges: edges,
             feedback: plan.feedback,
             edgeIndices: plan.edgeIndex,
-            configuration: configuration,
+            configuration: LayeredRoutingConfiguration(configuration),
             pitch: plan.pitch
         )
     }

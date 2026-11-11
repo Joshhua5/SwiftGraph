@@ -60,7 +60,7 @@ struct DirectedOperationTests {
             g.addEdge(blocker)
         }
         let edgeIndices = Dictionary(uniqueKeysWithValues: g.edges.enumerated().map { ($0.element, $0.offset) })
-        let router = DirectedRouter(
+        let router = LayeredRouter(
             nodes: g.nodes,
             edges: g.edges,
             feedback: [],
