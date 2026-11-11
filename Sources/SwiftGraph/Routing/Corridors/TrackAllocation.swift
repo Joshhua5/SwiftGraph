@@ -1,15 +1,20 @@
 import Foundation
 
-struct DirectedChannelAllocation {
+/// Assigns the runs that share one corridor to ordered tracks: overlapping runs get distinct tracks, disjoint runs
+/// may share one, and the order keeps arms from crossing other runs where it can. Shared by the directed layout's
+/// rank channels and by the BSP and grouped routers' corridors.
+struct TrackAllocation {
     var slots: [Int: Int]
     var count: Int
+
+    private static let epsilon: Float = 0.0001
 
     /// Clearance is a hard separation constraint. Crossing preferences are soft: insert the
     /// strongest preferences first and reverse any that close a cycle. Pairs without a
     /// preference only need distinct slots, so they stay unoriented until the weighted order
     /// is known and are then oriented to add the least depth.
-    static func solve(_ input: [DirectedChannelSegment], clearance: Float) throws -> Self {
-        let segments = input.filter { abs($0.source - $0.target) > DirectedGeometry.epsilon }.sorted { $0.id < $1.id }
+    static func solve(_ input: [TrackSegment], clearance: Float) throws -> Self {
+        let segments = input.filter { abs($0.source - $0.target) > epsilon }.sorted { $0.id < $1.id }
         struct Preference {
             var from: Int
             var to: Int
@@ -17,14 +22,19 @@ struct DirectedChannelAllocation {
         }
         var preferences: [Preference] = []
         var neutral: [Preference] = []
-        func cost(_ a: DirectedChannelSegment, _ b: DirectedChannelSegment) -> Int {
-            // A lies left of B. Only A's exit and B's entrance can cross the other run.
+        func arms(_ s: TrackSegment, heading side: TrackSegment.Side) -> [Float] {
+            (s.sourceSide == side ? [s.source] : []) + (s.targetSide == side ? [s.target] : [])
+        }
+        func cost(_ a: TrackSegment, _ b: TrackSegment) -> Int {
+            // A takes the lower track. Only A's arms towards the high side and B's towards the low side pass the
+            // other run, and they cross it when they leave from inside its extent.
+            let rising = arms(a, heading: .high)
+            let falling = arms(b, heading: .low)
             let crossings =
-                (a.target > b.low && a.target < b.high ? 1 : 0)
-                + (b.source > a.low && b.source < a.high ? 1 : 0)
+                rising.filter { $0 > b.low && $0 < b.high }.count + falling.filter { $0 > a.low && $0 < a.high }.count
             // Near coincident opposing arms need the opposite order to avoid sharing.
-            let conflict = abs(a.target - b.source) < clearance ? 1 : 0
-            return crossings * 16 + conflict * 32
+            let conflicts = rising.reduce(0) { total, r in total + falling.filter { abs(r - $0) < clearance }.count }
+            return crossings * 16 + conflicts * 32
         }
         func consider(_ i: Int, _ j: Int) {
             let a = segments[i]

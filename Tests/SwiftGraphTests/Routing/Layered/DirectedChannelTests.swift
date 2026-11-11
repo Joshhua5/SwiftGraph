@@ -5,13 +5,13 @@ import Testing
 struct DirectedChannelTests {
     @Test func disjointSpansReuseTracksAndOverlapsSeparate() throws {
         let segments = [
-            DirectedChannelSegment(id: 0, source: 0, target: 40),
-            DirectedChannelSegment(id: 1, source: 60, target: 100),
+            TrackSegment(id: 0, source: 0, target: 40),
+            TrackSegment(id: 1, source: 60, target: 100),
         ]
-        let allocation = try DirectedChannelAllocation.solve(segments, clearance: 6)
+        let allocation = try TrackAllocation.solve(segments, clearance: 6)
         #expect(allocation.slots[0] == allocation.slots[1])
         #expect(allocation.count == 1)
-        let overlapping = try DirectedChannelAllocation.solve(
+        let overlapping = try TrackAllocation.solve(
             [segments[0], .init(id: 2, source: 20, target: 80)],
             clearance: 6
         )
@@ -20,7 +20,7 @@ struct DirectedChannelTests {
     }
 
     @Test func endpointOrderAvoidsTwoUnnecessaryCrossings() throws {
-        let allocation = try DirectedChannelAllocation.solve(
+        let allocation = try TrackAllocation.solve(
             [
                 .init(id: 0, source: 0, target: 60), .init(id: 1, source: 30, target: 90),
             ],
@@ -30,7 +30,7 @@ struct DirectedChannelTests {
     }
 
     @Test func straightConnectionsConsumeNoTrackAndNearSpansStaySeparate() throws {
-        let allocation = try DirectedChannelAllocation.solve(
+        let allocation = try TrackAllocation.solve(
             [
                 .init(id: 0, source: 0, target: 0), .init(id: 1, source: 10, target: 40),
                 .init(id: 2, source: 44, target: 70),
@@ -44,10 +44,10 @@ struct DirectedChannelTests {
     @Test func conflictingPreferencesRemainDeterministicAndClear() throws {
         let segments = (0..<24)
             .map { i in
-                DirectedChannelSegment(id: i, source: Float((i * 37) % 113), target: Float((i * 61 + 19) % 127))
+                TrackSegment(id: i, source: Float((i * 37) % 113), target: Float((i * 61 + 19) % 127))
             }
-        let a = try DirectedChannelAllocation.solve(segments, clearance: 6)
-        let b = try DirectedChannelAllocation.solve(segments.reversed(), clearance: 6)
+        let a = try TrackAllocation.solve(segments, clearance: 6)
+        let b = try TrackAllocation.solve(segments.reversed(), clearance: 6)
         #expect(a.slots == b.slots)
         for i in segments.indices {
             for j in segments.indices where j > i {
@@ -128,7 +128,7 @@ struct DirectedChannelTests {
     }
 
     @Test func unpreferredNestedPairsAddNoDepth() throws {
-        let allocation = try DirectedChannelAllocation.solve(
+        let allocation = try TrackAllocation.solve(
             [
                 .init(id: 0, source: 0, target: 100), .init(id: 1, source: 10, target: 30),
                 .init(id: 2, source: 60, target: 90),
