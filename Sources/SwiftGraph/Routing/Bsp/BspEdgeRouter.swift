@@ -23,6 +23,7 @@ public final class BspEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .orthogonal
         let calculator = BspGridCalculator()
         calculator.buildTree(graph)
         var segments = calculator.getAllGridSegments()

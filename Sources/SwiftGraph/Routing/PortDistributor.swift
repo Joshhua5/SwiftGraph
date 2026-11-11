@@ -33,12 +33,11 @@ public final class PortDistributor: EdgeRouter {
     public func routeEdges(_ graph: LayoutGraph) {
         var groups: [Key: [End]] = [:]
         var keys: [Key] = []
-        // Legs are only slid or jogged in orthogonal drawings; axis-aligned edges of a polyline drawing just tilt.
-        let axisAligned = { (e: LayoutEdge) in
-            zip(e.path, e.path.dropFirst()).allSatisfy { abs($0.x - $1.x) < 1e-5 || abs($0.y - $1.y) < 1e-5 }
-        }
+        // Legs are only slid or jogged in orthogonal drawings; axis-aligned edges of a polyline drawing just tilt. The
+        // recorded style decides, so one edge that fell back to a diagonal does not tilt every other edge's end leg;
+        // that edge's own diagonal leg is never slid (see `candidate`).
         let routed = graph.edges.filter { $0.source !== $0.target && $0.path.count >= 2 }
-        let orthogonal = routed.allSatisfy(axisAligned) && routed.contains { $0.path.count >= 3 }
+        let orthogonal = graph.isOrthogonalDrawing(routed)
         for (order, e) in graph.edges.enumerated() where e.source !== e.target && e.path.count >= 2 {
             for start in [true, false] {
                 let node = start ? e.source : e.target

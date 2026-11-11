@@ -7,4 +7,6 @@ struct RoutingResult: Sendable {
     var labels: [Rect]
     var unroutable: [Int]
     var metrics: LayoutExecutionMetrics
+    /// The route style the routing stage left on its detached graph.
+    var routeStyle: RouteStyle? = nil
 }

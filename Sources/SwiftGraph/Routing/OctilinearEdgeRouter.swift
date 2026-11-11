@@ -7,6 +7,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .octilinear
         let edges = graph.edges.filter { $0.source !== $0.target }
         let bends = RoutingCompute.current?.octilinear(edges.map { $0.source.center }, edges.map { $0.target.center })
         var routed: [(edge: LayoutEdge, path: [Point])] = []

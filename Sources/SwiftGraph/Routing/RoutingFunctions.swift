@@ -73,7 +73,12 @@ func concurrentRoutingMap<Input, T>(_ items: [Input], _ body: (Input) -> T) -> [
 }
 
 /// Replaces every segment of `path` that crosses an obstacle by a visibility detour; segments with no detour are kept.
-func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Float = 8) -> [Point] {
+/// A `rectilinear` detour is tried first when asked for, so an orthogonal route stays orthogonal where it can.
+func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Float = 8, rectilinear: Bool = false) -> [Point] {
+    func detour(_ a: Point, _ b: Point) -> [Point]? {
+        if rectilinear, let found = RectilinearRoute.search(a, b, obstacles, padding: padding) { return found }
+        return ObstaclePolyline.search(a, b, obstacles, padding: padding)
+    }
     var result = path
     var k = 0
     while k + 1 < result.count {
@@ -81,7 +86,7 @@ func detourBlocked(_ path: [Point], _ obstacles: [Rect], padding: Float = 8) -> 
         let a = result[k]
         let b = result[k + 1]
         if !ObstaclePolyline.clear([a, b], obstacles),
-            let detour = ObstaclePolyline.search(a, b, obstacles, padding: padding), detour.count > 2
+            let detour = detour(a, b), detour.count > 2
         {
             result.replaceSubrange(k...(k + 1), with: detour)
             k += detour.count - 1

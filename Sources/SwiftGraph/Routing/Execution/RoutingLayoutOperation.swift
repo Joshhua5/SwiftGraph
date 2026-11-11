@@ -85,6 +85,7 @@ public final class RoutingLayoutOperation: AsyncLayoutAlgorithm, LayoutExecution
             graph.edges[i].path = result.paths[i]
             graph.edges[i].labelBounds = result.labels[i]
         }
+        graph.routeStyle = result.routeStyle
         var metrics = result.metrics
         metrics.totalSeconds = start.duration(to: .now).seconds
         lastMetrics = metrics

@@ -157,7 +157,8 @@ func routingTransaction(
                     ? ["CPU \(configuration.kind.rawValue) routing and finishing"]
                     : routingCPUStages(configuration.kind)) + (compute?.fallbacks ?? []),
                 metalStages: submitted == 0 ? [] : compute?.stages ?? []
-            )
+            ),
+            routeStyle: graph.routeStyle
         )
     }
     if actual != .metal { return try run(nil) }

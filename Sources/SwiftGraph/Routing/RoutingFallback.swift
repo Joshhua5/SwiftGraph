@@ -1,8 +1,8 @@
 import Foundation
 
 /// Last resorts for orthogonal routers when their own search fails: an orthogonal L/Z between side ports if one is
-/// clear, otherwise an obstacle-aware polyline between those ports, then the least bad L/Z, and only then a straight
-/// line.
+/// clear, then (when the graph's recorded style is orthogonal) a rectilinear search between side ports, otherwise an
+/// obstacle-aware polyline between those ports, then the least bad L/Z, and only then a straight line.
 enum RoutingFallback {
     static func route(_ edge: LayoutEdge, _ graph: LayoutGraph, padding: Float = 10) -> [Point] {
         let flow = OrthogonalPorts.flow(graph).vertical
@@ -42,6 +42,11 @@ enum RoutingFallback {
                 && !zip(path, path.dropFirst()).contains { a, b in ends.contains { $0.intersectsLine(a, b) } }
         }
         if let path = lz.first(where: clear) { return path }
+        if graph.routeStyle == .orthogonal,
+            let path = RectilinearRoute.route(edge, graph, padding: padding), clear(path)
+        {
+            return path
+        }
         for (ps, ds, pt, dt) in combos {
             // Search from just outside each port, so the route leaves and arrives perpendicular to its side.
             let a = ps + ds * padding

@@ -57,6 +57,7 @@ public final class EdgeBundlingRouter: EdgeRouter {
         )
         guard bundler.runCPU() else { return }
         for (edge, path) in zip(edges, bundler.paths()) { edge.path = path }
+        graph.routeStyle = .polyline
         unroutableEdges = ObstaclePolyline.repair(graph, spacing: 0, shortenDetours: true)
     }
 }

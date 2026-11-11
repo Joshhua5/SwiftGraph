@@ -511,7 +511,9 @@ enum ObstaclePolyline {
 
     /// Re-routes every edge (or `edges`) whose path cuts a node, at the router's `padding`. An edge with no clear
     /// route keeps its path, or a straight line if it has none, and is returned so callers can report it. Detoured
-    /// edges are then separated by `spacing`.
+    /// edges are then separated by `spacing`. In a drawing whose recorded style is orthogonal the new route is
+    /// rectilinear, between side ports, and a clear route is never traded for a diagonal shortcut; only an edge with
+    /// no clear rectilinear route falls back to a polyline.
     @discardableResult
     static func repair(
         _ graph: LayoutGraph,
@@ -521,6 +523,7 @@ enum ObstaclePolyline {
         shortenDetours: Bool = false
     ) -> [LayoutEdge] {
         let scene = Scene(graph.nodes)
+        let orthogonal = graph.routeStyle == .orthogonal
         var detoured: [LayoutEdge] = []
         var failed: [LayoutEdge] = []
         for edge in (edges ?? graph.edges) where edge.source !== edge.target {
@@ -530,6 +533,16 @@ enum ObstaclePolyline {
             let longDetour =
                 shortenDetours && clear && length > 4 * max(1, (edge.target.center - edge.source.center).length)
             if clear && !longDetour { continue }
+            if orthogonal {
+                if let found = RectilinearRoute.route(edge, graph, padding: padding), scene.clear(found, edge) {
+                    if !longDetour || ObstaclePolyline.length(found) < length * 0.75 {
+                        edge.path = found
+                        detoured.append(edge)
+                    }
+                    continue
+                }
+                if clear { continue }
+            }
             let found = scene.route(edge, padding: padding)
             if RoutingCompute.isCancelled { return failed }
             if let found, scene.clear(found.path, edge) {

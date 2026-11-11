@@ -26,6 +26,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
     public func routeEdges(_ graph: LayoutGraph) {
         unroutableEdges = []
         unseparatedEdges = []
+        graph.routeStyle = .polyline
         guard !graph.nodes.isEmpty else { return }
         let scene = ObstaclePolyline.Scene(graph.nodes)
         let routed = ObstaclePolyline.SegmentIndex(bounds: scene.bounds)

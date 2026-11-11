@@ -22,6 +22,7 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
 
     public func routeEdges(_ graph: LayoutGraph) {
         unroutableEdges = []
+        graph.routeStyle = .orthogonal
         guard !graph.edges.isEmpty else { return }
         if !graph.root.children.isEmpty {
             graph.root.bounds = enclosingBounds(graph.root.children).inflated(by: obstacleMargin * 2)

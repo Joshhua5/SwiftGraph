@@ -146,6 +146,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
     public func routeEdges(_ graph: LayoutGraph) {
         unroutableEdges = []
         attached = [:]
+        graph.routeStyle = .orthogonal
         guard !graph.nodes.isEmpty else { return }
         precondition(gridSize > 0, "gridSize must be positive")
         let leaves = QuadTree<LayoutNode>(bounds: enclosingBounds(graph.nodes).inflated(by: 100))

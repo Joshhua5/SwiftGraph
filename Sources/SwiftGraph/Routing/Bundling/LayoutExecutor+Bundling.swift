@@ -94,6 +94,7 @@ extension LayoutExecutor {
         try Task.checkCancellation()
         let repaired = routing?.makeGraph().0 ?? snapshot.makeGraph()
         for path in paths { repaired.edges[path.index].path = path.points }
+        repaired.routeStyle = .polyline
         let failures = Set(
             LayoutStageScope.run("Repair", from: 0.9) {
                 ObstaclePolyline.repair(repaired, spacing: 0, shortenDetours: true)

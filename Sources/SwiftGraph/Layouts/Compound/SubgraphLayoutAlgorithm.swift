@@ -17,6 +17,8 @@ public final class SubgraphLayoutAlgorithm: LayoutAlgorithm {
         func centroid() -> Point { g.nodes.reduce(Point.zero) { $0 + $1.center } / Float(g.nodes.count) }
         let initial = centroid()
         try LayoutStageScope.run("Layout", to: 0.8) { try coreLayout.applyLayout(g) }
+        // Only the selection was redrawn: the drawing keeps its style only if the selection's routes share it.
+        if g.routeStyle != graph.routeStyle { graph.routeStyle = nil }
         if preserveCentroid { translate(g, by: initial - centroid()) }
         if avoidUnselectedNodes {
             let obstacles =

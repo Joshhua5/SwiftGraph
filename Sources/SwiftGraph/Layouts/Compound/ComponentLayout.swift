@@ -37,5 +37,6 @@ public final class ComponentLayout: LayoutAlgorithm {
             aspectRatio: preferredAspectRatio
         )
         for (g, shift) in zip(graphs, shifts) { translate(g, by: shift) }
+        graph.routeStyle = sharedRouteStyle(graphs)
     }
 }

@@ -33,6 +33,7 @@ public final class DirectedLayoutAsyncOperation: LayoutExecutionReporting {
         let result = try await executor.directed(snapshot, configuration: configuration, cache: cache, backend: backend)
         for (node, bounds) in zip(transaction.working.nodes, result.bounds) { node.bounds = bounds }
         for (edge, path) in zip(transaction.working.edges, result.paths) { edge.path = path }
+        transaction.working.routeStyle = .orthogonal
         try transaction.commit(to: graph)
         var metrics = result.metrics
         metrics.totalSeconds = start.duration(to: .now).seconds

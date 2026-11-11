@@ -186,5 +186,8 @@ struct LayoutTransaction {
             }
         }
         for (original, copy) in zip(graph.edges, working.edges) { EdgeState(copy).apply(to: original) }
+        // The detached graph starts with no style, so a composite that redraws routes without recording one leaves
+        // the caller's drawing to inference rather than to a style its old routes had.
+        graph.routeStyle = working.routeStyle
     }
 }

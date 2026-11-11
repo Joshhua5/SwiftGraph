@@ -14,6 +14,7 @@ public final class CurveFittingEdgeRouter: EdgeRouter {
 
     public func fitCurves(_ graph: LayoutGraph) {
         guard iterations > 0, radius > 0, radius.isFinite else { return }
+        graph.routeStyle = .curved
         let steps = 1 << min(5, iterations)
         for (position, e) in graph.edges.enumerated() where e.source !== e.target && e.path.count > 2 {
             if RoutingCompute.isCancelled { return }
