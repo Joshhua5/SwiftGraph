@@ -486,8 +486,9 @@ private func finite(_ g: LayoutGraph) -> Bool {
     e.targetPortCandidates = [.bottom]
     router.routeEdges(g)
     #expect(router.report.unroutable.isEmpty)
-    #expect(e.path.first == Point(x: 15, y: 0))
-    #expect(e.path.last == Point(x: 305, y: 20))
+    // A side too short for a second port line leaves from its centre, wherever the node sits.
+    #expect(e.path.first == Point(x: 10, y: 0))
+    #expect(e.path.last == Point(x: 310, y: 20))
     #expect(e.path[0].x == e.path[1].x)
     #expect(e.path[e.path.count - 1].x == e.path[e.path.count - 2].x)
 }
