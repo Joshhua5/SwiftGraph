@@ -5,7 +5,10 @@ public final class RoutingLayoutOperation: AsyncLayoutAlgorithm, LayoutExecution
     public let backend: LayoutBackend
     public let executor: LayoutExecutor
     public private(set) var lastMetrics: LayoutExecutionMetrics?
-    public private(set) var unroutableEdgeIndices: [Int] = []
+    /// What the last run's router could not do, as indices into `graph.edges`.
+    public private(set) var report = RoutingReport()
+    @available(*, deprecated, message: "Use report.unroutable")
+    public var unroutableEdgeIndices: [Int] { report.unroutable }
     public var lastExecutionMetrics: [LayoutExecutionMetrics] { lastMetrics.map { [$0] } ?? [] }
 
     /// Evaluated on the graph's owner before suspension, never transferred to a compute queue.
@@ -26,7 +29,7 @@ public final class RoutingLayoutOperation: AsyncLayoutAlgorithm, LayoutExecution
 
     public func applyLayoutAsync(_ graph: LayoutGraph) async throws {
         lastMetrics = nil
-        unroutableEdgeIndices = []
+        report = RoutingReport()
         let start = ContinuousClock.now
         let configuration = self.configuration
         try Task.checkCancellation()
@@ -88,6 +91,6 @@ public final class RoutingLayoutOperation: AsyncLayoutAlgorithm, LayoutExecution
         var metrics = result.metrics
         metrics.totalSeconds = start.duration(to: .now).seconds
         lastMetrics = metrics
-        unroutableEdgeIndices = result.unroutable
+        report = result.report
     }
 }

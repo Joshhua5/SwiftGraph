@@ -12,9 +12,17 @@ import Foundation
 public final class EdgeSeparator: EdgeRouter {
     public var spacing: Float = 10
 
+    /// Unseparated edges still share a stretch after the last `routeEdges`: the corridor had no room for lanes, or the
+    /// lanes would cut a node.
+    public private(set) var report = RoutingReport()
+
     /// Edges still sharing a stretch after the last run: the corridor had no room for lanes, or the lanes would cut a
     /// node.
-    public private(set) var unseparatedEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unseparated or report.unseparatedEdges(in:)")
+    public var unseparatedEdges: [LayoutEdge] { unseparated }
+
+    /// Edges still sharing a stretch after the last run, including runs over a subset through `separate`.
+    private(set) var unseparated: [LayoutEdge] = []
 
     /// The most lanes any one shared stretch was spread over in the last run.
     private(set) var widestGroup = 0
@@ -41,10 +49,14 @@ public final class EdgeSeparator: EdgeRouter {
     /// Segments this close in direction count as running the same way.
     private static let angleLimit = Float(sin(2 * Double.pi / 180))
 
-    public func routeEdges(_ graph: LayoutGraph) { separate(graph.edges, ObstaclePolyline.Scene(graph.nodes)) }
+    public func routeEdges(_ graph: LayoutGraph) {
+        separate(graph.edges, ObstaclePolyline.Scene(graph.nodes))
+        report = RoutingReport(graph, unseparated: unseparated)
+    }
 
     func separate(_ all: [LayoutEdge], _ scene: ObstaclePolyline.Scene) {
-        unseparatedEdges = []
+        unseparated = []
+        report = RoutingReport()
         widestGroup = 0
         guard spacing > 0, spacing.isFinite else { return }
         let edges = all.filter { $0.source !== $0.target }
@@ -266,7 +278,7 @@ public final class EdgeSeparator: EdgeRouter {
                 }
             }
         }
-        unseparatedEdges = edges.indices.filter(cramped.contains).map { edges[$0] }
+        unseparated = edges.indices.filter(cramped.contains).map { edges[$0] }
     }
 
     /// Removes repeated points and straight-through interior points so each segment is a maximal straight run.

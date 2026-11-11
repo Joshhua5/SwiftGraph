@@ -7,8 +7,13 @@ public final class EdgeBundlingOperation: AsyncLayoutAlgorithm {
     public let executor: LayoutExecutor
     public private(set) var lastMetrics: LayoutExecutionMetrics?
 
+    /// Unroutable edges are final paths for which obstacle repair could not find a clear alternative, as indices
+    /// into `graph.edges`.
+    public private(set) var report = RoutingReport()
+
     /// Final paths for which obstacle repair could not find a clear alternative.
-    public private(set) var unroutableEdgeIndices: [Int] = []
+    @available(*, deprecated, message: "Use report.unroutable")
+    public var unroutableEdgeIndices: [Int] { report.unroutable }
 
     public init(
         backend: LayoutBackend,
@@ -22,7 +27,7 @@ public final class EdgeBundlingOperation: AsyncLayoutAlgorithm {
 
     public func applyLayoutAsync(_ graph: LayoutGraph) async throws {
         lastMetrics = nil
-        unroutableEdgeIndices = []
+        report = RoutingReport()
         let start = ContinuousClock.now
         let configuration = self.configuration
         try Task.checkCancellation()
@@ -43,7 +48,7 @@ public final class EdgeBundlingOperation: AsyncLayoutAlgorithm {
             graph.edges.map(\.path) == paths
         else { throw LayoutExecutionError.staleGraph }
         for edge in result.paths { graph.edges[edge.index].path = edge.points }
-        unroutableEdgeIndices = result.unroutable
+        report = RoutingReport(unroutable: result.unroutable)
         var metrics = result.metrics
         metrics.totalSeconds = start.duration(to: .now).seconds
         lastMetrics = metrics

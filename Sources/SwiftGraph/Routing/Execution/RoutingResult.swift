@@ -5,6 +5,6 @@ struct RoutingResult: Sendable {
     var rootBounds: Rect
     var paths: [[Point]]
     var labels: [Rect]
-    var unroutable: [Int]
+    var report: RoutingReport
     var metrics: LayoutExecutionMetrics
 }

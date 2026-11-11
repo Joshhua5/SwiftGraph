@@ -11,13 +11,20 @@ public final class SelfLoopRouter: EdgeRouter {
     /// Clearance a loop keeps from other nodes.
     public var padding: Float = 4
 
+    /// Unroutable edges are loops with no clear corner; they are still drawn at the best one.
+    public private(set) var report = RoutingReport()
+
     /// Loops with no clear corner; they are still drawn at the best one.
-    public private(set) var unroutableEdges: [LayoutEdge] = []
+    @available(*, deprecated, message: "Use report.unroutable or report.unroutableEdges(in:)")
+    public var unroutableEdges: [LayoutEdge] { failed }
+
+    private var failed: [LayoutEdge] = []
 
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
-        unroutableEdges = []
+        failed = []
+        defer { report = RoutingReport(graph, unroutable: failed) }
         let loops = graph.edges.filter { $0.source === $0.target }
         var pending = Set(loops)
         var used: [LayoutNode: [Int]] = [:]
@@ -57,7 +64,7 @@ public final class SelfLoopRouter: EdgeRouter {
                     }
                 }
             }
-            if best == nil { unroutableEdges.append(edge) }
+            if best == nil { failed.append(edge) }
             if let chosen = best ?? fallback {
                 edge.path = chosen.path
                 used[node, default: []].append(chosen.corner)

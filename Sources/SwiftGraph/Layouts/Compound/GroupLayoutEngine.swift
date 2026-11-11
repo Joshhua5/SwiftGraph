@@ -422,8 +422,7 @@ extension GroupLayoutEngine {
                         }
                         let routing = obstacles()
                         routing.edges = crossing
-                        let router = PolylineEdgeRouter()
-                        router.routeEdges(routing)
+                        let report = PolylineEdgeRouter().route(routing)
                         try Task.checkCancellation()
                         centerLabels(on: crossing)
                         let scene = ObstaclePolyline.Scene(routing.nodes)
@@ -438,7 +437,7 @@ extension GroupLayoutEngine {
                                                     || contains(content, edge.labelBounds))
                                         }
                             }
-                        if router.unroutableEdges.isEmpty, fits,
+                        if report.unroutable.isEmpty, fits,
                             length(incoming) < beforeIncoming - 1e-5, length(crossing) <= beforeTotal + 1e-5,
                             crossing.allSatisfy({ scene.clear($0.path, $0) }),
                             clearEdges.allSatisfy({ scene.clear($0.path, $0) })
