@@ -63,7 +63,7 @@ extension LayoutBuilder {
         guard limit != nil else { return distributePorts() }
         return transform { graph in
             guard RouteFinishing.distributesPorts(graph, limit: limit) else { return }
-            PortDistributor().routeEdges(graph)
+            PortDistributor().finishRoutes(graph)
         }
         .stage("Port distribution")
     }

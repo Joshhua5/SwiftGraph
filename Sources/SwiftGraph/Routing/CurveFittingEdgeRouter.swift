@@ -3,14 +3,16 @@ import Foundation
 /// Rounds the corners of existing routes. Each corner becomes a quadratic arc of at most `radius`, never taking
 /// more than half of either adjacent segment, so the first and last segments keep their direction. A corner whose
 /// arc would touch a node stays sharp.
-public final class CurveFittingEdgeRouter: EdgeRouter {
+public final class CurveFittingEdgeRouter: EdgeRouter, RouteFinisher {
     /// Subdivision depth of a rounded corner: at most 2^iterations segments (up to 2^5); 0 leaves routes alone.
     public var iterations = 2
     public var radius: Float = 10.0
 
     public init() {}
 
-    public func routeEdges(_ graph: LayoutGraph) { fitCurves(graph) }
+    public func routeEdges(_ graph: LayoutGraph) { finishRoutes(graph) }
+
+    public func finishRoutes(_ graph: LayoutGraph) { fitCurves(graph) }
 
     public func fitCurves(_ graph: LayoutGraph) {
         guard iterations > 0, radius > 0, radius.isFinite else { return }
