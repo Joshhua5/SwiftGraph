@@ -72,7 +72,11 @@ import Testing
         congestion.add(footprint, owner: other)
         #expect(congestion.usage(ofSpan: span) == 2)
         #expect(congestion.cost(along: span, length: 40) == 8)  // two routes, a penalty of 2, two pitches long
-        #expect(congestion.crossingCost(at: b, along: .vertical) == 2)  // crossing two routes, half the penalty each
+        #expect(congestion.crossingCost(at: b, along: .vertical) == 4)  // crossing two routes, the penalty each
+        #expect(congestion.overuse(grid) == 2)  // one route beyond the first, two pitches long
+        congestion.escalate()  // one history unit, a tenth of the penalty per pitch
+        #expect(abs(congestion.cost(along: span, length: 40) - 8.4) < 1e-4)
+        #expect(abs(congestion.sharingCost(of: other, grid) - 4.4) < 1e-4)
         congestion.remove(owner: owner)
         #expect(congestion.usage(ofSpan: span) == 1)
         congestion.add(footprint, owner: other)  // replacing an owner's route does not count it twice

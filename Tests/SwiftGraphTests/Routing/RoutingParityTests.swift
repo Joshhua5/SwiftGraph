@@ -20,7 +20,8 @@ private func approximatelyEqual(_ a: Rect, _ b: [Float]) -> Bool {
 /// and 158, with single fixtures moving by one or two either way.
 private let corridorBudgets: [String: (crossings: Int, bends: Int)] = {
     let channel = [
-        (10, 12), (6, 14), (5, 16), (5, 10), (9, 10), (5, 13), (9, 13), (7, 12), (10, 11), (6, 14), (7, 12), (9, 12),
+        // Full-penalty crossings and negotiation took the crossings from 88 to 35 in all for 10 more bends.
+        (4, 13), (1, 15), (2, 16), (5, 10), (2, 11), (0, 15), (0, 14), (4, 14), (5, 11), (2, 16), (3, 12), (7, 12),
     ]
     let bsp = [
         (5, 15), (6, 13), (3, 13), (3, 13), (4, 17), (4, 15), (4, 15), (6, 13), (5, 17), (4, 15), (5, 15), (4, 15),

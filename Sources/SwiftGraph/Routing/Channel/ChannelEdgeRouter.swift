@@ -42,12 +42,30 @@ public final class ChannelEdgeRouter: EdgeRouter {
         var end: Port
     }
 
+    /// One edge's route as drawn so far.
+    private struct Placement {
+        var path: [Point]
+
+        /// Whether the route lies on the strict grid, where negotiation reroutes it; relaxed and fallback routes stay.
+        var isNegotiable: Bool
+
+        /// `ChannelCongestion.sharingCost` of the route when it was laid.
+        var paid: Float = 0
+    }
+
     // MARK: - Properties
 
     /// The grid's unit: port slots and gap subdivisions are this far apart, and routes keep half of it clear of nodes.
     public var gridSize = 20
     public var bendPenalty = 2
     public var congestionPenalty = 2
+
+    /// Negotiated rip-up-and-reroute rounds after the first pass. Each round charges spans still shared by several
+    /// routes a lasting history cost, then reroutes every edge whose spans now cost more to share than when it was
+    /// laid, longest first; the round with the least sharing is kept. Edges laid early thereby see the ones laid
+    /// after them, so the result depends less on `graph.edges` order. 0 routes every edge once, in that order. Needs
+    /// a positive `congestionPenalty`.
+    public var negotiationRounds = 2
 
     /// Unroutable edges are those the grid search could not route; each falls back to a polyline, an L/Z or a
     /// straight line, so it is listed under fallbacks too.
@@ -70,8 +88,11 @@ public final class ChannelEdgeRouter: EdgeRouter {
     /// How far the grid reaches beyond the scene, in grid units: routes may go round the outside of everything.
     private static let margin: Float = 20
 
-    /// Routes already drawn at each node, so later ports can avoid crossing them.
-    private var attached: [ObjectIdentifier: [[Point]]] = [:]
+    /// Positions in `placements` of the routes drawn at each node, so later ports can avoid crossing them.
+    private var attached: [ObjectIdentifier: [Int]] = [:]
+
+    /// Each edge's route by position in `graph.edges`; written to the edges once negotiation is over.
+    private var placements: [Placement?] = []
 
     /// The side and point `PortAssignment` chose for each edge end in this pass; the search prefers them.
     private var assigned = AssignedPorts()
@@ -111,24 +132,88 @@ public final class ChannelEdgeRouter: EdgeRouter {
         let pitch = Float(gridSize)
         var strict = makePass(scene, clearance: pitch / 2)
         var relaxed: Pass?
+        placements = Array(repeating: nil, count: graph.edges.count)
         for (position, edge) in graph.edges.enumerated() where edge.source !== edge.target {
             if RoutingCompute.isCancelled { return }
             LayoutStageScope.tick(position, of: graph.edges.count)
-            var path = route(edge, &strict, scene)
-            if path == nil {
+            var placement = route(edge, &strict, scene).map { path in
+                let paid = strict.congestion.sharingCost(of: ObjectIdentifier(edge), strict.grid)
+                return Placement(path: path, isNegotiable: true, paid: paid)
+            }
+            if placement == nil {
                 if relaxed == nil { relaxed = makePass(scene, clearance: pitch / 8) }
                 // `relaxed` was assigned on the line above if it was still nil.
-                path = route(edge, &relaxed!, scene)
+                placement = route(edge, &relaxed!, scene).map { Placement(path: $0, isNegotiable: false) }
             }
             if RoutingCompute.isCancelled { return }
-            if path == nil {
-                path = RoutingFallback.route(edge, graph)
+            if placement == nil {
+                placement = Placement(path: RoutingFallback.route(edge, graph), isNegotiable: false)
                 failed.append(edge)
             }
-            // A nil route was replaced by `RoutingFallback.route`, which always returns a path.
-            edge.path = path!
-            for node in [edge.source, edge.target] { attached[ObjectIdentifier(node), default: []].append(edge.path) }
+            place(position, edge, placement)
         }
+        negotiate(graph, &strict, scene)
+        if RoutingCompute.isCancelled { return }
+        for (edge, placement) in zip(graph.edges, placements) {
+            if let placement { edge.path = placement.path }
+        }
+    }
+
+    // MARK: - Negotiation
+
+    /// Rips up and reroutes, in rounds, the strict-grid edges whose spans now cost more to share than when they were
+    /// laid: a later route moved onto them, or the round raised their history. The round with the least overuse is
+    /// kept. Longer edges are rerouted first, as in `PolylineEdgeRouter`: a short edge gives way more cheaply.
+    ///
+    /// The first pass keeps `graph.edges` order: sorting it by length makes the result almost independent of that
+    /// order, but raised crossings by 6–10% on the 300-edge topology.
+    private func negotiate(_ graph: LayoutGraph, _ pass: inout Pass, _ scene: Scene) {
+        guard congestionPenalty > 0, negotiationRounds > 0 else { return }
+        var best = (overuse: pass.congestion.overuse(pass.grid), placements: placements)
+        for _ in 0..<negotiationRounds {
+            guard best.overuse > 0 else { break }
+            pass.congestion.escalate()
+            let risen = placements.indices.filter { i in
+                guard let placement = placements[i], placement.isNegotiable else { return false }
+                let owner = ObjectIdentifier(graph.edges[i])
+                return pass.congestion.sharingCost(of: owner, pass.grid) > placement.paid + 1e-3
+            }
+            guard !risen.isEmpty else { break }
+            func span(_ i: Int) -> Float {
+                let d = graph.edges[i].source.center - graph.edges[i].target.center
+                return abs(d.x) + abs(d.y)
+            }
+            for i in risen.sorted(by: { (-span($0), $0) < (-span($1), $1) }) {
+                if RoutingCompute.isCancelled { return }
+                let edge = graph.edges[i]
+                let owner = ObjectIdentifier(edge)
+                // `risen` only lists positions with a placement, and a negotiable one has a footprint.
+                let old = placements[i]!
+                let footprint = pass.congestion.footprint(of: owner)!
+                place(i, edge, nil)
+                pass.congestion.remove(owner: owner)
+                if let path = route(edge, &pass, scene) {
+                    let paid = pass.congestion.sharingCost(of: owner, pass.grid)
+                    place(i, edge, Placement(path: path, isNegotiable: true, paid: paid))
+                } else {
+                    pass.congestion.add(footprint, owner: owner)
+                    place(i, edge, old)
+                }
+            }
+            let overuse = pass.congestion.overuse(pass.grid)
+            if overuse < best.overuse { best = (overuse, placements) }
+        }
+        placements = best.placements
+    }
+
+    /// Records the route of `edge` at `position`, or removes it for `nil`, keeping `attached` in step.
+    private func place(_ position: Int, _ edge: LayoutEdge, _ placement: Placement?) {
+        for node in [edge.source, edge.target] {
+            let key = ObjectIdentifier(node)
+            attached[key, default: []].removeAll { $0 == position }
+            if placement != nil { attached[key, default: []].append(position) }
+        }
+        placements[position] = placement
     }
 
     /// Lines at every node centre and side, the port slots of every edge endpoint, and the straight-through positions
@@ -230,6 +315,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
         if let port, let i = sides.firstIndex(of: port.side) { sides.insert(sides.remove(at: i), at: 0) }
         let r = node.bounds
         let pitch = grid.pitch
+        let routes = (attached[ObjectIdentifier(node)] ?? []).compactMap { placements[$0]?.path }
         var result: [Port] = []
         for (rank, side) in sides.enumerated() {
             let vertical = OrthogonalPorts.isVertical(side)
@@ -291,7 +377,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
                     Float(rank * bendPenalty) / 4 + 0.25 * abs(value - rawValue) / pitch
                     + (stub.map { pass.congestion.cost(along: $0, length: pitch) } ?? 0)
                     + pass.congestion.crossingCost(at: entry, along: stubAxis)
-                    + Float(bendPenalty) / 4 * Float(Self.crossings(guess, attached[ObjectIdentifier(node)] ?? []))
+                    + Float(bendPenalty) / 4 * Float(Self.crossings(guess, routes))
                 result.append(Port(point: p, entry: entry, axis: stubAxis, stub: stub, cost: cost))
                 accepted += 1
             }

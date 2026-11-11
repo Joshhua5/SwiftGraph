@@ -176,6 +176,15 @@ struct ChannelGrid {
     /// The span joining two neighbouring vertices.
     static func span(between a: Int, _ b: Int, along axis: Axis) -> Int { span(from: min(a, b), along: axis) }
 
+    /// The length of a span: from its vertex to the next line along its axis.
+    func length(ofSpan span: Int) -> Float {
+        let vertex = span / 2
+        let c = column(vertex)
+        let r = row(vertex)
+        if span & 1 == Axis.horizontal.rawValue { return c + 1 < xs.count ? xs[c + 1] - xs[c] : 0 }
+        return r + 1 < ys.count ? ys[r + 1] - ys[r] : 0
+    }
+
     /// The neighbour one line away along `axis` (`step` is 1 or -1), or nil at the edge of the grid.
     func neighbour(of vertex: Int, along axis: Axis, step: Int) -> Int? {
         switch axis {
