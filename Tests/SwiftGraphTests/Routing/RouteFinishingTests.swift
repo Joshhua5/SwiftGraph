@@ -162,6 +162,7 @@ import Testing
         #expect(Self.closestLanes(once) >= 10 - 1e-3, "\(name): lanes \(Self.closestLanes(once)) apart")
         let twice = Self.grid()
         router.routeEdges(twice)
+        #expect(Self.paths(twice) == Self.paths(once))
         EdgeSeparator().routeEdges(twice)
         #expect(RouteAudit(twice, router).crossings >= RouteAudit(once, router).crossings)
     }
