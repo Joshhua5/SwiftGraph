@@ -13,7 +13,20 @@ struct TrackAllocation {
     /// strongest preferences first and reverse any that close a cycle. Pairs without a
     /// preference only need distinct slots, so they stay unoriented until the weighted order
     /// is known and are then oriented to add the least depth.
-    static func solve(_ input: [TrackSegment], clearance: Float) throws -> Self {
+    ///
+    /// `prefers(a, b)`, when given, orders the overlapping pairs whose arms cross equally either way by the ids of
+    /// their runs: it returns whether `a` takes the lower track. Such a pair is then a weakest preference rather than
+    /// unoriented, so a router can keep the order its routes had beyond the corridor. Without it (the directed layout)
+    /// those pairs stay unoriented.
+    ///
+    /// Opposing arms closer than `clearance` cost `conflictWeight` each (a crossing costs 16): taken the wrong way
+    /// round they leave on one line and share a stretch.
+    static func solve(
+        _ input: [TrackSegment],
+        clearance: Float,
+        prefers: ((Int, Int) -> Bool)? = nil,
+        conflictWeight: Int = 32
+    ) throws -> Self {
         let segments = input.filter { abs($0.source - $0.target) > epsilon }.sorted { $0.id < $1.id }
         struct Preference {
             var from: Int
@@ -34,13 +47,26 @@ struct TrackAllocation {
                 rising.filter { $0 > b.low && $0 < b.high }.count + falling.filter { $0 > a.low && $0 < a.high }.count
             // Near coincident opposing arms need the opposite order to avoid sharing.
             let conflicts = rising.reduce(0) { total, r in total + falling.filter { abs(r - $0) < clearance }.count }
-            return crossings * 16 + conflicts * 32
+            return crossings * 16 + conflicts * conflictWeight
         }
         func consider(_ i: Int, _ j: Int) {
             let a = segments[i]
             let b = segments[j]
             let ab = cost(a, b)
             let ba = cost(b, a)
+            // Only runs that overlap share a stretch to keep in order; the rest stay free to add the least depth.
+            if ab == ba, let prefers, min(a.high, b.high) - max(a.low, b.low) > epsilon {
+                let aFirst = prefers(a.id, b.id)
+                let preference = Preference(from: aFirst ? i : j, to: aFirst ? j : i, weight: 1)
+                // Runs over the same stretch are a bundle: they need distinct tracks whichever way round, so their
+                // order is kept. Others only lean that way where it adds no depth.
+                if abs(a.low - b.low) <= epsilon && abs(a.high - b.high) <= epsilon {
+                    preferences.append(preference)
+                } else {
+                    neutral.append(Preference(from: preference.from, to: preference.to, weight: 0))
+                }
+                return
+            }
             let aDown = a.target >= a.source
             let bDown = b.target >= b.source
             let aFirst =

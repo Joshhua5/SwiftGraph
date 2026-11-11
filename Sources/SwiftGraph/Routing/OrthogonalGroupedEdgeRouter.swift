@@ -71,12 +71,15 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
         for (position, edge) in edges.enumerated() {
             if RoutingCompute.isCancelled { return }
             routing.tick(position, of: edges.count)
+            usage?.start(edge)
             let path = solve(edge, graph)
             edge.path = path
             paths[edge] = path
             usage?.add(EdgeEndpointClipper.clipped(path, source: edge.source.bounds, target: edge.target.bounds))
         }
         routing.end()
+        // Nudging moves nodes, so the corridors measured above no longer hold: edges it reroutes go without capacity.
+        usage = nil
         if movesNodesToWidenCorridors, bundleSpacing > 0 { nudge(graph, edges: edges, paths: &paths) }
         if RoutingCompute.isCancelled { return }
         EdgeEndpointClipper.clipToNodeBounds(graph)
@@ -87,11 +90,9 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
                 clearance: clearance,
                 walls: movesNodesToWidenCorridors ? CorridorWalls(graph.nodes + [graph.root], reach: walls.reach) : walls
             )
-            let t0 = ContinuousClock.now
             unseparated = LayoutStageScope.run("Tracks", from: 0.8) {
                 tracks.assign(graph.edges, scene: ObstaclePolyline.Scene(graph.nodes))
             }
-            if ProcessInfo.processInfo.environment["CDBG"] != nil { print("CDBG tracks", t0.duration(to: .now)) }
         }
     }
 

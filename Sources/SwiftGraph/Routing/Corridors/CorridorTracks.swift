@@ -59,18 +59,35 @@ struct CorridorTracks {
             if a != b { parent[max(a, b)] = min(a, b) }
         }
         let original = runs.map(\.at)
-        // A corridor is every run in one bounded gap whose extent overlaps another's, plus runs closer than `spacing`
-        // anywhere, such as those along the open outside of the drawing.
+        // A corridor is the runs in one bounded gap within four spacings of one another whose extents overlap, plus
+        // runs closer than `spacing` anywhere, such as those along the open outside of the drawing. Runs further
+        // apart in a wide gap keep their own corridors, which fence each other off.
         for (i, j) in Self.closePairs(runs, original, within: spacing) { join(i, j) }
-        for (i, j) in Self.sharedGaps(runs) { join(i, j) }
+        for (i, j) in Self.sharedGaps(runs, within: 4 * spacing) { join(i, j) }
         let neighbours = Neighbours(runs)
         var positions = original
         var cramped = Set<Int>()
         let groups = Dictionary(grouping: runs.indices, by: root)
+        // The routes with every corridor's runs on one line, its mean: tracks are ordered by where these part, which
+        // a run a point or two off its neighbours' line would otherwise seem to do where it starts.
+        var snapped = paths
+        for members in groups.values where members.count > 1 {
+            let line = members.map { runs[$0].at }.reduce(0, +) / Float(members.count)
+            for m in members {
+                let run = runs[m]
+                if run.vertical {
+                    snapped[run.edge][run.index].x = line
+                    snapped[run.edge][run.index + 1].x = line
+                } else {
+                    snapped[run.edge][run.index].y = line
+                    snapped[run.edge][run.index + 1].y = line
+                }
+            }
+        }
         for key in groups.keys.sorted() {
             if RoutingCompute.isCancelled { return [] }
             guard let members = groups[key], members.count > 1 else { continue }
-            guard let placed = place(members, runs, neighbours) else {
+            guard let placed = place(members, runs, snapped, neighbours) else {
                 cramped.insert(key)
                 continue
             }
@@ -100,7 +117,7 @@ struct CorridorTracks {
             {
                 current[e] = path
             } else {
-                unseparated.insert(e); if ProcessInfo.processInfo.environment["CDBG"] != nil { print("CDBG hit-or-self", e) }
+                unseparated.insert(e)
             }
         }
         // A track must not add crossings with edges outside its corridors (lanes within one corridor are ordered
@@ -123,7 +140,7 @@ struct CorridorTracks {
                 }
                 if after > before {
                     current[e] = merged[e]
-                    unseparated.insert(e); if ProcessInfo.processInfo.environment["CDBG"] != nil { print("CDBG crossing", e, before, after) }
+                    unseparated.insert(e)
                     changed = true
                 }
             }
@@ -189,8 +206,8 @@ struct CorridorTracks {
         return pairs
     }
 
-    /// Pairs of runs on the same axis in the same bounded gap whose extents overlap.
-    private static func sharedGaps(_ runs: [Run]) -> [(Int, Int)] {
+    /// Pairs of runs on the same axis in the same bounded gap, within `distance` across it, whose extents overlap.
+    private static func sharedGaps(_ runs: [Run], within distance: Float) -> [(Int, Int)] {
         struct Key: Hashable {
             var vertical: Bool
             var low: Int
@@ -204,11 +221,12 @@ struct CorridorTracks {
         var pairs: [(Int, Int)] = []
         for key in byGap.keys.sorted(by: { ($0.low, $0.high) < ($1.low, $1.high) }) {
             let members = byGap[key, default: []].sorted { runs[$0].low < runs[$1].low }
-            // Sweep by extent: each run joins the run reaching furthest among those it overlaps.
-            var reaching: Int?
+            // Sweep by extent: each run joins every earlier run it overlaps that lies within `distance` across.
+            var active: [Int] = []
             for m in members {
-                if let r = reaching, runs[r].high - runs[m].low > tolerance { pairs.append((r, m)) }
-                if reaching.map({ runs[m].high > runs[$0].high }) ?? true { reaching = m }
+                active.removeAll { runs[$0].high - runs[m].low <= tolerance }
+                for r in active where abs(runs[r].at - runs[m].at) < distance { pairs.append((r, m)) }
+                active.append(m)
             }
         }
         return pairs
@@ -247,18 +265,44 @@ struct CorridorTracks {
 
     // MARK: - Placement
 
-    /// Track positions for one corridor, or nil when it has no room for tracks a point apart.
-    private func place(_ members: [Int], _ runs: [Run], _ neighbours: Neighbours) -> [Int: Float]? {
+    /// Track positions for one corridor, or nil when it has no room for tracks a point apart. `paths` are the routes
+    /// with each corridor on one line.
+    private func place(_ members: [Int], _ runs: [Run], _ paths: [[Point]], _ neighbours: Neighbours) -> [Int: Float]? {
+        // Each run's arms are where the neighbouring corridors' lines are, not where its merged route turned: those
+        // corridors are ordered too, so a route that turned a point before another's has no real lead on it.
         let segments = members.map { m in
-            TrackSegment(
+            let run = runs[m]
+            let ends = (paths[run.edge][run.index], paths[run.edge][run.index + 1])
+            return TrackSegment(
                 id: m,
-                source: runs[m].source,
-                target: runs[m].target,
-                sourceSide: runs[m].sourceSide,
-                targetSide: runs[m].targetSide
+                source: run.vertical ? ends.0.y : ends.0.x,
+                target: run.vertical ? ends.1.y : ends.1.x,
+                sourceSide: run.sourceSide,
+                targetSide: run.targetSide
             )
         }
-        guard let allocation = try? TrackAllocation.solve(segments, clearance: spacing) else { return nil }
+        // Runs whose arms cross equally either way keep the order their merged routes have where they part, as
+        // `EdgeSeparator` orders lanes, so the corridors along a bundle of routes nest it the same way. `EdgeSeparator`
+        // puts the first edge on the side a quarter turn counter-clockwise of its direction from it: the low side
+        // along +x for horizontal runs, and along -y for vertical ones.
+        let prefers = { (i: Int, j: Int) -> Bool in
+            let a = runs[i]
+            let b = runs[j]
+            guard a.edge != b.edge else { return a.index < b.index }
+            let u = a.vertical ? Point(x: 0, y: -1) : Point(x: 1, y: 0)
+            return EdgeSeparator.precedes(a.edge, paths[a.edge], a.index, b.edge, paths[b.edge], b.index, along: u)
+        }
+        // Arms leaving the same point opposite ways would share a stretch, which outweighs any number of crossings in
+        // one corridor.
+        let allocation = try? TrackAllocation.solve(
+            segments,
+            clearance: spacing,
+            prefers: prefers,
+            conflictWeight: 16 * (members.count + 1)
+        )
+        guard let allocation else {
+            return nil
+        }
         guard allocation.count > 1 else { return Dictionary(uniqueKeysWithValues: members.map { ($0, runs[$0].at) }) }
         let centre = members.map { runs[$0].at }.reduce(0, +) / Float(members.count)
         // A run outside the corridor alongside one inside it keeps its place; the corridor's track stays on its own

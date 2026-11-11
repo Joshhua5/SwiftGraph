@@ -74,6 +74,7 @@ public final class BspEdgeRouter: EdgeRouter {
             if RoutingCompute.isCancelled { return }
             routing.tick(position, of: order.count)
             let edge = graph.edges[index]
+            usage?.start(edge)
             let obstacles = ObstaclePolyline.obstacles(edge, graph).map(ObstaclePolyline.interior)
             let cuts = blockers.cuts(for: edge)
             var path = base.flatMap {
