@@ -4,6 +4,7 @@ import Foundation
 /// Detours prefer few bends, avoid crossing routes already laid, and fan out where several share a corner.
 /// Each route runs between the boundary ports `PortAssignment` chose (honouring port constraints and candidates), and
 /// keeps out of its own end nodes; an edge with no clear route between its ports is tried centre to centre.
+/// Edges are laid longest first; detours that later routes cross more often are then rerouted against all of them.
 public final class PolylineEdgeRouter: EdgeRouter {
     public var padding: Float = ObstaclePolyline.defaultPadding
 
@@ -33,6 +34,9 @@ public final class PolylineEdgeRouter: EdgeRouter {
 
     public init() {}
 
+    /// Rip-up passes after the first; a pass that moves nothing ends them early.
+    private static let ripUpPasses = 2
+
     public func routeEdges(_ graph: LayoutGraph) {
         graph.routeStyle = .polyline
         failed = []
@@ -46,7 +50,11 @@ public final class PolylineEdgeRouter: EdgeRouter {
         let assigned = PortAssignment(edgeSpacing: edgeSpacing).assign(graph, style: .polyline)
         var corners: [Point: [ObstaclePolyline.Bend]] = [:]
         var used = Array(repeating: [ObstaclePolyline.Bend](), count: edges.count)
-        var detoured: [Int] = []
+        // Crossings each route had with the routes present when it was laid.
+        var laid = Array(repeating: 0, count: edges.count)
+        func crossings(_ path: [Point]) -> Int {
+            zip(path, path.dropFirst()).reduce(0) { $0 + routed.crossings($1.0, $1.1) }
+        }
         func route(_ i: Int) -> (path: [Point], gap: Float, bends: [ObstaclePolyline.Bend])? {
             func search(
                 _ ports: (source: EdgePort, target: EdgePort)?
@@ -74,10 +82,19 @@ public final class PolylineEdgeRouter: EdgeRouter {
             for b in bends { corners[b.corner, default: []].append(b) }
             used[i] = bends
         }
+        // Longest first, so the result hardly depends on `graph.edges` order (which only breaks ties). A long edge
+        // crosses the most and has the dearest detours; a short one laid later steps round it cheaply. Shortest
+        // first raised crossings by about a quarter on the 300-edge topology.
+        let order = edges.indices.sorted {
+            let a = (edges[$0].target.center - edges[$0].source.center).length
+            let b = (edges[$1].target.center - edges[$1].source.center).length
+            return (-a, $0) < (-b, $1)
+        }
         let routing = LayoutStageScope.begin("Route", to: 0.6)
-        for (i, edge) in edges.enumerated() {
+        for (position, i) in order.enumerated() {
+            let edge = edges[i]
             if RoutingCompute.isCancelled { return }
-            routing.tick(i, of: edges.count)
+            routing.tick(position, of: edges.count)
             let found = route(i)
             if RoutingCompute.isCancelled { return }
             if let found {
@@ -87,28 +104,41 @@ public final class PolylineEdgeRouter: EdgeRouter {
                 failed.append(edge)
                 edge.path = [edge.source.center, edge.target.center]
             }
-            if edge.path.count > 2 { detoured.append(i) }
+            if crossingPenalty > 0 { laid[i] = crossings(edge.path) }
             routed.add(edge.path, owner: i)
         }
         routing.end()
-        // One rip-up pass: a detour found early could not see the routes laid after it.
+        failed = edges.filter { edge in failed.contains { $0 === edge } }
+        // Rip-up: a detour laid early could not see the routes laid after it. Only detours that later routes now
+        // cross more often are reconsidered: for any other, every alternative has only become dearer. A clear
+        // straight route is never replaced (the search returns it outright); letting crossings send it round
+        // obstacles added crossings and bends overall on the 300-edge topology, as the detours met the separator.
         if crossingPenalty > 0 {
             let ripUp = LayoutStageScope.begin("Rip-up", from: 0.6, to: 0.85)
-            for (position, i) in detoured.enumerated() {
-                if RoutingCompute.isCancelled { return }
-                ripUp.tick(position, of: detoured.count)
-                let edge = edges[i]
-                let old = edge.path
-                routed.remove(owner: i)
-                let before = ObstaclePolyline.cost(old, bend: bendPenalty, crossing: crossingPenalty, routed: routed)
-                if let found = route(i),
-                    ObstaclePolyline.cost(found.path, bend: bendPenalty, crossing: crossingPenalty, routed: routed)
-                        < before - 1e-4
-                {
-                    edge.path = found.path
-                    register(i, found.bends)
+            for pass in 0..<Self.ripUpPasses {
+                var moved = false
+                for (position, i) in order.enumerated() {
+                    if RoutingCompute.isCancelled { return }
+                    ripUp.tick(pass * edges.count + position, of: Self.ripUpPasses * edges.count)
+                    let edge = edges[i]
+                    let old = edge.path
+                    guard old.count > 2 else { continue }
+                    routed.remove(owner: i)
+                    let now = crossings(old)
+                    if now > laid[i] {
+                        func cost(_ path: [Point]) -> Float {
+                            ObstaclePolyline.cost(path, bend: bendPenalty, crossing: crossingPenalty, routed: routed)
+                        }
+                        if let found = route(i), cost(found.path) < cost(old) - 1e-4 {
+                            edge.path = found.path
+                            register(i, found.bends)
+                            moved = true
+                        }
+                        laid[i] = edge.path == old ? now : crossings(edge.path)
+                    }
+                    routed.add(edge.path, owner: i)
                 }
-                routed.add(edge.path, owner: i)
+                if !moved { break }
             }
             ripUp.end()
         }
