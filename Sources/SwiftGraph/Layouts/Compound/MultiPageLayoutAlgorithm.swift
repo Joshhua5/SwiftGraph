@@ -15,9 +15,12 @@ public final class MultiPageLayoutAlgorithm: LayoutAlgorithm {
         let a = Adjacency(graph)
         let components = a.components()
         let slices = LayoutStageScope.slices(components.map { Double($0.count) })
+        var pages: [LayoutGraph] = []
+        defer { graph.routeStyle = sharedRouteStyle(pages) }
         for (i, component) in components.enumerated() {
             try Task.checkCancellation()
             let g = subgraph(graph, nodes: component.map { a.nodes[$0] })
+            pages.append(g)
             try LayoutStageScope.run("Page \(i + 1)/\(components.count)", from: slices[i].from, to: slices[i].to) {
                 try coreLayout.applyLayout(g)
             }

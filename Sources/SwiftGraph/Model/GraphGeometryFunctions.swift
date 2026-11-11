@@ -5,6 +5,8 @@ func enclosingBounds(_ nodes: [LayoutNode]) -> Rect {
 
 func straightEdges(_ graph: LayoutGraph) {
     for e in graph.edges where e.source !== e.target { e.path = [e.source.center, e.target.center] }
+    // The routes a router recorded a style for are gone.
+    graph.routeStyle = nil
 }
 
 func translate(_ graph: LayoutGraph, by offset: Point) {

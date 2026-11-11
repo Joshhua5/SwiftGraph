@@ -31,6 +31,7 @@ public final class BspEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .orthogonal
         failed = []
         report = RoutingReport()
         var fellBack: [LayoutEdge] = []

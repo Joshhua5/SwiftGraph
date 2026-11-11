@@ -30,9 +30,12 @@ struct RoutingSnapshot: Sendable {
     }
 
     var edges: [Edge]
+    /// The input graph's recorded route style, so finishing stages on the detached copy read what the caller's would.
+    var routeStyle: RouteStyle? = nil
 
     func makeGraph() -> (LayoutGraph, [LayoutNode]) {
         let graph = LayoutGraph()
+        graph.routeStyle = routeStyle
         let nodes = hierarchy.enumerated()
             .map { i, state in
                 let node =

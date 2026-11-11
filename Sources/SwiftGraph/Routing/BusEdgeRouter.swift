@@ -2,7 +2,8 @@ import Foundation
 
 /// Hubs with three or more edges get a bus: each edge leaves the hub, runs along a lane in a gap beside the nodes and
 /// turns into its leaf. Leaves are grouped by column (or row) and every group has its own parallel lane, so the shared
-/// stretch shows which leaves belong together. Legs that would cross a node are detoured.
+/// stretch shows which leaves belong together. Legs that would cross a node are detoured
+/// (rectilinearly where they can be).
 public final class BusEdgeRouter: EdgeRouter {
     public var busSpacing: Float = 20
 
@@ -12,6 +13,7 @@ public final class BusEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .orthogonal
         var failed: [LayoutEdge] = []
         var fellBack: [LayoutEdge] = []
         defer { report = RoutingReport(graph, unroutable: failed, fallbacks: fellBack) }
@@ -90,7 +92,7 @@ public final class BusEdgeRouter: EdgeRouter {
         // concurrently once every hub has claimed its edges.
         let blocked = legs.indices.filter { legs[$0].blocked }
         let detours = concurrentRoutingMap(blocked.map { (legs[$0].path, legs[$0].obstacles) }) {
-            detourBlocked($0.0, $0.1)
+            detourBlocked($0.0, $0.1, rectilinear: true)
         }
         if RoutingCompute.isCancelled { return }
         for (k, i) in blocked.enumerated() {

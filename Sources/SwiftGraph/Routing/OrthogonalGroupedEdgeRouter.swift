@@ -35,6 +35,7 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .orthogonal
         failed = []
         fellBack = []
         report = RoutingReport()

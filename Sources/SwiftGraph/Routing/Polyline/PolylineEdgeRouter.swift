@@ -33,6 +33,7 @@ public final class PolylineEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .polyline
         failed = []
         cramped = []
         report = RoutingReport()

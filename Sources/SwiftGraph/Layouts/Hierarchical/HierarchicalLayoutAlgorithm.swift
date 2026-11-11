@@ -165,6 +165,8 @@ func routeLayeredEdges(_ graph: LayoutGraph, chains: [[Point]?], flows: [Int?]) 
         var side: PortConstraint
     }
     var faces: [Face: [End]] = [:]
+    // Layered routes are drawn afresh, and in no single style.
+    graph.routeStyle = nil
     for (i, e) in graph.edges.enumerated() {
         guard let chain = chains[i], let flow = flows[i] else {
             e.path = [e.source.center, e.target.center]

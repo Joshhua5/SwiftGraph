@@ -10,6 +10,7 @@ public final class OctilinearEdgeRouter: EdgeRouter {
     public init() {}
 
     public func routeEdges(_ graph: LayoutGraph) {
+        graph.routeStyle = .octilinear
         var failed: [LayoutEdge] = []
         defer { report = RoutingReport(graph, unroutable: failed) }
         let edges = graph.edges.filter { $0.source !== $0.target }

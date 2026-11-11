@@ -28,6 +28,10 @@ public final class BasicLayoutOperation: LayoutExecutionReporting {
         try Task.checkCancellation()
         try configuration.validate(style)
         let transaction = try LayoutTransaction(graph)
+        // These styles carry or keep the routes rather than redraw them, so the routes keep their recorded style.
+        if style == .removeOverlaps || style == .verticalStack || style == .alignment {
+            transaction.working.routeStyle = graph.routeStyle
+        }
         let computeStart = ContinuousClock.now
         let state = try LayoutStageScope.run("Plan", to: 0.1) {
             try basicPlacementState(transaction.working, style: style, configuration: configuration)
@@ -54,6 +58,7 @@ public final class BasicLayoutOperation: LayoutExecutionReporting {
                     let x = (a.x + b.x) / 2
                     e.path = [a, Point(x: x, y: a.y), Point(x: x, y: b.y), b]
                 }
+                transaction.working.routeStyle = .orthogonal
             case .verticalStack: break
             case .removeOverlaps: followMovedNodes(transaction.working, from: previous)
             case .alignment: if previous != bounds { straightEdges(transaction.working) }

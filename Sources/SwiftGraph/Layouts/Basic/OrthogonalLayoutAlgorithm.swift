@@ -14,5 +14,6 @@ public final class OrthogonalLayoutAlgorithm: LayoutAlgorithm {
             let x = (a.x + b.x) / 2
             e.path = [a, Point(x: x, y: a.y), Point(x: x, y: b.y), b]
         }
+        graph.routeStyle = .orthogonal
     }
 }

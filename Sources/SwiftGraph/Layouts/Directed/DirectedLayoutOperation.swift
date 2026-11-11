@@ -237,6 +237,7 @@ public struct DirectedLayoutOperation {
         try Task.checkCancellation()
         for (target, source) in zip(plan.original.nodes, nodes) { target.bounds = source.bounds }
         for (target, source) in zip(plan.original.edges, allEdges) { target.path = source.path }
+        plan.original.routeStyle = .orthogonal
         let elapsed = plan.start.duration(to: .now).components
         diagnostics.stageMilliseconds["total"] = Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
         return diagnostics

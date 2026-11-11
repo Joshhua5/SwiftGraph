@@ -153,6 +153,7 @@ public final class ChannelEdgeRouter: EdgeRouter {
     public func routeEdges(_ graph: LayoutGraph) {
         failed = []
         attached = [:]
+        graph.routeStyle = .orthogonal
         report = RoutingReport()
         defer { report = RoutingReport(graph, unroutable: failed, fallbacks: failed) }
         guard !graph.nodes.isEmpty else { return }

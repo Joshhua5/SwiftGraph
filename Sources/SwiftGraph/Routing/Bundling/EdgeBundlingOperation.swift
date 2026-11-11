@@ -48,6 +48,7 @@ public final class EdgeBundlingOperation: AsyncLayoutAlgorithm {
             graph.edges.map(\.path) == paths
         else { throw LayoutExecutionError.staleGraph }
         for edge in result.paths { graph.edges[edge.index].path = edge.points }
+        graph.routeStyle = .polyline
         report = RoutingReport(unroutable: result.unroutable)
         var metrics = result.metrics
         metrics.totalSeconds = start.duration(to: .now).seconds

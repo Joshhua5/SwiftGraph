@@ -107,7 +107,8 @@ struct RoutingCheckpoint {
                 )
             },
             members: input.nodes.map { index[required: $0] },
-            edges: edges
+            edges: edges,
+            routeStyle: input.routeStyle
         )
     }
 
