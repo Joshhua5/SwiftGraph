@@ -277,6 +277,29 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         )
     }
 
+    /// Routing must not change placement: the nudge fixture's wall would be slid aside if the opt-in were on.
+    @Test func groupedRoutingLeavesNodePositionsUnchangedByDefault() async throws {
+        #expect(!OrthogonalGroupedEdgeRouter().movesNodesToWidenCorridors)
+        #expect(!RoutingConfiguration(.orthogonalGrouped).movesNodesToWidenCorridors)
+        #expect(groupedFixtures.contains { $0.name == "grouped-bus-nudge-reroute" })
+        for fixture in groupedFixtures {
+            let sync = fixture.graph()
+            let async = fixture.graph()
+            let before = fixture.graph().nodes.map(\.bounds)
+            fixture.makeRouter().routeEdges(sync)
+            let configure: (inout RoutingConfiguration) -> Void = {
+                $0.bundleSpacing = fixture.config["bundleSpacing"] ?? 10
+                $0.obstacleMargin = fixture.config["obstacleMargin"] ?? 10
+                $0.bendPenalty = fixture.config["bendPenalty"] ?? 100
+            }
+            try await RoutingLayoutOperation(.orthogonalGrouped, backend: .cpu, configure: configure)
+                .applyLayoutAsync(async)
+            #expect(sync.nodes.map(\.bounds) == before, "\(fixture.name): sync routing moved nodes")
+            #expect(async.nodes.map(\.bounds) == before, "\(fixture.name): async routing moved nodes")
+            #expect(sync.edges.map(\.path) == async.edges.map(\.path), "\(fixture.name): sync and async disagree")
+        }
+    }
+
     @Test func spacingDefaultsToTheSeparatorLaneWidth() {
         #expect(OrthogonalGroupedEdgeRouter().bundleSpacing == 10)
     }

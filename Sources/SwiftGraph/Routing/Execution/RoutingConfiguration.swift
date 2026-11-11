@@ -17,6 +17,9 @@ public struct RoutingConfiguration: Sendable {
     public var bendPenalty: Float = 40
     public var bundleSpacing: Float = 10
     public var obstacleMargin: Float = 10
+    /// Grouped routing only: lets the router slide nodes to widen crowded corridors. Off by default so routing never
+    /// changes placement; see `OrthogonalGroupedEdgeRouter.movesNodesToWidenCorridors`.
+    public var movesNodesToWidenCorridors = false
 
     public var parallelEdgeSpacing: Float {
         get { edgeSpacing }

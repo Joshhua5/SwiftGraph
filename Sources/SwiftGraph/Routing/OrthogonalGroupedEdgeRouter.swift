@@ -2,13 +2,18 @@ import Foundation
 
 /// Hierarchical channel routing: lanes run between obstacles and `obstacleMargin` outside their outlines, edges may
 /// only cross the groups they start or end in, and the root frame is `obstacleMargin` clear of the outermost nodes.
-/// Source and target port constraints and candidates choose the side an edge leaves and enters. Shared corridors are
-/// first widened by safely nudging nodes (kept inside their group, clear of other routes), then separated with
-/// `EdgeSeparator`. Edges the channels cannot route are retried over a flat grid, then drawn as an obstacle-aware
-/// polyline or an orthogonal L/Z, and reported.
+/// Source and target port constraints and candidates choose the side an edge leaves and enters. Edges sharing a
+/// corridor are separated into lanes with `EdgeSeparator`; a lane that cannot be shifted clear of every node stays
+/// merged. Node placement is left alone unless `movesNodesToWidenCorridors` is set. Edges the channels cannot route
+/// are retried over a flat grid, then drawn as an obstacle-aware polyline or an orthogonal L/Z, and reported.
 public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
-    /// Lane spacing for edges sharing a corridor; 0 leaves them merged and disables nudging.
+    /// Lane spacing for edges sharing a corridor; 0 leaves them merged and disables corridor widening.
     public var bundleSpacing: Float = 10
+    /// Opt-in: before lanes are separated, crowded corridors are widened by sliding the leaf nodes beside them
+    /// sideways (kept inside their group and clear of other nodes, groups and unrelated routes), and the affected
+    /// edges are routed again. Off by default, because a router that moves nodes overrides the layout's placement,
+    /// including given or pinned coordinates, and can leave measured group frames stale.
+    public var movesNodesToWidenCorridors = false
     public var obstacleMargin: Float = 10
     public var bendPenalty: Float = 100
 
@@ -38,13 +43,15 @@ public final class OrthogonalGroupedEdgeRouter: EdgeRouter {
             paths[edge] = path
         }
         routing.end()
-        if bundleSpacing > 0 { nudge(graph, edges: edges, paths: &paths) }
+        if movesNodesToWidenCorridors, bundleSpacing > 0 { nudge(graph, edges: edges, paths: &paths) }
         if RoutingCompute.isCancelled { return }
         EdgeEndpointClipper.clipToNodeBounds(graph)
         if bundleSpacing > 0 {
+            let merged = edges.map(\.path)
             let separator = EdgeSeparator()
             separator.spacing = bundleSpacing
             LayoutStageScope.run("Separate", from: 0.8) { separator.routeEdges(graph) }
+            restoreLanesTouchingNodes(graph, edges: edges, merged: merged)
         }
     }
 
