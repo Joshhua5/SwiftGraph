@@ -210,11 +210,11 @@ import Testing
         g.addEdge(loop)
         let router = SelfLoopRouter()
         router.routeEdges(g)
-        #expect(ObstaclePolyline.clear(loop.path, [g.nodes[1].bounds]) && router.unroutableEdges.isEmpty)
+        #expect(ObstaclePolyline.clear(loop.path, [g.nodes[1].bounds]) && router.report.unroutable.isEmpty)
         // Fully enclosed by a neighbour: the loop is still drawn, and reported.
         g.nodes[1].bounds = g.nodes[0].bounds.inflated(by: 100)
         router.routeEdges(g)
-        #expect(loop.path.count == 5 && router.unroutableEdges == [loop])
+        #expect(loop.path.count == 5 && router.report.unroutableEdges(in: g) == [loop])
     }
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable, "Metal device unavailable"))

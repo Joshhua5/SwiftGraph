@@ -138,14 +138,10 @@ enum VisualCatalogue {
     }
 
     static func fallbacks(_ router: any EdgeRouter, _ graph: LayoutGraph) -> [Int] {
-        let failed: [LayoutEdge]
         switch router {
-        case let r as ChannelEdgeRouter: failed = r.unroutableEdges
-        case let r as BspEdgeRouter: failed = r.unroutableEdges
-        case let r as OrthogonalGroupedEdgeRouter: failed = r.unroutableEdges
-        default: failed = []
+        case is ChannelEdgeRouter, is BspEdgeRouter, is OrthogonalGroupedEdgeRouter: router.report.unroutable
+        default: []
         }
-        return graph.edges.indices.filter { index in failed.contains { $0 === graph.edges[index] } }
     }
 
     static func all() throws -> [VisualCase] {
@@ -514,7 +510,7 @@ enum VisualCatalogue {
                 let router = PolylineEdgeRouter()
                 router.routeEdges(g)
                 drawing.fallbackEdges = g.edges.indices.filter { i in
-                    router.unroutableEdges.contains { $0 === g.edges[i] }
+                    router.report.unroutable.contains(i)
                 }
                 VisualGraphs.finish(g)
                 return drawing

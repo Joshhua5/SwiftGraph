@@ -1464,7 +1464,7 @@ extension VisualCatalogue {
                     SEBackendContext.recorder?.metrics +=
                         swim.lastExecutionMetrics + router.lastExecutionMetrics + sep.lastExecutionMetrics
                         + loops.lastExecutionMetrics + clip.lastExecutionMetrics
-                    fallbacks = router.unroutableEdgeIndices
+                    fallbacks = router.report.unroutable
                     laneCount = swim.computedLanes.count
                 } else {
                     let swim = SwimlaneLayoutAlgorithm()
@@ -1794,7 +1794,7 @@ extension VisualCatalogue {
                     SEBackendContext.recorder?.metrics +=
                         comp.lastExecutionMetrics + bsp.lastExecutionMetrics + loops.lastExecutionMetrics
                         + clip.lastExecutionMetrics
-                    fallbacks = bsp.unroutableEdgeIndices
+                    fallbacks = bsp.report.unroutable
                 } else {
                     let core = HierarchicalLayoutAlgorithm()
                     core.nodeSeparation = 72
@@ -2053,7 +2053,7 @@ extension VisualCatalogue {
                     SEBackendContext.recorder?.metrics +=
                         given.lastExecutionMetrics + sep.lastExecutionMetrics + loops.lastExecutionMetrics
                         + clip.lastExecutionMetrics
-                    fallbacks = given.unroutableEdgeIndices
+                    fallbacks = given.report.unroutable
                 } else {
                     try GivenCoordinatesLayoutAlgorithm().applyLayout(g)
                     let router = PolylineEdgeRouter()
@@ -2062,8 +2062,7 @@ extension VisualCatalogue {
                     SelfLoopRouter().routeEdges(g)
                     EdgeEndpointClipper.clipToNodeBounds(g)
                     PortDistributor().routeEdges(g)
-                    fallbacks = g.edges.indices.filter { idx in router.unroutableEdges.contains { $0 === g.edges[idx] }
-                    }
+                    fallbacks = router.report.unroutable
                 }
                 return VisualDrawing(
                     graph: g,

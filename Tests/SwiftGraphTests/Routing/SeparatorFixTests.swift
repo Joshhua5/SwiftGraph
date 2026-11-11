@@ -115,7 +115,7 @@ import Testing
         separator.routeEdges(g)
         var r = Report()
         r.widestGroup = separator.widestGroup
-        r.unseparated = separator.unseparatedEdges.count
+        r.unseparated = separator.report.unseparated.count
         func hits(_ e: LayoutEdge, _ path: [Point]) -> Set<Int> {
             Set(
                 g.nodes.indices.filter { j in
@@ -216,7 +216,7 @@ import Testing
         let separator = EdgeSeparator()
         separator.routeEdges(g)
         let ys = g.edges.map { $0.path[0].y }
-        #expect(separator.widestGroup == 2 && separator.unseparatedEdges.isEmpty)
+        #expect(separator.widestGroup == 2 && separator.report.unseparated.isEmpty)
         #expect(abs(ys[0] - ys[1]) < 1e-4 && abs(ys[0] - ys[2]) >= 1, "\(ys)")
     }
 

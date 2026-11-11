@@ -79,7 +79,7 @@ private func finite(_ g: LayoutGraph) -> Bool {
     g.edges = [e]
     let router = ChannelEdgeRouter()
     router.routeEdges(g)
-    #expect(router.unroutableEdges.isEmpty)
+    #expect(router.report.unroutable.isEmpty)
     #expect(e.path.count >= 4)
     // Ports sit on the boundary, and the first and last legs run perpendicular to the side.
     #expect(e.path.first == Point(x: 40, y: 20))
@@ -480,12 +480,12 @@ private func finite(_ g: LayoutGraph) -> Bool {
     let router = ChannelEdgeRouter()
     router.routeEdges(g)
     // Without constraints the edge leaves the side facing its target, on the boundary.
-    #expect(router.unroutableEdges.isEmpty)
+    #expect(router.report.unroutable.isEmpty)
     #expect(e.path == [Point(x: 20, y: 10), Point(x: 300, y: 10)])
     e.sourcePortCandidates = [.top]
     e.targetPortCandidates = [.bottom]
     router.routeEdges(g)
-    #expect(router.unroutableEdges.isEmpty)
+    #expect(router.report.unroutable.isEmpty)
     #expect(e.path.first == Point(x: 15, y: 0))
     #expect(e.path.last == Point(x: 305, y: 20))
     #expect(e.path[0].x == e.path[1].x)
@@ -511,7 +511,7 @@ private func finite(_ g: LayoutGraph) -> Bool {
     g.addEdge(e)
     let router = ChannelEdgeRouter()
     router.routeEdges(g)
-    #expect(router.unroutableEdges.isEmpty)
+    #expect(router.report.unroutable.isEmpty)
     for (p, q) in zip(e.path, e.path.dropFirst()) {
         #expect(!wall.bounds.inflated(by: -1).intersectsLine(p, q))
         #expect(!a.bounds.inflated(by: -1).intersectsLine(p, q) && !b.bounds.inflated(by: -1).intersectsLine(p, q))
@@ -535,7 +535,7 @@ private func finite(_ g: LayoutGraph) -> Bool {
     }
     let router = ChannelEdgeRouter()
     router.routeEdges(g)
-    #expect(router.unroutableEdges == [e])
+    #expect(router.report.unroutableEdges(in: g) == [e])
     #expect(e.path.count >= 2)
     #expect(
         !g.nodes[0].bounds.inflated(by: -1).contains(e.path[0])

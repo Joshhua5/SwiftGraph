@@ -57,7 +57,7 @@ import Testing
         let loopPath = loop.path
         let router = PolylineEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(measured(g).values["edgeNodeIntersections"] == 0)
         #expect(loop.path == loopPath)
         let first = edge.path
@@ -75,7 +75,7 @@ import Testing
         g.nodes[2].bounds = Rect(x: -10, y: -10, width: 100, height: 100)
         router.routeEdges(g)
         // An impossible route is diagnosed but still drawn as a straight line.
-        #expect(edge.path == [g.nodes[0].center, g.nodes[1].center] && router.unroutableEdges == [edge])
+        #expect(edge.path == [g.nodes[0].center, g.nodes[1].center] && router.report.unroutableEdges(in: g) == [edge])
     }
 
     @Test func cancelledObstacleRoutingPreservesInput() async {
@@ -343,7 +343,7 @@ import Testing
         let e = edge(g, 0, 2, [])
         let router = BspEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         let wall = g.nodes[1].bounds.inflated(by: 10)
         #expect(!zip(e.path, e.path.dropFirst()).contains { wall.intersectsLine($0, $1) })
         #expect(measured(g, contracts: .init(noObstacleIntersections: true, orthogonal: true)).failures.isEmpty)

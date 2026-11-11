@@ -61,7 +61,7 @@ import Testing
         separator.spacing = 10
         separator.routeEdges(g)
         for e in g.edges { #expect(Self.rectilinear(e.path), "\(e.path)") }
-        #expect(separator.unseparatedEdges.isEmpty)
+        #expect(separator.report.unseparated.isEmpty)
         for i in g.edges.indices {
             for j in g.edges.indices where j > i { #expect(Self.crossings(g.edges[i].path, g.edges[j].path) == 0) }
         }
@@ -86,7 +86,7 @@ import Testing
             )
         }
         #expect(ys[1] - ys[0] >= 3 && ys[2] - ys[1] >= 3, "\(ys)")
-        #expect(separator.unseparatedEdges.isEmpty)
+        #expect(separator.report.unseparated.isEmpty)
     }
 
     @Test func reciprocalRoutesOfDifferentLengthKeepOneLaneOrderAroundTheirCorners() {
@@ -101,7 +101,7 @@ import Testing
         let separator = EdgeSeparator()
         separator.spacing = 10
         separator.routeEdges(g)
-        #expect(separator.unseparatedEdges.isEmpty)
+        #expect(separator.report.unseparated.isEmpty)
         #expect(Self.crossings(g.edges[0].path, g.edges[1].path) == 0)
         for e in g.edges { #expect(Self.rectilinear(e.path), "\(e.path)") }
     }
@@ -119,7 +119,7 @@ import Testing
         let separator = EdgeSeparator()
         separator.spacing = 10
         separator.routeEdges(g)
-        #expect(separator.unseparatedEdges.isEmpty, "\(separator.unseparatedEdges.count) unseparated")
+        #expect(separator.report.unseparated.isEmpty, "\(separator.report.unseparated.count) unseparated")
         for i in g.edges.indices {
             #expect(Self.rectilinear(g.edges[i].path), "\(g.edges[i].path)")
             for j in g.edges.indices where j > i { #expect(Self.crossings(g.edges[i].path, g.edges[j].path) == 0) }

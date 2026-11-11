@@ -50,7 +50,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
             #expect(path.count >= 2 && path.allSatisfy { $0.x.isFinite && $0.y.isFinite }, "\(label): \(path)")
             guard path.count >= 2 else { continue }
             #expect(path.first != path.last, "\(label): closed loop")
-            guard !router.unroutableEdges.contains(where: { $0 === edge }) else { continue }
+            guard !router.report.unroutable.contains(index) else { continue }
             for (a, b) in zip(path, path.dropFirst()) {
                 #expect(abs(a.x - b.x) < 1e-4 || abs(a.y - b.y) < 1e-4, "\(label): diagonal \(a)-\(b)")
             }
@@ -97,7 +97,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         let router = OrthogonalGroupedEdgeRouter()
         router.routeEdges(g)
         let path = g.edges[0].path
-        #expect(router.unroutableEdges.isEmpty && path.count == 3, "\(path)")
+        #expect(router.report.unroutable.isEmpty && path.count == 3, "\(path)")
         #expect(path.last.map { $0.y != g.nodes[1].center.y && onBoundary($0, g.nodes[1].bounds) } == true, "\(path)")
         #expect(clearance(path, g.nodes[2].bounds) > 0, "\(path)")
     }
@@ -116,7 +116,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         router.bundleSpacing = 0
         router.routeEdges(g)
         let path = g.edges[0].path
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         for (point, next, node) in [
             (path[0], path[1], g.nodes[0]), (path[path.count - 1], path[path.count - 2], g.nodes[2]),
         ] {
@@ -154,7 +154,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         let router = OrthogonalGroupedEdgeRouter()
         router.bundleSpacing = 0
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(clearance(g.edges[0].path, g.nodes[1].bounds) > 0, "\(g.edges[0].path)")
     }
 
@@ -239,7 +239,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         )
         let router = OrthogonalGroupedEdgeRouter()
         router.routeEdges(g)
-        for (index, edge) in g.edges.enumerated() where !router.unroutableEdges.contains(where: { $0 === edge }) {
+        for (index, edge) in g.edges.enumerated() where !router.report.unroutable.contains(index) {
             let path = edge.path
             let label = "seed \(seed) e\(index)"
             #expect(path.count >= 2 && path.first != path.last, "\(label): \(path)")
@@ -255,13 +255,13 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
                 #expect(clearance(path, node.bounds) > 0, "\(label): touches \(node.id)")
             }
         }
-        #expect(router.unroutableEdges.count <= g.edges.count / 10)
+        #expect(router.report.unroutable.count <= g.edges.count / 10)
     }
 
     @Test func coincidentNodesAreReportedAndDrawnByTheFallback() throws {
         let fixture = try #require(groupedFixtures.first { $0.name == "grouped-coincident" })
         let (graph, router) = routed(fixture)
-        #expect(router.unroutableEdges.count == 1)
+        #expect(router.report.unroutable.count == 1)
         let path = graph.edges[0].path
         #expect(path.count >= 2 && path.first != path.last, "\(path)")
         // Largely overlapping, but not identical, nodes are reported as well.
@@ -272,7 +272,7 @@ private let groupedFixtures = try! loadRoutingFixtures().filter { $0.router == "
         let other = OrthogonalGroupedEdgeRouter()
         other.routeEdges(g)
         #expect(
-            other.unroutableEdges.count == 1 && g.edges[0].path.count >= 2
+            other.report.unroutable.count == 1 && g.edges[0].path.count >= 2
                 && g.edges[0].path.first != g.edges[0].path.last
         )
     }

@@ -264,7 +264,7 @@ struct GroupFrameTests {
         let router = BspEdgeRouter()
         router.edgeSpacing = 0
         router.routeEdges(view)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(edge.path.count == 2, "\(edge.path)")
         #expect(edge.path.first.map { abs($0.y - a.bounds.bottom) < 1e-3 } == true)
         #expect(edge.path.last.map { abs($0.y - b.bounds.top) < 1e-3 } == true)

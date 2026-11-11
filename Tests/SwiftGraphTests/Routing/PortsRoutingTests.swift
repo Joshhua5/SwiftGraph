@@ -194,7 +194,7 @@ import Testing
         let router = SelfLoopRouter()
         router.routeEdges(g)
         let top = loop.path.map(\.y).min()!
-        #expect(top >= 32 - 1e-4 || router.unroutableEdges.isEmpty)
+        #expect(top >= 32 - 1e-4 || router.report.unroutable.isEmpty)
         #expect(
             ObstaclePolyline.clear(
                 loop.path,

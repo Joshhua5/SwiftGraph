@@ -36,7 +36,7 @@ private func onBoundary(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
         let g = graph([a, b, c], edges: [(0, 1), (0, 2)])
         let router = ChannelEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         let down = g.edges[0].path
         let across = g.edges[1].path
         #expect(down.first?.y == 40 && down.last?.y == 300 && down.count == 2)  // straight, bottom to top
@@ -83,7 +83,7 @@ private func onBoundary(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
         let g = graph([outer, a, b, wall, inner], edges: [(1, 2)])
         let router = ChannelEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(clear(g.edges[0].path, of: [wall]))
         #expect(onBoundary(g.edges[0].path.first!, a.bounds))
     }
@@ -105,9 +105,7 @@ private func onBoundary(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
             let g = walled()
             router.routeEdges(g)
             let path = g.edges[0].path
-            let reported =
-                (router as? ChannelEdgeRouter)?.unroutableEdges ?? (router as? BspEdgeRouter)?.unroutableEdges
-                ?? (router as? OrthogonalGroupedEdgeRouter)?.unroutableEdges ?? []
+            let reported = router.report.unroutable
             #expect(reported.count == 1, "\(type(of: router))")
             #expect(
                 path.count >= 2 && !g.nodes[0].bounds.inflated(by: -1).contains(path[0]),
@@ -174,7 +172,7 @@ private func onBoundary(_ p: Point, _ r: Rect) -> Bool { liesOnOutline(p, r) }
         let router = BspEdgeRouter()
         router.edgeSpacing = 0
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         for e in g.edges {
             #expect(clear(e.path, of: nodes.filter { $0 !== e.source && $0 !== e.target }), "\(e.path)")
         }

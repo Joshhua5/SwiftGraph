@@ -86,7 +86,7 @@ struct MetalRoutingTests {
         try await cpu.applyLayoutAsync(a)
         try await metal.applyLayoutAsync(b)
         #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds))
-        #expect(cpu.unroutableEdgeIndices == metal.unroutableEdgeIndices)
+        #expect(cpu.report.unroutable == metal.report.unroutable)
         #expect(a.edges.map(\.labelBounds) == b.edges.map(\.labelBounds))
         for (x, y) in zip(a.edges, b.edges) {
             #expect(x.path.count == y.path.count)
@@ -177,7 +177,7 @@ struct MetalRoutingTests {
         #expect(gb.nodes == members && gb.nodes.map(\.parent) == parents && gb.nodes.map(\.children) == children)
         #expect(ga.edges.map(\.path) == gb.edges.map(\.path))
         #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds))
-        #expect(cpu.unroutableEdgeIndices == metal.unroutableEdgeIndices)
+        #expect(cpu.report.unroutable == metal.report.unroutable)
         #expect(gb.nodes.count == 2)
     }
 
@@ -384,7 +384,7 @@ struct MetalRoutingTests {
         try await metal.applyLayoutAsync(b)
         #expect(a.edges[0].path.count > 2)
         #expect(a.edges.map(\.path) == b.edges.map(\.path))
-        #expect(metal.unroutableEdgeIndices == cpu.unroutableEdgeIndices)
+        #expect(metal.report.unroutable == cpu.report.unroutable)
     }
 
     @Test(.enabled(if: LayoutExecutor.isMetalAvailable), arguments: [RoutingKind.edgeSeparation, .bsp])
@@ -452,7 +452,7 @@ struct MetalRoutingTests {
         try await cpu.applyLayoutAsync(a)
         try await metal.applyLayoutAsync(b)
         #expect(a.edges.map(\.path) == b.edges.map(\.path))
-        #expect(cpu.unroutableEdgeIndices == metal.unroutableEdgeIndices)
+        #expect(cpu.report.unroutable == metal.report.unroutable)
         #expect(metal.lastMetrics?.backend == .metal)
         let stats = await executor.statistics()
         #expect(stats.submittedBatches >= 1 && stats.submittedBatches <= 3)

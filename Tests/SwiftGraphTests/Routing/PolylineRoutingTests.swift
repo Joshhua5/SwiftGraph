@@ -109,7 +109,7 @@ import Testing
         let e = edge(g, 0, 1)
         let router = PolylineEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty && e.path.count > 2)
+        #expect(router.report.unroutable.isEmpty && e.path.count > 2)
         #expect(measured(g).values["edgeNodeIntersections"] == 0)
     }
 
@@ -124,7 +124,7 @@ import Testing
         let e = edge(g, 0, 2)
         let router = PolylineEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty && e.path.count > 2)
+        #expect(router.report.unroutable.isEmpty && e.path.count > 2)
         #expect(e.path.last == g.nodes[2].center)
     }
 
@@ -169,7 +169,7 @@ import Testing
             }
             let router = PolylineEdgeRouter()
             router.routeEdges(g)
-            #expect(measured(g).values["edgeNodeIntersections"] == 0 || !router.unroutableEdges.isEmpty)
+            #expect(measured(g).values["edgeNodeIntersections"] == 0 || !router.report.unroutable.isEmpty)
             return g.edges.map(\.path)
         }
         #expect(run() == run())
@@ -230,7 +230,7 @@ import Testing
         let second = edge(g, 2, 3)
         let router = PolylineEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         let shared = Set(first.path.dropFirst().dropLast()).intersection(second.path.dropFirst().dropLast())
         #expect(shared.isEmpty)
         #expect(measured(g).values["edgeNodeIntersections"] == 0)
@@ -254,7 +254,7 @@ import Testing
         #expect(m.values["crossings"] == 0 && m.values["sharedSegments"] == 0)
         func trunk(_ e: LayoutEdge) -> Float { e.path[1].y }
         #expect(trunk(e1) < trunk(e2) && trunk(e2) < trunk(e3))
-        #expect(separator.unseparatedEdges.isEmpty)
+        #expect(separator.report.unseparated.isEmpty)
     }
 
     @Test func nearCollinearRunsAreSeparated() {
@@ -311,13 +311,15 @@ import Testing
         }
         // A wall 8 above the trunk: both lanes move to the open side, a full spacing from it where they fit.
         let one = lanes(walls: [Rect(x: 100, y: -108, width: 200, height: 100)])
-        #expect(abs(one.ys[1] - one.ys[0] - 10) < 1e-4 && one.ys[0] >= -1e-4 && one.separator.unseparatedEdges.isEmpty)
+        #expect(
+            abs(one.ys[1] - one.ys[0] - 10) < 1e-4 && one.ys[0] >= -1e-4 && one.separator.report.unseparated.isEmpty
+        )
         // Walls 8 either side: lanes tighten, but keep half a spacing from both.
         let both = lanes(walls: [
             Rect(x: 100, y: -108, width: 200, height: 100), Rect(x: 100, y: 8, width: 200, height: 100),
         ])
         #expect(abs(both.ys[1] - both.ys[0] - 6) < 1e-4 && both.ys.allSatisfy { 8 - abs($0) >= 5 - 1e-4 })
-        #expect(both.separator.unseparatedEdges.isEmpty)
+        #expect(both.separator.report.unseparated.isEmpty)
     }
 
     @Test func edgesThatCannotBeSeparatedAreReported() {
@@ -334,6 +336,7 @@ import Testing
         let alone = edge(g, 0, 4, [s, g.nodes[4].center])
         let separator = EdgeSeparator()
         separator.routeEdges(g)
-        #expect(separator.unseparatedEdges == [first, second] && !separator.unseparatedEdges.contains(alone))
+        let unseparated = separator.report.unseparatedEdges(in: g)
+        #expect(unseparated == [first, second] && !unseparated.contains(alone))
     }
 }

@@ -58,7 +58,7 @@ import Testing
         graph.addEdge(edge)
         let router = PolylineEdgeRouter()
         router.routeEdges(graph)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(ObstaclePolyline.length(edge.path) < 200)
         #expect(ObstaclePolyline.Scene(graph.nodes).clear(edge.path, edge))
     }
@@ -82,7 +82,7 @@ import Testing
         graph.addEdge(edge)
         let router = BspEdgeRouter()
         router.routeEdges(graph)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(ObstaclePolyline.length(edge.path) < 1200)
         #expect(ObstaclePolyline.Scene(graph.nodes).clear(edge.path, edge))
         #expect(edge.path.first?.y == source.bounds.bottom && edge.path.last?.y == target.bounds.top)

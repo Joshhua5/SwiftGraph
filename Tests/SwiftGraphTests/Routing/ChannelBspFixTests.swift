@@ -14,9 +14,8 @@ struct RouteAudit {
 
     init(_ graph: LayoutGraph, _ router: any EdgeRouter) {
         switch router {
-        case let r as ChannelEdgeRouter: fallbacks = r.unroutableEdges
-        case let r as BspEdgeRouter: fallbacks = r.unroutableEdges
-        case let r as PolylineEdgeRouter: fallbacks = r.unroutableEdges
+        case is ChannelEdgeRouter, is BspEdgeRouter, is PolylineEdgeRouter:
+            fallbacks = router.report.unroutableEdges(in: graph)
         default: fallbacks = []
         }
         let leaves = graph.nodes.filter { !$0.isGroup }
@@ -117,7 +116,7 @@ struct RouteAudit {
         g.addEdge(e)
         let router = ChannelEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(e.path.last?.y == 300, "enters b through its top side: \(e.path)")
     }
 
@@ -198,7 +197,7 @@ struct RouteAudit {
         let router = ChannelEdgeRouter()
         router.gridSize = 20
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(edge.path.count >= 2 && edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite })
         #expect(RouteAudit(g, router).diagonal.isEmpty)
     }
@@ -214,9 +213,9 @@ struct RouteAudit {
         router.congestionPenalty = congestion
         router.routeEdges(g)
         if congestion == 0 {
-            #expect(router.unroutableEdges.isEmpty)
+            #expect(router.report.unroutable.isEmpty)
         } else {
-            #expect(router.unroutableEdges.count == 1 && router.unroutableEdges.first === edge)
+            #expect(router.report.unroutableEdges(in: g) == [edge])
         }
         #expect(edge.path.count >= 2 && edge.path.count <= 8)
         #expect(edge.path.allSatisfy { $0.x.isFinite && $0.y.isFinite })
@@ -236,7 +235,7 @@ struct RouteAudit {
         g.addEdge(edge)
         let router = ChannelEdgeRouter()
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty && RouteAudit(g, router).leafHits.isEmpty)
+        #expect(router.report.unroutable.isEmpty && RouteAudit(g, router).leafHits.isEmpty)
     }
 
     @Test func channelZeroCongestionRoutesAroundGroupsDeterministically() {
@@ -251,7 +250,7 @@ struct RouteAudit {
         router.congestionPenalty = 0
         router.gridSize = 8
         router.routeEdges(g)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         let audit = RouteAudit(g, router)
         #expect(audit.diagonal.isEmpty && audit.offBoundary.isEmpty)
         #expect(
@@ -278,7 +277,7 @@ struct RouteAudit {
         cancellation.cancel()
         let router = ChannelEdgeRouter()
         RoutingCompute.$cancellation.withValue(cancellation) { router.routeEdges(g) }
-        #expect(edge.path == path && router.unroutableEdges.isEmpty)
+        #expect(edge.path == path && router.report.unroutable.isEmpty)
     }
 
     @Test func edgeSpacingDefaultsAgree() {

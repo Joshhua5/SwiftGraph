@@ -175,7 +175,7 @@ enum MetalVisualCatalogue {
                 return try await verified(
                     VisualDrawing(
                         graph: g,
-                        fallbackEdges: operation.unroutableEdgeIndices,
+                        fallbackEdges: operation.report.unroutable,
                         notes: [
                             "Styling and finishing operations preserve input paths where their CPU contracts require it. Obstacle intersections are advisory unless the router guarantees clearance."
                         ]

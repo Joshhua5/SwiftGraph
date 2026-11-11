@@ -139,7 +139,7 @@ import Testing
         graph.addEdge(edge)
         let router = PolylineEdgeRouter()
         router.routeEdges(graph)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(edge.path.count > 2)
         #expect(ObstaclePolyline.clear(edge.path, [graph.nodes[2].bounds]))
     }
@@ -170,7 +170,7 @@ import Testing
         for _ in 0..<4 { graph.addEdge(LayoutEdge(source: graph.nodes[0], target: graph.nodes[1])) }
         let router = EdgeBundlingRouter()
         router.routeEdges(graph)
-        #expect(router.unroutableEdges.isEmpty)
+        #expect(router.report.unroutable.isEmpty)
         #expect(graph.edges.allSatisfy { ObstaclePolyline.clear($0.path, ObstaclePolyline.obstacles($0, graph)) })
     }
 
@@ -212,6 +212,6 @@ import Testing
         let separator = EdgeSeparator()
         separator.routeEdges(graph)
         #expect(graph.edges.flatMap(\.path).allSatisfy(before.inflated(by: 40.01).contains))
-        #expect(!separator.unseparatedEdges.isEmpty)
+        #expect(!separator.report.unseparated.isEmpty)
     }
 }

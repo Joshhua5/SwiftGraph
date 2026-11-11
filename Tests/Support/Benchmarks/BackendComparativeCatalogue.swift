@@ -281,7 +281,7 @@ public enum BackendComparativeCatalogue {
                     let kind = try routingKind(for: name)
                     let op = RoutingLayoutOperation(kind, backend: backend, executor: executor)
                     try await op.applyLayoutAsync(g)
-                    let failures = op.unroutableEdgeIndices
+                    let failures = op.report.unroutable
                     VisualGraphs.finish(g)
                     return (
                         VisualDrawing(
@@ -535,7 +535,7 @@ public enum BackendComparativeCatalogue {
                 let router = PolylineEdgeRouter()
                 router.routeEdges(g)
                 drawing.fallbackEdges = g.edges.indices.filter { i in
-                    router.unroutableEdges.contains { $0 === g.edges[i] }
+                    router.report.unroutable.contains(i)
                 }
                 VisualGraphs.finish(g)
                 return (drawing, metrics)
