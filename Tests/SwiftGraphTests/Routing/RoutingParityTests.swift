@@ -97,7 +97,9 @@ private let corridorBudgets: [String: (crossings: Int, bends: Int)] = {
         let graph = fixture.graph()
         let wall = try #require(graph.nodes.first { $0.id == "wall" })
         let before = wall.bounds
-        fixture.makeRouter().routeEdges(graph)
+        let router = try #require(fixture.makeRouter() as? OrthogonalGroupedEdgeRouter)
+        router.movesNodesToWidenCorridors = true
+        router.routeEdges(graph)
         #expect(wall.bounds != before)
         for a in graph.nodes { for b in graph.nodes where a !== b { #expect(!a.bounds.intersects(b.bounds)) } }
         let incident = graph.edges.last!

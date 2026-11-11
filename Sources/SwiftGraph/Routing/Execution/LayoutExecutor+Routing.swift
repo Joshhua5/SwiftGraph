@@ -86,6 +86,7 @@ func routingTransaction(
                 r.bundleSpacing = configuration.bundleSpacing
                 r.obstacleMargin = configuration.obstacleMargin
                 r.bendPenalty = configuration.bendPenalty
+                r.movesNodesToWidenCorridors = configuration.movesNodesToWidenCorridors
                 r.routeEdges(graph)
                 unroutable = r.unroutableEdges
             case .parallelEdges:
@@ -190,7 +191,7 @@ private func routingCPUStages(_ kind: RoutingKind) -> [String] {
         ]
     case .orthogonalGrouped:
         [
-            "hierarchy channels, ordered A* search, node nudge ordering and shared lanes",
+            "hierarchy channels, ordered A* search, optional node nudge ordering and shared lanes",
             "exact Double blockers and endpoint clipping reconstruction",
         ]
     case .selfLoops: ["corner generation, ordered corner ranking and exact Double clearance/crossings"]

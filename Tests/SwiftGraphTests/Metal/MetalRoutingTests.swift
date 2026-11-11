@@ -108,6 +108,8 @@ struct MetalRoutingTests {
             fixture.router == "grouped"
             ? .orthogonalGrouped
             : fixture.router == "channel" ? .channel : fixture.router == "polyline" ? .polyline : .bsp
+        // The nudge fixture opts in on both paths; every other fixture routes with nodes held in place.
+        let movesNodes = fixture.name == "grouped-bus-nudge-reroute"
         let operation = RoutingLayoutOperation(kind, backend: .metal) { configuration in
             switch kind {
             case .channel:
@@ -118,16 +120,19 @@ struct MetalRoutingTests {
                 configuration.bundleSpacing = fixture.config["bundleSpacing"] ?? 10
                 configuration.obstacleMargin = fixture.config["obstacleMargin"] ?? 10
                 configuration.bendPenalty = fixture.config["bendPenalty"] ?? 100
+                configuration.movesNodesToWidenCorridors = movesNodes
             case .polyline: configuration.padding = fixture.config["padding"] ?? 10
             default: break
             }
         }
-        fixture.makeRouter().routeEdges(a)
+        let router = fixture.makeRouter()
+        (router as? OrthogonalGroupedEdgeRouter)?.movesNodesToWidenCorridors = movesNodes
+        router.routeEdges(a)
         try await operation.applyLayoutAsync(b)
         #expect(a.nodes.map(\.bounds) == b.nodes.map(\.bounds), "\(fixture.name): moved node bounds")
         #expect(a.root.bounds == b.root.bounds)
         #expect(a.edges.map(\.path) == b.edges.map(\.path), "\(fixture.name): route/port ordering")
-        if fixture.name == "grouped-bus-nudge-reroute" {
+        if movesNodes {
             let wall = try #require(b.nodes.first { $0.id == "wall" })
             #expect(wall.bounds != fixture.graph().nodes.first { $0.id == "wall" }!.bounds)
             #expect(operation.lastMetrics?.backend == .metal)
